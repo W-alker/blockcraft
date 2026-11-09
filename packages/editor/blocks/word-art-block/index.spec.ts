@@ -208,7 +208,7 @@ describe("Word art block domain", () => {
     expect(getComputedStyle(corners).visibility).toBe("visible");
     expect(getComputedStyle(corners).outlineWidth).toBe("1px");
     expect(getComputedStyle(corners).pointerEvents).toBe("none");
-    expect(corners.querySelectorAll('[data-bc-object-corner]').length).toBe(4);
+    expect(corners.querySelectorAll('[data-bc-object-corner]').length).toBe(0);
     root.blur();
     expect(getComputedStyle(corners).visibility).toBe("hidden");
 
@@ -317,10 +317,10 @@ describe("Word art block domain", () => {
       expect(corners).not.toBeNull();
       expect(corners.getAttribute("contenteditable")).toBe("false");
       expect(corners.hasAttribute("data-bc-selection-interaction-ignore")).toBeTrue();
-      expect(corners.querySelectorAll('[data-bc-object-corner]').length).toBe(4);
+      expect(corners.querySelectorAll('[data-bc-object-corner]').length).toBe(0);
       expect(corners.querySelectorAll('[data-bc-object-entry-edge]').length).toBe(4);
-      expect(corners.querySelector('[data-bc-object-corner="nw"]')?.getAttribute('aria-label'))
-        .toBe('左上角：选中艺术字');
+      expect(corners.querySelector('[data-bc-object-floating-handle]')?.getAttribute('aria-label'))
+        .toBe('选中艺术字并拖动');
       expect(fixture.nativeElement.querySelector(".word-art-block__object-handle")).toBeNull();
       expect(
         fixture.nativeElement.querySelectorAll(".shape-resizer__move-edge")

@@ -1,3 +1,4 @@
+import {FloatingToolbarComponent, FloatingToolbarState} from '../../components/floating-toolbar';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -64,9 +65,11 @@ const ALIGNMENT_ITEMS: readonly {
 @Component({
   selector: "bc-object-group-toolbar",
   standalone: true,
-  imports: [CsTooltipDirective],
+  imports: [CsTooltipDirective, FloatingToolbarComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
+    <bc-floating-toolbar [state]="toolbarState" [side]="side" [constrainHeight]="true" label="组合工具栏" (collapsedChange)="panelChange.emit()">
+    @if (!toolbarState.collapsed()) {
     <div class="object-group-toolbar" contenteditable="false">
       @if (mode === "group") {
         @for (item of alignmentItems; track item.value) {
@@ -135,13 +138,18 @@ const ALIGNMENT_ITEMS: readonly {
         <span>{{ mode === "group" ? "组合" : "取消组合" }}</span>
       </button>
     </div>
+    }
+    </bc-floating-toolbar>
   `,
   styles: `
     .object-group-toolbar {
       display: flex;
       align-items: center;
-      min-height: 42px;
-      padding: 5px 7px;
+      min-height: 34px;
+      max-width:100%;
+      max-height:var(--bc-floating-toolbar-content-height,none);
+      overflow:auto;
+      padding: 3px 5px;
       border: 1px solid var(--bc-border-color, #e2e8f0);
       border-radius: 10px;
       background: var(--bc-bg-primary, #fff);
@@ -156,7 +164,7 @@ const ALIGNMENT_ITEMS: readonly {
       justify-content: center;
       gap: 6px;
       box-sizing: border-box;
-      height: 30px;
+      height: 26px;
       padding: 0 10px;
       border: 0;
       border-radius: 6px;
@@ -168,7 +176,7 @@ const ALIGNMENT_ITEMS: readonly {
       background: var(--bc-bg-hover, #f1f5f9);
     }
     .object-group-toolbar__icon-button {
-      width: 30px;
+      width: 26px;
       padding: 0;
     }
     .object-group-toolbar__icon-button--active {
@@ -182,15 +190,22 @@ const ALIGNMENT_ITEMS: readonly {
       opacity: 0.45;
       cursor: not-allowed;
     }
+    @media(pointer:coarse) {
+      button {min-height:34px}
+      .object-group-toolbar__icon-button {width:34px}
+    }
     .object-group-toolbar__divider {
       width: 1px;
-      height: 22px;
+      height: 18px;
       margin: 0 3px;
       background: var(--bc-border-color, #e2e8f0);
     }
   `,
 })
 export class ObjectGroupToolbarComponent {
+  @Input() toolbarState = new FloatingToolbarState();
+  @Input() side: "left" | "right" = "right";
+  @Output() readonly panelChange = new EventEmitter<void>();
   readonly alignmentItems = ALIGNMENT_ITEMS;
   readonly layoutItems = GROUP_LAYOUT_ITEMS;
   @Input({ required: true }) mode: ObjectGroupToolbarMode = "group";

@@ -4,6 +4,32 @@
 >
 > Last updated: 2026-11-09 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-11-09：可复用的迷你浮动工具栏与展开收起
+
+- Severity: minor（新增可选本地 UI API；版本由用户决定，本次不改版本号）。
+- What changed / Why: 对象格式、组合、内容区域工具栏采用 mini 快捷条，并增加 Word 式圆形展开/收起入口；将会话状态和外壳分离，使其他插件可复用。
+- New APIs: 主入口导出 `FloatingToolbarOptions`、`FloatingToolbarState`、`FloatingToolbarComponent`（可选 `constrainHeight` 投影只读 `--bc-floating-toolbar-content-height` 高度预算，由设置面板自身滚动）；`ObjectFormatToolbarOptions`；`ObjectFormatToolbarPlugin` 和 `CalloutToolbarPlugin` 构造时接受 `{collapsed?: boolean}`，提供 `toolbarState`、`collapsed` 和 `setCollapsed(boolean)`。
+- Behavior Changes: 默认保持展开但侧条由 42px 缩为 34px，按钮由 32px 缩为 26px，常规设置卡宽 240px、布局/内容区域卡宽 208px，桌面设置控件高 24px；触摸主指针使用 42px 侧条和 34px 按钮。收起会关闭二级面板、提交待提交输入并撤销未确认效果；再次展开显示快捷条。切换对象/重建浮层保留本插件状态，不写 Yjs、Undo 或快照。对象侧栏以顶部为定位起点，并按锚点下方可用空间限高，使展开、收起和页签切换保留顶部入口位置。
+- Deprecations / Breaking Changes: 无；原有无参数创建方式继续可用。提示块普通菜单不受收起配置影响。
+- Migration Recipe: 原有 `new ObjectFormatToolbarPlugin()` 无需修改。需初始收起时改为 `const plugin = new ObjectFormatToolbarPlugin({collapsed: true})`；运行时 `plugin.setCollapsed(false)` 展开。自定义插件投影原工具条至 `<bc-floating-toolbar [state]="toolbarState">`，并在 `collapsedChange` 清理业务面板状态。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-toolbar.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-theme.md`。
+
+## 未发布 — 2026-11-09：移除四角轻量聚焦点
+
+- Severity: patch（简化对象轻量入口；版本由用户决定）。
+- What changed / Why: 文本框、艺术字和填写区不再渲染四个 L 形聚焦角点及对应角按钮命中区，保留轻量边框和顶部抓手。
+- Behavior Changes: 顶部抓手继续支持点击及 Enter/Space 选择对象；文本框/艺术字保留沿边与顶部抓手拖动，填写区仍仅选择和缩放。整块选中后的八向缩放、旋转及形状几何控制点不受影响。
+- Migration Recipe: 无数据迁移。`bc-object-corner-controls` 组件和 Inputs 保留；依赖 `[data-bc-object-corner]` 的自定义测试或定位应改用 `[data-bc-object-floating-handle]` 或既有边缘入口。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-theme.md`。
+
+## 未发布 — 2026-11-09：统一对象悬停与内部聚焦边框
+
+- Severity: patch（调整默认编辑提示；版本由用户决定）。
+- What changed / Why: 文本框、形状、艺术字和图片在悬停或内部编辑时采用 1px 淡虚线，使用 35% 活跃色区分整体选中的实线框。形状正文悬停/编辑现在也显示边界提示，图片说明文字聚焦显示图片边界。
+- Behavior Changes: 整体对象选中优先使用既有实线缩放框；设计模式内部编辑时已显示的抓手框使用淡虚线。保留原有抓手与命中带、对象拖动、正文编辑、填写区和贴纸提示。
+- Migration Recipe: 无 API 或数据迁移；不修改持久化对象轮廓。主题宿主可继续使用 `--bc-active-color`，只读和打印提示规则保持。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-theme.md`。
+
 ## 未发布 — 2026-11-09：暂停全部默认浮动动画入口
 
 - Severity: patch（精简默认工具栏；版本由用户决定）。

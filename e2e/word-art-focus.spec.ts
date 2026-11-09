@@ -44,7 +44,7 @@ test('WordArt floating handle, format panel, and Escape keep object focus stable
   await expect(wordArt).toBeVisible()
   await wordArt.hover()
   await expect(objectHandle).toBeVisible()
-  await expect(wordArt.locator('[data-bc-object-corner]')).toHaveCount(4)
+  await expect(wordArt.locator('[data-bc-object-corner]')).toHaveCount(0)
   expect(await wordArt.evaluate(element => getComputedStyle(element).outlineStyle))
     .toBe('none')
 

@@ -108,7 +108,7 @@ test('flow text-box floating handle and Escape select the whole frame', async ({
   )
   const objectHandle = textBox.locator('[data-bc-object-floating-handle]')
   await expect(textBox).toBeVisible()
-  await expect(textBox.locator('[data-bc-object-corner]')).toHaveCount(4)
+  await expect(textBox.locator('[data-bc-object-corner]')).toHaveCount(0)
   await expect(objectHandle).toBeVisible()
   await expect(textBox).not.toHaveClass(/\bselected\b/)
   expect(await textBox.evaluate(element => getComputedStyle(element).outlineStyle))

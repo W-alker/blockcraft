@@ -6,7 +6,7 @@ test('expanded region border settings remain inside a short viewport', async ({p
   await page.getByRole('button', {name: '选中内容区域', exact: true}).click({force: true})
   await expect(page.locator('[data-bc-region-format-toolbar]')).toBeVisible()
 
-  await page.setViewportSize({width: 400, height: 405})
+  await page.setViewportSize({width: 400, height: 300})
   await page.getByRole('button', {name: '外观选项'}).click()
   const toolbar = page.locator('[data-bc-region-format-toolbar]')
   const railTop = await toolbar.locator('.object-format__rail').evaluate(element => element.getBoundingClientRect().top)

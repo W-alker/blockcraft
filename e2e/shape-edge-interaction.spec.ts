@@ -58,13 +58,14 @@ async function position(page: Page) {
 }
 
 for (const scale of [0.5, 1, 2]) {
-  test(`零边距满文字形状 ${scale}：正文不显框，四边悬停选择及拖动`, async ({page}) => {
+  test(`零边距满文字形状 ${scale}：正文淡虚线提示，四边选择及拖动`, async ({page}) => {
     const id = await setup(page, {scale})
     const block = page.locator(`[data-block-id="${id}"]`)
     const controls = block.locator('bc-object-edge-controls')
     const text = block.locator('.shape-text-block')
     await block.locator('.shape-block__shell').hover({position: {x: 150 * scale, y: 60 * scale}})
-    await expect(controls).toHaveCSS('opacity', '0')
+    await expect(controls).toHaveCSS('opacity', '1')
+    await expect(controls).toHaveCSS('outline-style', 'dashed')
     expect(await selected(page)).toBeFalsy()
     for (const edge of await controls.locator('button').all()) {
       await edge.hover()
@@ -76,7 +77,7 @@ for (const scale of [0.5, 1, 2]) {
     const point = {x: bounds.x + 4 * scale, y: bounds.y + 10 * scale}
     expect(await text.evaluate((el, point) => el.contains(document.elementFromPoint(point.x, point.y)), point)).toBe(true)
     await page.mouse.click(point.x, point.y)
-    await expect(controls).toHaveCSS('opacity', '0')
+    await expect(controls).toHaveCSS('opacity', '1')
     await expect.poll(() => page.evaluate(() => (window as any).shapeEdge.doc.selection.value?.anchor.type)).toBe('text')
     await page.keyboard.press('Shift+ArrowRight')
     await expect.poll(() => page.evaluate(() => document.getSelection()?.toString().length ?? 0)).toBeGreaterThan(0)

@@ -110,9 +110,9 @@ describe('RenderUnitBlockComponent corner entry', () => {
       const corners = fixture.nativeElement.querySelector('bc-object-corner-controls') as HTMLElement
       expect(content.isContentEditable).toBeTrue()
       expect(corners.getAttribute('contenteditable')).toBe('false')
-      expect(corners.querySelectorAll('[data-bc-object-corner]').length).toBe(4)
+      expect(corners.querySelectorAll('[data-bc-object-corner]').length).toBe(0)
       expect(corners.querySelectorAll('[data-bc-object-entry-edge]').length).toBe(0)
-      ;(corners.querySelector('[data-bc-object-corner="nw"]') as HTMLButtonElement).click()
+      ;(corners.querySelector('[data-bc-object-floating-handle]') as HTMLButtonElement).click()
       expect(selectBlock).toHaveBeenCalledOnceWith(fixture.componentInstance)
       readonly = true
       fixture.componentInstance.applyReadonlyViewState()

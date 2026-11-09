@@ -1,3 +1,4 @@
+import {FloatingToolbarState, type FloatingToolbarOptions} from '../../components/floating-toolbar';
 import { DocPlugin, getPositionWithOffset } from "../../framework";
 import { fromEvent, Subject, Subscription, takeUntil } from "rxjs";
 import { OverlayRef } from "@angular/cdk/overlay";
@@ -9,6 +10,16 @@ import {isObjectToolbarOwnedTarget} from '../object-layout/object-toolbar-intera
 
 export class CalloutToolbarPlugin extends DocPlugin {
   override name = 'callout-toolbar';
+
+  readonly toolbarState: FloatingToolbarState;
+
+  constructor(options: FloatingToolbarOptions = {}) {
+    super();
+    this.toolbarState = new FloatingToolbarState(options);
+  }
+
+  get collapsed(): boolean { return this.toolbarState.collapsed(); }
+  setCollapsed(collapsed: boolean): void { this.toolbarState.setCollapsed(collapsed); }
 
   private _sub?: Subscription
   private _timer: number | null = null
@@ -135,6 +146,7 @@ export class CalloutToolbarPlugin extends DocPlugin {
       this.closeToolbar()
       resizeObs.disconnect()
     })
+    if (containerBlock.flavour === 'render-unit') componentRef.setInput('toolbarState', this.toolbarState)
     componentRef.setInput('containerBlock', containerBlock)
     this._overlayRef = overlayRef
 

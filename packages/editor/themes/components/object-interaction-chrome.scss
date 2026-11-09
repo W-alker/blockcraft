@@ -1,0 +1,50 @@
+// Hover and text editing identify an object without implying whole-object selection.
+@media screen {
+  [data-blockcraft-root='true']:not(.readonly):not(.bc-print-content):not([data-bc-interaction-mode='immersive']) {
+    .text-box-block > .text-box-block__surface > bc-object-corner-controls,
+    .word-art-block > .word-art-block__surface > bc-object-corner-controls,
+    .shape-block > .shape-block__shell > bc-object-edge-controls {
+      outline: 1px dashed color-mix(in srgb, var(--bc-active-color) 35%, transparent);
+    }
+
+    // Design mode can expose resize controls while a text caret is inside an object.
+    // Keep that frame light too; the selected object's existing solid frame wins.
+    .text-box-block:not(.selected) > .text-box-block__surface > shape-resizer > .shape-resizer__frame,
+    .word-art-block:not(.word-art-block--object-selected) > .word-art-block__surface > shape-resizer > .shape-resizer__frame,
+    .shape-block:not(.selected) > .shape-block__shell > shape-resizer > .shape-resizer__frame,
+    .image-block:not(.selected) > .image-block__container > .img-wrapper > shape-resizer > .shape-resizer__frame {
+      outline: 1px dashed color-mix(in srgb, var(--bc-active-color) 35%, transparent);
+    }
+
+    .shape-block:not(.selected):not(.bc-drag-source) {
+      &:hover > .shape-block__shell > bc-object-edge-controls,
+      &:focus-within > .shape-block__shell > bc-object-edge-controls,
+      &:where([data-blockcraft-root='true']:focus-within *):has(> .shape-block__shell > .shape-block__text-frame > .focused)
+        > .shape-block__shell > bc-object-edge-controls {
+        opacity: 1;
+      }
+
+      // Match the corner controls' nearest-object ownership without adding hit areas.
+      &:has(:is(.text-box-block, .word-art-block, .render-unit-block, .shape-block):is(:hover, :focus-within, .focused), :is(.text-box-block, .word-art-block, .render-unit-block, .shape-block) .focused)
+        > .shape-block__shell > bc-object-edge-controls {
+        opacity: 0;
+      }
+    }
+
+    .image-block:not(.bc-snapshot-block):not([data-bc-readonly]) {
+      &:hover,
+      &:focus-within,
+      &:where([data-blockcraft-root='true']:focus-within *):is(.focused, :has(> .image-block__container > .children-render-container .focused)) {
+        > .image-block__container > .img-wrapper > shape-resizer {
+          display: block;
+        }
+
+        // Empty/uploading images have no resize component to paint the hint.
+        &:not(.selected) > .image-block__container > .img-wrapper:not(:has(> shape-resizer)) {
+          outline: 1px dashed color-mix(in srgb, var(--bc-active-color) 35%, transparent);
+          outline-offset: 2px;
+        }
+      }
+    }
+  }
+}

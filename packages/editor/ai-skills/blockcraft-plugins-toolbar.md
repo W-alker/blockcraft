@@ -300,12 +300,22 @@ import { ObjectFormatToolbarPlugin, ObjectDragPlugin } from "@ccc/blockcraft";
 const plugins = [new ObjectFormatToolbarPlugin(), new ObjectDragPlugin()];
 ```
 
+`new ObjectFormatToolbarPlugin({collapsed: true})` 可创建默认收起的侧栏，省略时展开。
+运行时调用 `plugin.setCollapsed(boolean)`，通过 `plugin.collapsed` 读取当前值；
+`plugin.toolbarState` 为可复用的 `FloatingToolbarState`，其 `toggle()` 与圆形加/减按钮
+使用同一路径。切换形状、文本框、艺术字或组合目标时保留状态；收起关闭当前二级面板，
+提交待提交滑杆值并取消未确认的效果预览，再次展开只显示快捷条。
+`CalloutToolbarPlugin` 同样接受 `FloatingToolbarOptions` 并提供上述状态和方法，
+作用于内容区域的迷你外观工具栏，提示块原有菜单保持原交互。
+自定义工具栏的接入与生命周期见 `blockcraft-toolbar.md` 的可收起外壳章节。
+
+
 The connected quick rail reuses the established TextBox/WordArt two-level
-shell: a side-aware 42px rail opens a responsive 288px format card or compact
-228px layout card, both viewport-clamped and without redundant panel-title
-descriptions. It keeps center-first right/left positioning, flips the rail
+shell: a side-aware 34px rail opens a responsive 240px format card or compact
+208px layout card, both viewport-clamped and without redundant panel-title
+descriptions. It uses top-aligned right/left positioning, flips the rail
 when the Overlay changes side, and preserves toolbar/CSES sub-overlay focus
-ownership during pointer-to-focus handoff. The panel keeps one scroll owner and switches
+ownership during pointer-to-focus handoff. Expanded panels use the available space below the anchor, keeping the top entry stable while collapsing or switching tabs. The horizontal group toolbar uses the same top-aligned side anchors. The panel keeps one scroll owner and switches
 among layout, Shape and text sections without disposing its Overlay. The size
 and rotation fields remain in the object-format domain but currently have no
 rail entry. It reads

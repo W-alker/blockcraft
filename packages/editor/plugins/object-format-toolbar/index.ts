@@ -1,3 +1,4 @@
+import {FloatingToolbarState, type FloatingToolbarOptions} from '../../components/floating-toolbar';
 import {
   FlexibleConnectedPositionStrategy,
   OverlayRef,
@@ -73,9 +74,21 @@ const GROUP_ALIGNMENT_ACTIONS = new Set<BlockObjectAlignment>([
   "vertical-distribute",
 ]);
 
+export interface ObjectFormatToolbarOptions extends FloatingToolbarOptions {}
+
 /** One object toolbar owner for Shape, TextBox, WordArt and mixed selection. */
 export class ObjectFormatToolbarPlugin extends DocPlugin {
   override name = "object-format-toolbar";
+
+  readonly toolbarState: FloatingToolbarState;
+
+  constructor(options: ObjectFormatToolbarOptions = {}) {
+    super();
+    this.toolbarState = new FloatingToolbarState(options);
+  }
+
+  get collapsed(): boolean { return this.toolbarState.collapsed(); }
+  setCollapsed(collapsed: boolean): void { this.toolbarState.setCollapsed(collapsed); }
 
   private panelResizeObserver?: ResizeObserver;
   private updateToolbarPosition?: () => void;
@@ -266,9 +279,8 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     const options = {
       target: surface,
       component: ObjectFormatToolbarComponent,
+      fitToAvailableSpace: true,
       positions: [
-        getPositionWithOffset("right-center", TOOLBAR_GAP, 0),
-        getPositionWithOffset("left-center", TOOLBAR_GAP, 0),
         getPositionWithOffset("right-top", TOOLBAR_GAP, 0),
         getPositionWithOffset("left-top", TOOLBAR_GAP, 0),
       ],
@@ -281,6 +293,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     this.toolbarKind = "format";
     this.toolbarKey = key;
     this.activeIds = [...state.blockIds];
+    toolbar.componentRef.setInput("toolbarState", this.toolbarState);
     toolbar.componentRef.setInput("doc", this.doc);
     toolbar.componentRef.setInput("state", state);
     toolbar.componentRef.setInput(
@@ -785,9 +798,10 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
         {
           target: state.anchor,
           component: ObjectGroupToolbarComponent,
+          fitToAvailableSpace: true,
           positions: [
-            getPositionWithOffset("top-center", 0, 8),
-            getPositionWithOffset("bottom-center", 0, 8),
+            getPositionWithOffset("right-top", TOOLBAR_GAP, 0),
+            getPositionWithOffset("left-top", TOOLBAR_GAP, 0),
           ],
           clampTo: this.doc.scrollContainer ?? undefined,
         },
@@ -799,6 +813,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     this.toolbarKind = "group";
     this.toolbarKey = key;
     this.activeIds = [...state.blockIds];
+    toolbar.componentRef.setInput("toolbarState", this.toolbarState);
     toolbar.componentRef.setInput("mode", state.mode);
     toolbar.componentRef.setInput("canGroup", state.canGroup);
     toolbar.componentRef.setInput("canUngroup", state.canUngroup);
@@ -809,6 +824,17 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     toolbar.componentRef.instance.action
       .pipe(takeUntil(this.close$))
       .subscribe((action) => this.handleGroupAction(action, state.blockIds));
+    toolbar.componentRef.instance.panelChange
+      .pipe(takeUntil(this.close$))
+      .subscribe(() => this.scheduleToolbarPositionUpdate());
+    const strategy = toolbar.overlayRef.getConfig().positionStrategy;
+    if (strategy instanceof FlexibleConnectedPositionStrategy) {
+      strategy.positionChanges.pipe(takeUntil(this.close$)).subscribe(change => {
+        toolbar.componentRef.setInput("side", change.connectionPair.originX === "start" ? "left" : "right");
+      });
+    }
+    this.panelResizeObserver = new ResizeObserver(() => this.scheduleToolbarPositionUpdate());
+    this.panelResizeObserver.observe(toolbar.overlayRef.overlayElement);
   }
 
   private handleGroupAction(

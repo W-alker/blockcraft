@@ -308,10 +308,10 @@ export function calculateShapeResize(
 
       .shape-resizer__rotation-stem {
         position: absolute;
-        top: -31.5px;
+        top: -22px;
         left: 50%;
         width: 1px;
-        height: 23.5px;
+        height: 14px;
         background: var(--bc-active-color, #4857e2);
         transform: translateX(-50%);
         pointer-events: none;
@@ -320,7 +320,7 @@ export function calculateShapeResize(
       .shape-resizer__rotate {
         position: absolute;
         z-index: 2;
-        top: -39.5px;
+        top: -30px;
         left: 50%;
         width: 8px;
         height: 8px;

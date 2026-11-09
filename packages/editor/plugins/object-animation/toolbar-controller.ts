@@ -28,7 +28,8 @@ export class ObjectAnimationToolbarController {
       target: this.doc.getBlockById(ids[0]), origin: anchor,
       clampTo: owner.documentElement,
       component: ObjectAnimationToolbarComponent,
-      positions: [getPositionWithOffset('right-center', 10, 0), getPositionWithOffset('left-center', 10, 0)],
+      fitToAvailableSpace: true,
+      positions: [getPositionWithOffset('right-top', 10, 0), getPositionWithOffset('left-top', 10, 0)],
     }, close$, () => this.close());
     this.overlay = overlayRef.overlayElement;
     this.key = selectionKey;

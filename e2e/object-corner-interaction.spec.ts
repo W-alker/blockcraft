@@ -1,4 +1,4 @@
-import {expect, test, type Page, type Locator} from '@playwright/test'
+import {expect, test, type Page} from '@playwright/test'
 
 test.use({viewport: {width: 1400, height: 1000}})
 
@@ -63,20 +63,6 @@ async function position(page: Page) {
   })
 }
 
-async function visualCornerPoint(corner: Locator, scale = 1, rotation = 0) {
-  const metrics = await corner.evaluate(el => {
-    const r = el.getBoundingClientRect()
-    const style = getComputedStyle(el)
-    const glyph = getComputedStyle(el, '::after')
-    return {x: r.x + r.width / 2, y: r.y + r.height / 2,
-      dx: parseFloat(glyph.left) - parseFloat(style.width) / 2,
-      dy: parseFloat(glyph.top) - parseFloat(style.height) / 2}
-  })
-  const angle = rotation * Math.PI / 180
-  return {x: metrics.x + scale * (metrics.dx * Math.cos(angle) - metrics.dy * Math.sin(angle)),
-    y: metrics.y + scale * (metrics.dx * Math.sin(angle) + metrics.dy * Math.cos(angle))}
-}
-
 async function selectedObject(page: Page) {
   return page.evaluate(() => {
     const {doc} = (window as any).cornerInteraction
@@ -88,23 +74,14 @@ async function selectedObject(page: Page) {
 
 for (const flavour of ['text-box', 'word-art']) {
   for (const scale of [0.5, 1, 2]) {
-    test(`${flavour} at ${scale}: 整块悬停显示四角，紧邻对象仍可点击与沿边拖动`, async ({page}) => {
+    test(`${flavour} at ${scale}: 整块悬停仅显示边框和顶部抓手，紧邻对象仍可沿边选择与拖动`, async ({page}) => {
       const id = await setup(page, flavour, scale)
       const block = page.locator(`[data-block-id="${id}"]`)
       const controls = block.locator('bc-object-corner-controls')
-      const corner = controls.locator('[data-bc-object-corner="nw"]')
       const floatingHandle = controls.locator('[data-bc-object-floating-handle]')
       await block.hover({position: {x: 150 * scale, y: 80 * scale}})
-      await expect(controls.locator('[data-bc-object-corner]')).toHaveCount(4)
-      for (const item of await controls.locator('[data-bc-object-corner]').all()) {
-        await expect(item).toBeVisible()
-        const point = await visualCornerPoint(item, scale)
-        expect(await item.evaluate((el, point) => {
-          const hit = document.elementFromPoint(point.x, point.y)
-          return el === hit || el.contains(hit)
-        }, point)).toBe(true)
-      }
-      await expect(controls).toHaveCSS('outline-style', 'solid')
+      await expect(controls.locator('[data-bc-object-corner]')).toHaveCount(0)
+      await expect(controls).toHaveCSS('outline-style', 'dashed')
       await expect(floatingHandle).toBeVisible()
       await expect(floatingHandle).toHaveCSS('width', '24px')
       await expect(floatingHandle).toHaveCSS('height', '14px')
@@ -125,7 +102,6 @@ for (const flavour of ['text-box', 'word-art']) {
       await page.mouse.move(x, y)
       await page.mouse.down()
       await page.mouse.move(x + 32 * scale, y + 24 * scale, {steps: 6})
-      await expect(corner).toBeHidden()
       await expect(floatingHandle).toBeHidden()
       await page.mouse.up()
       await expect.poll(() => position(page)).toEqual({
@@ -138,26 +114,22 @@ for (const flavour of ['text-box', 'word-art']) {
       })
       await expect.poll(() => position(page)).toEqual(before)
       await block.hover({position: {x: 150 * scale, y: 80 * scale}})
-      const point = await visualCornerPoint(corner, scale)
-      await page.mouse.click(point.x, point.y)
+      await entry.click()
       await expect.poll(() => selectedObject(page)).toBe(id)
-      await expect(corner).toBeHidden()
       await expect(block.locator('shape-resizer')).toBeVisible()
     })
   }
 
-  test(`${flavour}: 顶部抓手点击选择、拖动移动，与四角同步显隐`, async ({page}) => {
+  test(`${flavour}: 顶部抓手点击选择、拖动移动，选中后隐藏轻量入口`, async ({page}) => {
     const id = await setup(page, flavour, 1, false, 0, false)
     const block = page.locator(`[data-block-id="${id}"]`)
     const handle = block.locator('[data-bc-object-floating-handle]')
-    const corner = block.locator('[data-bc-object-corner="nw"]')
     await block.hover()
-    await expect(corner).toBeVisible()
+    await expect(block.locator('[data-bc-object-corner]')).toHaveCount(0)
     await expect(handle).toBeVisible()
     await handle.click()
     await expect.poll(() => selectedObject(page)).toBe(id)
     await expect(handle).toBeHidden()
-    await expect(corner).toBeHidden()
     await page.evaluate(() => (window as any).cornerInteraction.doc.selection.blur())
     await block.hover()
     const before = await position(page)
@@ -173,15 +145,15 @@ for (const flavour of ['text-box', 'word-art']) {
     await expect.poll(() => position(page)).toEqual(before)
   })
 
-  test(`${flavour}: 文字点击和划选保持编辑，聚焦显示四角，角部支持键盘`, async ({page, browserName}) => {
+  test(`${flavour}: 文字点击和划选保持编辑，聚焦显示顶部抓手，支持键盘选择`, async ({page}) => {
     const id = await setup(page, flavour, 1)
     const block = page.locator(`[data-block-id="${id}"]`)
     const editor = block.locator(flavour === 'text-box' ? '.text-box-block__content' : '.word-art-block__editor')
     const controls = block.locator('bc-object-corner-controls')
-    const nw = controls.locator('[data-bc-object-corner="nw"]')
+    const handle = controls.locator('[data-bc-object-floating-handle]')
     await editor.click()
     await page.mouse.move(20, 20)
-    await expect(nw).toBeVisible()
+    await expect(handle).toBeVisible()
     await expect(editor).toHaveAttribute('contenteditable', 'true')
     expect(await selectedObject(page)).toBeNull()
     await page.keyboard.press('Home')
@@ -195,27 +167,24 @@ for (const flavour of ['text-box', 'word-art']) {
     await expect.poll(() => selectedObject(page)).toBe(id)
     await page.evaluate(() => (window as any).cornerInteraction.doc.selection.blur())
     await block.hover()
-    await nw.focus()
-    // macOS WebKit 使用 Option+Tab 将普通按钮纳入键盘导航。
-    await page.keyboard.press(browserName === 'webkit' ? 'Alt+Tab' : 'Tab')
-    await expect(controls.locator('[data-bc-object-corner="ne"]')).toBeFocused()
+    await handle.focus()
+    await expect(handle).toBeFocused()
     await page.keyboard.press('Space')
     await expect.poll(() => selectedObject(page)).toBe(id)
-    await expect(nw).toBeHidden()
+    await expect(handle).toBeHidden()
   })
 
-  test(`${flavour}: 旋转后的内部角部可点击，打印和只读隐藏入口`, async ({page}) => {
-    const id = await setup(page, flavour, 1, false, 15)
+  test(`${flavour}: 旋转后的顶部抓手可点击，打印和只读隐藏入口`, async ({page}) => {
+    const id = await setup(page, flavour, 1, false, 15, false)
     const block = page.locator(`[data-block-id="${id}"]`)
-    const corner = block.locator('[data-bc-object-corner="se"]')
+    const handle = block.locator('[data-bc-object-floating-handle]')
     await block.hover()
-    await expect(corner).toBeVisible()
+    await expect(handle).toBeVisible()
     await page.emulateMedia({media: 'print'})
-    await expect(corner).toBeHidden()
+    await expect(handle).toBeHidden()
     await page.emulateMedia({media: 'screen'})
     await block.hover()
-    const point = await visualCornerPoint(corner, 1, 15)
-    await page.mouse.click(point.x, point.y)
+    await handle.click()
     await expect.poll(() => selectedObject(page)).toBe(id)
     await page.evaluate(() => {
       const {doc} = (window as any).cornerInteraction
@@ -223,23 +192,24 @@ for (const flavour of ['text-box', 'word-art']) {
       doc.readonlySwitch$.next(true)
     })
     await block.hover()
-    await expect(corner).toBeHidden()
+    await expect(handle).toBeHidden()
   })
 }
 
-test('填写区四角只选中和缩放，不新增移动能力', async ({page}) => {
+test('填写区顶部抓手只选中和缩放，不新增移动能力', async ({page}) => {
   const id = await setup(page, 'render-unit', 1)
   const block = page.locator(`[data-block-id="${id}"]`)
   await block.hover({position: {x: 150, y: 80}})
   const controls = block.locator(':scope > bc-object-corner-controls')
-  await expect(controls.locator('[data-bc-object-corner]')).toHaveCount(4)
+  await expect(controls.locator('[data-bc-object-corner]')).toHaveCount(0)
   await expect(controls.locator('[data-bc-object-entry-edge]')).toHaveCount(0)
   await expect(controls.locator('[data-bc-object-floating-handle]')).not.toHaveAttribute('data-bc-object-drag-handle')
   await controls.locator('[data-bc-object-floating-handle]').click()
   await expect(block).toHaveClass(/selected/)
   await page.evaluate(() => (window as any).cornerInteraction.doc.selection.blur())
   await block.hover({position: {x: 150, y: 80}})
-  await controls.locator('[data-bc-object-corner="nw"]').click()
+  await controls.locator('[data-bc-object-floating-handle]').focus()
+  await page.keyboard.press('Enter')
   await expect(block).toHaveClass(/selected/)
   await expect(block.locator('shape-resizer')).toBeVisible()
   expect(await page.evaluate(() => {
@@ -248,14 +218,14 @@ test('填写区四角只选中和缩放，不新增移动能力', async ({page})
   })).toEqual([false, false])
 })
 
-test('嵌套文本框悬停只显示最近对象的四角，正文仍可编辑', async ({page}) => {
+test('嵌套文本框悬停只显示最近对象的轻量入口，正文仍可编辑', async ({page}) => {
   const id = await setup(page, 'text-box', 1, true)
   const block = page.locator(`[data-block-id="${id}"]`)
   const outerId = await page.evaluate(() => (window as any).cornerInteraction.regionId as string)
   const outerControls = page.locator(`[data-block-id="${outerId}"] > bc-object-corner-controls`)
   await block.locator('.text-box-block__content').hover()
-  await expect(block.locator('[data-bc-object-corner="nw"]')).toBeVisible()
-  await expect(outerControls.locator('[data-bc-object-corner="nw"]')).toBeHidden()
+  await expect(block.locator('[data-bc-object-floating-handle]')).toBeVisible()
+  await expect(outerControls.locator('[data-bc-object-floating-handle]')).toBeHidden()
   await block.locator('c-text').first().click()
   await expect.poll(() => page.evaluate(() => {
     const {doc, targetId} = (window as any).cornerInteraction

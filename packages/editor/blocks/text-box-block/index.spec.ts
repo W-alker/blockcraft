@@ -364,13 +364,13 @@ describe("TextBoxBlockSchema", () => {
       expect(getComputedStyle(resizer).display).toBe("block");
       expect(getComputedStyle(corners).display).toBe("none");
 
-      // 正文聚焦显示轻量边框和四角，完整缩放器仍只用于整对象选中。
+      // 正文聚焦显示轻量边框和顶部抓手，完整缩放器仍只用于整对象选中。
       resizer.closest(".text-box-block")!.classList.remove("selected");
       expect(getComputedStyle(resizer).display).toBe("none");
       expect(getComputedStyle(corners).visibility).toBe("visible");
       expect(getComputedStyle(corners).outlineWidth).toBe("1px");
       expect(getComputedStyle(corners).pointerEvents).toBe("none");
-      expect(corners.querySelectorAll('[data-bc-object-corner]').length).toBe(4);
+      expect(corners.querySelectorAll('[data-bc-object-corner]').length).toBe(0);
     } finally {
       fixture.destroy();
       TestBed.resetTestingModule();
@@ -696,10 +696,10 @@ describe("TextBoxBlockSchema", () => {
       expect(corners).not.toBeNull();
       expect(corners.getAttribute("contenteditable")).toBe("false");
       expect(corners.hasAttribute("data-bc-selection-interaction-ignore")).toBeTrue();
-      expect(corners.querySelectorAll('[data-bc-object-corner]').length).toBe(4);
+      expect(corners.querySelectorAll('[data-bc-object-corner]').length).toBe(0);
       expect(corners.querySelectorAll('[data-bc-object-entry-edge]').length).toBe(4);
-      expect(corners.querySelector('[data-bc-object-corner="nw"]')?.getAttribute('aria-label'))
-        .toBe('左上角：选中文本框');
+      expect(corners.querySelector('[data-bc-object-floating-handle]')?.getAttribute('aria-label'))
+        .toBe('选中文本框并拖动');
       expect(fixture.nativeElement.querySelector(".text-box-block__object-handle")).toBeNull();
       const frameHitTarget = fixture.nativeElement.querySelector(
         ".text-box-block__frame-hit-target",

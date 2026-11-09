@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-11-05
+> Last updated: 2026-11-09
 
 ## 通用浮动工具栏外观
 
@@ -11,6 +11,45 @@
 纵向菜单保留整行选项，固定工具栏子菜单不叠加第二层浮层背景。
 不改变按钮事件、选区与 Overlay 生命周期；宿主若曾依赖 40px 行高或宽按钮间距，应移除旧尺寸覆盖，
 改用 `blockcraft-theme.md` 中的 `--bc-float-toolbar-*` 尺寸变量。虚拟滚动选择器尺寸独立管理。
+
+## 可收起的迷你对象工具栏（未发布）
+
+对象格式、组合与内容区域工具栏复用主入口导出的 `FloatingToolbarComponent`（`bc-floating-toolbar`）
+和 `FloatingToolbarState`。职责划分：插件持有会话状态并跨浮层重建复用；外壳负责圆形加/减按钮、
+键盘与焦点回收、内容显隐；业务组件负责在收起时提交待提交输入、取消临时效果并关闭二级面板；快捷条和设置内容仅在展开时渲染，收起时移出 DOM。
+状态只影响本地 UI，不进入 Yjs、快照、Undo 或跨文档全局设置。默认展开；切换目标、只读退出后
+重新打开时沿用同一插件实例的状态。普通二级页签的开关仍由原有 PopupState 管理。
+
+```typescript
+import {FloatingToolbarComponent, FloatingToolbarState} from '@ccc/blockcraft';
+
+// 在自定义插件中创建一次；创建浮层时通过 setInput('toolbarState', state) 传入组件。
+const state = new FloatingToolbarState({collapsed: true});
+state.setCollapsed(false); // 即时展开，包括当前已创建的浮层
+state.toggle();
+const collapsed = state.collapsed();
+const subscription = state.changes$.subscribe(collapsed => { /* 可选宿主通知 */ });
+// 插件销毁时取消自己的订阅；组件销毁时只解除自身订阅，不重置共享状态。
+subscription.unsubscribe();
+```
+
+组件将 `FloatingToolbarComponent` 加入 imports，接入方式：
+
+```html
+<bc-floating-toolbar [state]="toolbarState" [side]="side" label="对象工具栏"
+                     (collapsedChange)="$event && closeSettings()">
+  <!-- 原有快捷条和二级面板，不改变业务命令或 Overlay 所有权 -->
+</bc-floating-toolbar>
+```
+
+`side` 为 `right`（默认）或 `left`，使加减按钮始终位于快捷条上方；`label` 用于可访问名称。
+`collapsedChange` 同时覆盖按钮与 API 切换，收起时若焦点位于工具栏内容中，会回到展开按钮。
+使用 `fitToAvailableSpace` 限高的普通流式面板可设置 `[constrainHeight]="true"`，按 Overlay 的可用高度投影 `--bc-floating-toolbar-content-height`，由设置面板自身滚动并保留顶部开关，外壳不再创建第二层滚动。默认 false，绝对定位的内容区域设置面板沿用自身避让。
+展开/收起与页签变化后，宿主通过既有合并 rAF 请求 Overlay.updatePosition，展开也需刷新一次以解除旧尺寸限制。
+高度预算监听只随浮层存活，不增加全局滚轮拦截；设置面板保留唯一的正文滚动容器。
+桌面侧条宽 34px、快捷按钮 26px、图标 14px；圆形收起按钮 20px，命中范围 24px，与快捷条间距 3px。
+浮层以对象顶部为锚点，快捷条与设置面板顶部对齐；面板使用锚点下方可用空间，展开、收起与切换页签保留顶部入口位置。触摸主指针下侧条与快捷按钮放大至 42px/34px。
+常规设置卡宽 240px、布局/内容区域设置卡宽 208px，桌面输入控件高 24px；触摸环境保留较大操作尺寸。
 
 ## 可滚动弹窗避让锚点
 
@@ -465,14 +504,14 @@ not nested forms. A Word-style object toolbar should use one block-owned
 connected Overlay for the rail and secondary card, then click-switch local
 panel state without recreating the overlay or writing document data.
 `ObjectFormatToolbarComponent` is the bundled reference for this two-level
-pattern: it preserves the established side-aware 42px iconfont rail, 288px
-format card, compact 228px layout card, center-first connected positions and
+pattern: it preserves the established side-aware 34px iconfont rail, 240px
+format card, compact 208px layout card, top-aligned connected positions and
 RAF panel repositioning. Secondary cards omit redundant title/description
 headers. Layout modes use compact CSES buttons with the icon above a visible
 one- or two-line label, plus tooltips and an active state. Their equal-width
 columns fill the available row after capability filtering. Mixed absolute-object
 selection bypasses this format rail and uses the restored compact horizontal
-group toolbar for alignment, distribution and grouping; a selected group reuses
+group toolbar, anchored at the object top on the available side, for alignment, distribution and grouping; a selected group reuses
 that surface for layout, hierarchy and ungrouping. Preserve the historical group
 focus handoff: first click selects the group, second click may enter a member,
 and member Selection retains the ancestor group frame. Resolve those commands from

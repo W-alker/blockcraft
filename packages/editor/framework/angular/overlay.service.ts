@@ -408,6 +408,11 @@ export class DocOverlayService {
       if (originX === 'right' && overlayX === 'left') width = bounds.right - target.right - dx;
       if (position.originY === 'top' && position.overlayY === 'bottom') height = target.top + dy - bounds.top;
       if (position.originY === 'bottom' && position.overlayY === 'top') height = bounds.bottom - target.bottom - dy;
+      // 顶部对齐的侧栏只使用锚点下方空间；不能把整个视口高度当作预算，
+      // 否则面板变高后 CDK 会向上推移整个浮层，连顶部入口也一起跳动。
+      if (position.originY === 'top' && position.overlayY === 'top') {
+        height = bounds.bottom - Math.max(bounds.top, target.top + dy);
+      }
       width = Math.max(0, Math.min(width, bounds.right - bounds.left));
       height = Math.max(0, Math.min(height, bounds.bottom - bounds.top));
       return {position, width, height, area: Math.min(width, panel.width) * Math.min(height, panel.height)};

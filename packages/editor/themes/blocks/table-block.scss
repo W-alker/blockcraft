@@ -450,6 +450,9 @@
       > .table-scrollable > .table-wrapper > table {
         width: 100%;
         table-layout: auto;
+        // 隐藏测量行仍参与 collapse 边框布局；底线交给最后一行单元格，
+        // 避免测量行与 table 外框之间额外撑出 1px。
+        border-bottom: 0;
       }
 
       // A media surface's requested pixels must contribute to the column's

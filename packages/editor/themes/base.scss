@@ -33,6 +33,7 @@
 @import "components/snapshot-viewer";
 @import "components/resource-placeholder";
 @import "components/media-object-resizer";
+@import "components/object-interaction-chrome";
 
 // 流式排序和浮动移动共用会话级源标记；正文排序继续淡化原位副本。
 .bc-drag-source {

@@ -107,25 +107,18 @@ for (const scale of [0.75, 1.25]) {
     expect(footer).toEqual(footerReference)
     expect(header).toEqual(headerReference)
 
-    // 悬停正文时四角入口一起出现，顶部两个角在真实纸张范围内可命中。
+    // 悬停正文时仅保留顶部选择抓手，不再创建四角聚焦点。
     const region = page.locator(`[data-block-id="${ids.region}"]`)
     await region.locator('.paragraph-block').first().hover()
-    const corners = region.locator(':scope > bc-object-corner-controls [data-bc-object-corner]')
-    await expect(corners).toHaveCount(4)
-    for (const side of ['nw', 'ne']) {
-      const corner = region.locator(`:scope > bc-object-corner-controls [data-bc-object-corner="${side}"]`)
-      await expect(corner).toBeVisible()
-      const result = await corner.evaluate((el, scale) => {
-        const r = el.getBoundingClientRect()
-        const glyph = getComputedStyle(el, '::after')
-        const x = r.x + parseFloat(glyph.left) * scale
-        const y = r.y + parseFloat(glyph.top) * scale
-        const hit = document.elementFromPoint(x, y)
-        return {matches: el === hit || el.contains(hit), point: {x, y},
-          bounds: r.toJSON(), hit: hit?.outerHTML.slice(0, 220)}
-      }, scale)
-      expect(result.matches, JSON.stringify(result)).toBe(true)
-    }
+    await expect(region.locator(':scope > bc-object-corner-controls [data-bc-object-corner]')).toHaveCount(0)
+    const handle = region.locator(':scope > bc-object-corner-controls [data-bc-object-floating-handle]')
+    await expect(handle).toBeVisible()
+    const result = await handle.evaluate(el => {
+      const r = el.getBoundingClientRect()
+      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height * .75)
+      return {matches: el === hit || el.contains(hit), bounds: r.toJSON(), hit: hit?.outerHTML.slice(0, 220)}
+    })
+    expect(result.matches, JSON.stringify(result)).toBe(true)
     await page.mouse.move(0, 0)
     await page.screenshot({path: testInfo.outputPath('region-transparent-gap.png')})
   })

@@ -24,16 +24,16 @@ describe('ObjectCornerControlsComponent', () => {
     TestBed.resetTestingModule()
   })
 
-  const corner = () => fixture.nativeElement.querySelector('[data-bc-object-corner="nw"]') as HTMLButtonElement
   const floatingHandle = () => fixture.nativeElement.querySelector('[data-bc-object-floating-handle]') as HTMLButtonElement
 
-  it('keeps four named selection buttons outside editing and drag handling', () => {
+  it('keeps only the floating selection button outside editing and drag handling', () => {
     const host = fixture.nativeElement as HTMLElement
     expect(host.getAttribute('contenteditable')).toBe('false')
     expect(host.hasAttribute('data-bc-selection-interaction-ignore')).toBeTrue()
     expect(host.getAttribute('data-bc-print-exclude')).toBe('true')
-    expect(host.querySelectorAll('[data-bc-object-corner]').length).toBe(4)
-    expect(corner().getAttribute('aria-label')).toBe('左上角：选中文本框')
+    expect(host.querySelectorAll('[data-bc-object-corner]').length).toBe(0)
+    expect(host.querySelectorAll('button').length).toBe(1)
+    expect(floatingHandle().getAttribute('aria-label')).toBe('选中文本框')
     for (const button of Array.from(host.querySelectorAll('button'))) {
       expect(button.hasAttribute('data-bc-object-select-handle')).toBeTrue()
       expect(button.hasAttribute('data-bc-nodrag')).toBeTrue()
@@ -75,14 +75,14 @@ describe('ObjectCornerControlsComponent', () => {
     const bubbled = jasmine.createSpy('bubbled')
     container.addEventListener('pointerdown', bubbled)
     const down = new PointerEvent('pointerdown', {button: 0, isPrimary: true, bubbles: true, cancelable: true})
-    corner().dispatchEvent(down)
-    corner().dispatchEvent(new PointerEvent('pointermove', {isPrimary: true, clientX: 50, clientY: 50, bubbles: true}))
-    corner().dispatchEvent(new PointerEvent('pointerup', {button: 0, isPrimary: true, bubbles: true}))
+    floatingHandle().dispatchEvent(down)
+    floatingHandle().dispatchEvent(new PointerEvent('pointermove', {isPrimary: true, clientX: 50, clientY: 50, bubbles: true}))
+    floatingHandle().dispatchEvent(new PointerEvent('pointerup', {button: 0, isPrimary: true, bubbles: true}))
     expect(down.defaultPrevented).toBeTrue()
     expect(bubbled).not.toHaveBeenCalled()
     expect(block.doc.selection.selectBlock).not.toHaveBeenCalled()
     const click = new MouseEvent('click', {button: 0, bubbles: true, cancelable: true})
-    corner().dispatchEvent(click)
+    floatingHandle().dispatchEvent(click)
     expect(click.defaultPrevented).toBeTrue()
     expect(block.doc.selection.selectBlock).toHaveBeenCalledOnceWith(block)
   })
@@ -90,17 +90,17 @@ describe('ObjectCornerControlsComponent', () => {
   it('does not consume secondary pointer presses or select from secondary clicks', () => {
     for (const properties of [{button: 2, isPrimary: true}, {button: 0, isPrimary: false}]) {
       const down = new PointerEvent('pointerdown', {...properties, bubbles: true, cancelable: true})
-      corner().dispatchEvent(down)
+      floatingHandle().dispatchEvent(down)
       expect(down.defaultPrevented).toBeFalse()
     }
-    corner().dispatchEvent(new MouseEvent('click', {button: 2, bubbles: true, cancelable: true}))
+    floatingHandle().dispatchEvent(new MouseEvent('click', {button: 2, bubbles: true, cancelable: true}))
     expect(block.doc.selection.selectBlock).not.toHaveBeenCalled()
   })
 
   it('rejects selection when permissions change before the click', () => {
-    corner().dispatchEvent(new PointerEvent('pointerdown', {button: 0, isPrimary: true, cancelable: true}))
+    floatingHandle().dispatchEvent(new PointerEvent('pointerdown', {button: 0, isPrimary: true, cancelable: true}))
     block.isReadonly = true
-    corner().click()
+    floatingHandle().click()
     expect(block.doc.selection.selectBlock).not.toHaveBeenCalled()
   })
 
@@ -109,12 +109,12 @@ describe('ObjectCornerControlsComponent', () => {
       const bubbled = jasmine.createSpy('keydown')
       container.addEventListener('keydown', bubbled)
       const keydown = new KeyboardEvent('keydown', {key, bubbles: true, cancelable: true})
-      corner().dispatchEvent(keydown)
+      floatingHandle().dispatchEvent(keydown)
       expect(keydown.defaultPrevented).toBeFalse()
       expect(bubbled).not.toHaveBeenCalled()
       expect(block.doc.selection.selectBlock).not.toHaveBeenCalled()
       // 浏览器键盘激活按钮发出 detail=0 的 click；不能依赖坐标或 pointerdown。
-      corner().dispatchEvent(new MouseEvent('click', {button: 0, detail: 0, bubbles: true, cancelable: true}))
+      floatingHandle().dispatchEvent(new MouseEvent('click', {button: 0, detail: 0, bubbles: true, cancelable: true}))
       expect(block.doc.selection.selectBlock).toHaveBeenCalledOnceWith(block)
     })
   }

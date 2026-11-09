@@ -89,6 +89,10 @@ import {createWordArtResizePreview} from '../word-art-block/word-art-resize-prev
       outline-offset: var(--bc-object-group-padding);
     }
 
+    :host(.bc-object-group--selection-within:not(.selected)) {
+      outline: 1px dashed var(--bc-active-color, #4857e2);
+    }
+
     /* The resizer owns the selected frame; retain the ancestor/readonly frame
        without painting two adjacent outlines around an editable selection. */
     :host(.selected):has(> shape-resizer) {

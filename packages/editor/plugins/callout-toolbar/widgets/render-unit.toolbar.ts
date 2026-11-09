@@ -1,3 +1,4 @@
+import {FloatingToolbarComponent, FloatingToolbarState} from '../../../components/floating-toolbar'
 import {ChangeDetectionStrategy, Component, ElementRef, Input, ViewChild, signal} from '@angular/core'
 import {Subscription} from 'rxjs'
 import {FormsModule} from '@angular/forms'
@@ -18,28 +19,30 @@ const PANEL_MAX_HEIGHT = 520
 @Component({
   selector: 'render-unit-toolbar',
   standalone: true,
-  imports: [FormsModule, CsButtonComponent, CsColorPickerComponent, CsInputNumberComponent, CsOptionComponent, CsSegmentedComponent, CsSelectComponent, CsSliderComponent, CsTooltipDirective],
+  imports: [FloatingToolbarComponent, FormsModule, CsButtonComponent, CsColorPickerComponent, CsInputNumberComponent, CsOptionComponent, CsSegmentedComponent, CsSelectComponent, CsSliderComponent, CsTooltipDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
+      <bc-floating-toolbar [state]="toolbarState" label="内容区域工具栏" (collapsedChange)="$event && collapseToolbar()">
+      @if (!toolbarState.collapsed()) {
       <div class="object-format object-format--anchored" [class.object-format--left]="panelSide === 'right'"
            contenteditable="false" data-bc-region-format-toolbar>
         <nav #rail class="object-format__rail" aria-label="内容区域快捷工具">
           <button cs-button csType="text" csSize="sm" type="button"
                   [class.active]="activePanel === 'appearance'"
                   [attr.aria-expanded]="activePanel === 'appearance'" aria-label="外观选项"
-                  csTooltip="外观选项" [csTooltipPlacement]="panelSide === 'left' ? 'right' : 'left'" (click)="togglePanel('appearance')">
+                  csTooltip="外观选项" [csTooltipDisabled]="!!activePanel" [csTooltipPlacement]="panelSide === 'left' ? 'right' : 'left'" (click)="togglePanel('appearance')">
             <i class="bc_icon bc_tuxing" aria-hidden="true"></i>
           </button>
           <button cs-button csType="text" csSize="sm" type="button"
                   [class.active]="activePanel === 'text'"
                   [attr.aria-expanded]="activePanel === 'text'" aria-label="文本选项"
-                  csTooltip="文本选项" [csTooltipPlacement]="panelSide === 'left' ? 'right' : 'left'" (click)="togglePanel('text')">
+                  csTooltip="文本选项" [csTooltipDisabled]="!!activePanel" [csTooltipPlacement]="panelSide === 'left' ? 'right' : 'left'" (click)="togglePanel('text')">
             <i class="bc_icon bc_wenben" aria-hidden="true"></i>
           </button>
           <button cs-button csType="text" csSize="sm" type="button"
                   [attr.aria-label]="hasFixedHeight() ? '恢复内容自适应' : '切换为固定尺寸'"
                   [csTooltip]="hasFixedHeight() ? '固定尺寸，点击恢复内容自适应' : '内容自适应，点击切换为固定尺寸'"
-                  [csTooltipPlacement]="panelSide === 'left' ? 'right' : 'left'"
+                  [csTooltipDisabled]="!!activePanel" [csTooltipPlacement]="panelSide === 'left' ? 'right' : 'left'"
                   (mousedown)="$event.preventDefault()" (click)="containerBlock.toggleSizeMode()">
             <i class="bc_icon" [class.bc_size-fixed]="hasFixedHeight()" [class.bc_size-auto]="!hasFixedHeight()" aria-hidden="true"></i>
           </button>
@@ -178,32 +181,37 @@ const PANEL_MAX_HEIGHT = 520
           </aside>
         }
       </div>
+      }
+      </bc-floating-toolbar>
   `,
-  styles: [OBJECT_FORMAT_POPUP_STYLES, `
-    .object-format{--object-format-settings-panel-width:228px}
+  // 公共外壳和本地布局必须作为同一个内联样式资源编译。
+  styles: [`${OBJECT_FORMAT_POPUP_STYLES}
+
+    .object-format{--object-format-settings-panel-width:208px}
     .object-format__rail .bc_icon{display:block;width:1em;line-height:1;text-align:center;letter-spacing:0;text-indent:0}
     .object-format__rail .bc_icon::before{display:block}
     .object-format__rail .bc_size-fixed{transform:translateY(calc(23 / 1024 * 1em))}
     .object-format__tab-section{padding:2px 0}
     .region-format__color{display:flex;flex-direction:column;gap:6px}
     .region-format__color cs-color-picker{align-self:flex-start}
-    .region-format__opacity{display:grid;grid-template-columns:48px minmax(0,1fr) 36px;align-items:center;gap:6px;margin-top:10px}
+    .region-format__opacity{display:grid;grid-template-columns:48px minmax(0,1fr) 36px;align-items:center;gap:6px;margin-top:6px}
     .region-format__opacity cs-slider{min-width:0}
     .region-format__opacity output{font-variant-numeric:tabular-nums;text-align:right;color:var(--bc-color-secondary,#697386)}
-    .region-format__fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:10px}
-    .region-format__fields label{display:flex;flex-direction:column;gap:6px;min-width:0}
+    .region-format__fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-bottom:6px}
+    .region-format__fields label{display:flex;flex-direction:column;gap:3px;min-width:0}
     .region-format__fields cs-input-number,.region-format__fields cs-select{min-width:0}
     .region-format__wide{grid-column:1/-1}
     .region-format__reset{display:inline-flex;align-items:center;gap:5px}
     .region-format__reset .bc_icon{font-size:14px}
-    .region-format__per-side{margin-top:10px;border-top:1px solid var(--bc-float-toolbar-divider-color,#e2e8f0);padding-top:8px}
+    .region-format__per-side{margin-top:6px;border-top:1px solid var(--bc-float-toolbar-divider-color,#e2e8f0);padding-top:6px}
     .region-format__per-side summary{cursor:pointer;font-size:12px}
-    .region-format__per-side-body{display:grid;gap:10px;padding-top:10px}
+    .region-format__per-side-body{display:grid;gap:6px;padding-top:6px}
     .region-format__per-side-body .region-format__fields{margin-bottom:0}
     .region-format__hint{font-size:11px;color:var(--bc-color-secondary,#697386)}
   `],
 })
 export class RenderUnitToolbar {
+  @Input() toolbarState = new FloatingToolbarState()
   @Input() containerBlock!: BlockCraft.IBlockComponents['render-unit']
   readonly hasFixedHeight = signal(false)
   private sizeSubscription?: Subscription
@@ -368,6 +376,11 @@ export class RenderUnitToolbar {
     }
   }
 
+  collapseToolbar() {
+    this.commitBackOpacity()
+    this.popup.close()
+  }
+
   togglePanel(panel: RegionPanel) {
     if (this.activePanel === null) {
       const railRect = this.rail?.nativeElement.getBoundingClientRect()
@@ -376,7 +389,7 @@ export class RenderUnitToolbar {
       if (railRect) {
         const leftSpace = railRect.left - boundary.left - 8
         const rightSpace = boundary.right - railRect.right - 8
-        this.panelSide = rightSpace >= 228 || rightSpace > leftSpace ? 'right' : 'left'
+        this.panelSide = rightSpace >= 208 || rightSpace > leftSpace ? 'right' : 'left'
       }
     }
     this.popup.toggle(panel)

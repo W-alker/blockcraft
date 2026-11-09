@@ -2,7 +2,14 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-11-06
+> Last updated: 2026-11-09
+
+## 对象悬停与内部编辑提示
+
+`components/object-interaction-chrome.scss` 统一文本框、形状、艺术字、图片的选择提示：
+悬停或内部编辑时使用 `1px dashed color-mix(in srgb, var(--bc-active-color) 35%, transparent)`，整体选中时沿用原实线缩放框。
+设计模式内部编辑时已显示的抓手框也采用淡虚线；不改变抓手显隐、命中带或拖动事务。
+只作用于编辑态屏幕提示，不改变对象保存的轮廓、快照、只读锁定装饰及打印；填写区和贴纸保持原有样式。
 
 ## 代码块行容器
 
@@ -381,9 +388,9 @@ does not grow its last child because it owns vertical alignment itself.
 
 文本框、可编辑艺术字和填写区共享内部 `object-corner-controls` 主题 mixin，
 负责显示各自 `bc-object-corner-controls` 的轻量入口。整块悬停或内部聚焦时，
-细边框、内侧四个 8px L 角和顶部 24×14px 浮动抓手同时出现；角部悬停/键盘聚焦才显示 18px 浅底。
-顶部抓手沿对象顶边居中，使用 `bc_yidong` 字体图标，与四角共享显隐和打印排除规则。
-颜色使用 `--bc-active-color` 与背景主题变量，角按钮仅选择，文字编辑区域不作为拖动面。
+细边框与顶部 24×14px 浮动抓手同时出现；默认不再创建四个轻量 L 角、角部按钮与其命中区。
+顶部抓手沿对象顶边居中，使用 `bc_yidong` 字体图标，沿用轻量入口的显隐和打印排除规则。
+颜色使用 `--bc-active-color` 与背景主题变量，正文编辑区域不作为拖动面。
 文本框、填写区通过 `.selected` 隐藏入口，艺术字使用 Plugin 持有的
 `.word-art-block--object-selected`，因为 editable Block 的 `.focused` 同时用于文字光标与整块覆盖。
 整块选中后显示既有 `shape-resizer`；普通文字聚焦仅显示轻量入口，不显示缩放器。
@@ -644,3 +651,14 @@ For the current variable definitions and theme patterns, read:
 - `packages/editor/themes/dark.scss`
 - `packages/editor/themes/plugins/pagination.scss`
 - Any existing block style file in `packages/editor/themes/blocks/` as reference
+
+## 迷你对象浮动工具栏（未发布）
+
+对象格式和内容区域共用的侧条由 42px 缩为 34px，按钮 26px、图标 14px、内距 3px、间距 2px。
+共享 `bc-floating-toolbar` 在快捷条上方显示 20px 圆形加/减按钮（24px 命中范围、3px 间距）；收起仅保留该按钮。
+组合工具条沿用横向排列并复用同一外壳。触摸主指针保留较大操作面积。
+常规设置卡宽 240px，布局和内容区域设置卡宽 208px；内距 8px、设置行间距 6px，桌面输入控件统一 24px 高。
+颜色、背景、分隔线与投影复用既有 `--bc-float-toolbar-*` 和 `--bc-fixed-toolbar-shadow`，
+不新增文档样式或持久化属性。收起状态的创建与运行时切换见 `blockcraft-toolbar.md`。
+
+`--bc-floating-toolbar-content-height` 是工具栏根据 Overlay 可用空间投影的只读布局预算，设置卡和快捷条分别限制自身高度；外壳不承担滚轮滚动。

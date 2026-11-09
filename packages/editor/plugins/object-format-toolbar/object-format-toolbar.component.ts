@@ -1,3 +1,4 @@
+import {FloatingToolbarComponent, FloatingToolbarState} from '../../components/floating-toolbar';
 import {ObjectAnimationSettingsComponent} from '../object-animation/settings.component';
 import {
   ChangeDetectionStrategy,
@@ -107,6 +108,7 @@ export type ObjectFormatToolbarAction =
 @Component({
   selector: "bc-object-format-toolbar",
   imports: [
+    FloatingToolbarComponent,
     FormsModule,
     CsButtonComponent,
     CsColorPickerComponent,
@@ -124,6 +126,8 @@ export type ObjectFormatToolbarAction =
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
+    <bc-floating-toolbar [state]="toolbarState" [side]="side" [constrainHeight]="true" (collapsedChange)="$event ? close() : panelChange.emit()">
+    @if (!toolbarState.collapsed()) {
     <div
       class="object-format"
       [class.object-format--left]="side === 'left'"
@@ -142,6 +146,7 @@ export type ObjectFormatToolbarAction =
               [attr.aria-expanded]="activePanel === item.value"
               [attr.aria-label]="item.label"
               [csTooltip]="item.label"
+              [csTooltipDisabled]="!!activePanel"
               csTooltipPlacement="left"
               (click)="open(item.value)"
             >
@@ -1027,13 +1032,6 @@ export type ObjectFormatToolbarAction =
                           }
                         </cs-select>
                       </label>
-                      <label class="object-format__switch-row"
-                        >斜体
-                        <cs-switch
-                          csSize="sm"
-                          [csChecked]="textStyle.fontStyle === 'italic'"
-                          (csCheckedChange)="textItalicValue($event)"
-                      /></label>
                     </div>
                   }
                 </section>
@@ -1310,10 +1308,12 @@ export type ObjectFormatToolbarAction =
         </aside>
       }
     </div>
+    }
+    </bc-floating-toolbar>
   `,
+  // 合并为同一个内联样式资源，避免 SCSS 构建复用首段而丢失设置区布局。
   styles: [
-    OBJECT_FORMAT_POPUP_STYLES,
-    `
+    `${OBJECT_FORMAT_POPUP_STYLES}
       .object-format__notice {
         margin-bottom: 8px;
         padding: 7px 8px;
@@ -1322,11 +1322,11 @@ export type ObjectFormatToolbarAction =
         background: #fffbeb;
       }
       section {
-        padding: 10px 0;
+        padding: 6px 0;
         border-bottom: 1px solid var(--bc-float-toolbar-divider-color, #e2e8f0);
         display: grid;
         grid-template-columns: minmax(0, 1fr);
-        gap: 10px;
+        gap: 6px;
       }
       section:first-child {
         padding-top: 0;
@@ -1344,8 +1344,8 @@ export type ObjectFormatToolbarAction =
       label,
       .object-format__color-row {
         display: grid;
-        grid-template-columns: minmax(92px, 1fr) minmax(0, 1.4fr);
-        gap: 8px;
+        grid-template-columns: 72px minmax(0, 1fr);
+        gap: 6px;
         align-items: center;
         min-width: 0;
       }
@@ -1372,7 +1372,7 @@ export type ObjectFormatToolbarAction =
         grid-template-columns: minmax(0, 1fr) auto;
       }
       .object-format__slider-row {
-        grid-template-columns: 84px minmax(0, 1fr) 38px;
+        grid-template-columns: 72px minmax(0, 1fr) 30px;
       }
       .object-format__slider-row output {
         color: var(--bc-color-secondary, #697386);
@@ -1381,7 +1381,7 @@ export type ObjectFormatToolbarAction =
       }
       .object-format__grid {
         display: grid;
-        gap: 7px;
+        gap: 6px;
       }
       .object-format__grid--2 {
         grid-template-columns: 1fr 1fr;
@@ -1389,7 +1389,7 @@ export type ObjectFormatToolbarAction =
       .object-format__margin-grid > label {
         grid-template-columns: minmax(0, 1fr);
         align-items: stretch;
-        gap: 3px;
+        gap: 2px;
         font-size: 11px;
       }
       .object-format__margin-input {
@@ -1421,17 +1421,18 @@ export type ObjectFormatToolbarAction =
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 4px;
+        gap: 3px;
         min-width: 0;
         width: 100%;
-        min-height: 58px;
-        height: 58px;
-        padding: 4px 2px;
+        min-height: 48px;
+        height: 48px;
+        padding: 3px 2px;
         border-color: transparent;
         background: transparent;
       }
       .object-format__icon-action .bc_icon {
-        font-size: 17px;
+        font-size: 15px;
+        line-height: 1;
       }
       .object-format__icon-action span {
         display: -webkit-box;
@@ -1448,13 +1449,13 @@ export type ObjectFormatToolbarAction =
         -webkit-line-clamp: 2;
       }
       .object-format__icon-action.active {
-        border-color: var(--bc-active-color, #4857e2);
-        background: var(--bc-float-toolbar-item-active-bg, #eef2ff);
+        border-color: transparent;
+        background: color-mix(in srgb, var(--bc-active-color, #4857e2) 8%, transparent);
         color: var(--bc-active-color, #4857e2);
       }
       .object-format__scroll--layout section {
         gap: 6px;
-        padding-block: 7px;
+        padding-block: 6px;
       }
       .object-format__scroll--layout h3 {
         font-size: 11px;
@@ -1489,42 +1490,43 @@ export type ObjectFormatToolbarAction =
       .object-format__section-body {
         display: grid;
         grid-template-columns: minmax(0, 1fr);
-        gap: 10px;
+        gap: 6px;
         min-width: 0;
       }
       .object-format__picture-config {
         display: grid;
-        gap: 10px;
+        gap: 6px;
         min-width: 0;
       }
       .object-format__confirm-row {
         position: sticky;
-        bottom: -10px;
+        bottom: -8px;
         display: flex;
         z-index: 1;
         justify-content: flex-end;
         gap: 6px;
         margin: 2px -2px -8px;
-        padding: 8px 2px;
+        padding: 6px 2px;
         background: var(--bc-float-toolbar-bg, #fff);
         border-top: 1px solid var(--bc-float-toolbar-divider-color, #e2e8f0);
       }
       @media (max-width: 720px), (max-height: 680px) {
         .object-format__panel {
-          max-height: min(520px, calc(100vh - 24px));
+          max-height: min(520px, calc(100vh - 24px), var(--bc-floating-toolbar-content-height, 520px));
         }
         section {
-          padding-block: 9px;
+          padding-block: 6px;
         }
         .object-format__icon-action {
-          min-height: 54px;
-          height: 54px;
+          min-height: 48px;
+          height: 48px;
         }
       }
     `,
   ],
 })
 export class ObjectFormatToolbarComponent {
+  @Input() toolbarState = new FloatingToolbarState();
   @Input() doc?: BlockCraft.Doc;
   @Input({ required: true }) state!: BlockObjectFormatSelectionState;
   @Input() side: "left" | "right" = "right";

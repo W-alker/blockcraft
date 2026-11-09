@@ -96,6 +96,28 @@ const state: BlockObjectFormatSelectionState = {
 };
 
 describe("ObjectFormatToolbarComponent", () => {
+  it("cleans effect previews and commits pending sliders on live collapse", () => {
+    const fixture = TestBed.createComponent(ObjectFormatToolbarComponent);
+    fixture.componentRef.setInput("state", state);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+    const actions: any[] = [];
+    component.action.subscribe(action => actions.push(action));
+    component.open("shape");
+    component.effectEnabledValue("shadow", true);
+    component.fillOpacityValue(45);
+    expect(component.hasShapeEffectsDraft).toBeTrue();
+    component.toolbarState.setCollapsed(true);
+    fixture.detectChanges();
+    expect(component.activePanel).toBeNull();
+    expect(component.hasShapeEffectsDraft).toBeFalse();
+    expect(actions.some(action => action.name === "patch" && action.patch.shapeFill?.opacity === 0.45)).toBeTrue();
+    expect(actions.at(-1).name).toBe("restore-preview");
+    component.toolbarState.setCollapsed(false);
+    fixture.detectChanges();
+    expect(component.activePanel).toBeNull();
+  });
+
   it("removes text picture controls for shapes and WordArt while retaining shape picture fill", async () => {
     await TestBed.configureTestingModule({imports: [ObjectFormatToolbarComponent]}).compileComponents();
     const fixture = TestBed.createComponent(ObjectFormatToolbarComponent);

@@ -135,6 +135,24 @@ describe('DocOverlayService', () => {
     }
   }
 
+  it('limits top-aligned side panels to the space below the anchor', () => {
+    const h = createOverlayHarness()
+    try {
+      h.flexiblePosition.withPositions([getPositionWithOffset('right-top', 8, 0)])
+      const target = new DOMRect(100, 350, 80, 60)
+      const panel = new DOMRect(188, 350, 200, 300)
+      ;(h.service as any)._fitConnectedOverlay(h.overlayRef, {
+        strategy: h.flexiblePosition,
+        origin: h.targetElement,
+      }, target, panel, {left: 12, top: 12, right: 600, bottom: 500})
+      expect(h.overlayRef.updateSize).toHaveBeenCalledWith({maxWidth: '412px', maxHeight: '150px'})
+      expect(h.flexiblePosition.positions[0].originY).toBe('top')
+      expect(h.flexiblePosition.positions[0].overlayY).toBe('top')
+    } finally {
+      h.cleanup()
+    }
+  })
+
   it('still closes ordinary overlays and releases their lease when readonly begins', () => {
     const h = createOverlayHarness()
     h.service.createConnectedOverlay({target: h.block as any, component: TestOverlayComponent}, h.close$)
