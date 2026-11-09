@@ -214,11 +214,11 @@ export function calculateShapeResize(
       .shape-resizer__handle {
         position: absolute;
         z-index: 2;
-        width: 10px;
-        height: 10px;
+        width: 8px;
+        height: 8px;
         padding: 0;
         border: 1px solid var(--bc-active-color, #4857e2);
-        border-radius: 2px;
+        border-radius: 50%;
         background: var(--bc-bg-primary, #fff);
         pointer-events: auto;
         touch-action: none;
@@ -262,56 +262,56 @@ export function calculateShapeResize(
       }
 
       [data-handle='north-west'] {
-        top: -7px;
-        left: -7px;
+        top: -6px;
+        left: -6px;
         cursor: nwse-resize;
       }
       [data-handle='north'] {
-        top: -7px;
+        top: -6px;
         left: 50%;
         transform: translateX(-50%);
         cursor: ns-resize;
       }
       [data-handle='north-east'] {
-        top: -7px;
-        right: -7px;
+        top: -6px;
+        right: -6px;
         cursor: nesw-resize;
       }
       [data-handle='east'] {
         top: 50%;
-        right: -7px;
+        right: -6px;
         transform: translateY(-50%);
         cursor: ew-resize;
       }
       [data-handle='south-east'] {
-        right: -7px;
-        bottom: -7px;
+        right: -6px;
+        bottom: -6px;
         cursor: nwse-resize;
       }
       [data-handle='south'] {
-        bottom: -7px;
+        bottom: -6px;
         left: 50%;
         transform: translateX(-50%);
         cursor: ns-resize;
       }
       [data-handle='south-west'] {
-        bottom: -7px;
-        left: -7px;
+        bottom: -6px;
+        left: -6px;
         cursor: nesw-resize;
       }
       [data-handle='west'] {
         top: 50%;
-        left: -7px;
+        left: -6px;
         transform: translateY(-50%);
         cursor: ew-resize;
       }
 
       .shape-resizer__rotation-stem {
         position: absolute;
-        top: -29px;
+        top: -31.5px;
         left: 50%;
         width: 1px;
-        height: 21px;
+        height: 23.5px;
         background: var(--bc-active-color, #4857e2);
         transform: translateX(-50%);
         pointer-events: none;
@@ -320,10 +320,10 @@ export function calculateShapeResize(
       .shape-resizer__rotate {
         position: absolute;
         z-index: 2;
-        top: -42px;
+        top: -39.5px;
         left: 50%;
-        width: 13px;
-        height: 13px;
+        width: 8px;
+        height: 8px;
         padding: 0;
         border: 1px solid var(--bc-active-color, #4857e2);
         border-radius: 50%;
