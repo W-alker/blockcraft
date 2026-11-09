@@ -76,6 +76,14 @@ test('样式隔离、隐藏字段、撤销重做、拖动等比缩放和重开',
   const before = await read(page, id)
   const handle = page.locator(`[data-block-id="${id}"] .mtl-scale__bar--right`).first()
   await handle.scrollIntoViewIfNeeded()
+  for (const side of ['left', 'right']) {
+    const bar = page.locator(`[data-block-id="${id}"] .mtl-scale__bar--${side}`).first()
+    expect(await bar.evaluate(element => {
+      const rect = element.getBoundingClientRect()
+      return [rect.left + 2, rect.right - 2].every(x =>
+        element.contains(document.elementFromPoint(x, rect.top + rect.height / 2)))
+    })).toBe(true)
+  }
   const box = (await handle.boundingBox())!
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await page.mouse.down(); await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2, {steps: 6}); await page.mouse.up()

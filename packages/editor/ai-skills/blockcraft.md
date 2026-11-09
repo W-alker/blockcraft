@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-11-06 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-11-09 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 
 ## 应用标题的字号与行高（未发布）
 
@@ -59,6 +59,7 @@
 ## 可配置对象动画（未发布）
 
 整体选中支持 `metadata.placement.modes: ['relative', 'absolute']` 的对象后，对象侧边工具栏显示独立“动画”tab（`bc_donghua`）。
+日期、天气、人员和图片块不显示浮动动画入口，包含这些块的混选同样不显示；形状、文本框、艺术字、贴纸及整体组合的入口保留。
 `doc.objectAnimation` 统一管理设置、预览与阅读播放；`props.animation` 是原生 CSS animation 简写，
 不另存 effect/duration 等字段。默认无动画；编辑和只读模式均按可视区域播放，编辑对象时暂停。面板调整后自动预览、确定后保存并结束选中编辑。
 配置和 CSS keyframes 契约见 `blockcraft-block.md`，宿主与 Snapshot Viewer 见 `blockcraft-app.md`。

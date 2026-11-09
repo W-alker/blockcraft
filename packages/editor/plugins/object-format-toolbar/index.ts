@@ -49,6 +49,12 @@ import { InlineObjectInteractionController } from "../object-layout/inline-objec
 export * from "./object-format-toolbar.component";
 
 const TOOLBAR_GAP = 10;
+const ANIMATION_RAIL_EXCLUDED_FLAVOURS = new Set<BlockCraft.BlockFlavour>([
+  "date-card",
+  "weather",
+  "person-card",
+  "image",
+]);
 
 interface GroupToolbarState {
   mode: ObjectGroupToolbarMode;
@@ -249,6 +255,13 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   }
 
   private openAnimationRail(ids: readonly string[]): void {
+    if (ids.some((id) => {
+      const flavour = this.doc.model.getFlavour(id);
+      return flavour != null && ANIMATION_RAIL_EXCLUDED_FLAVOURS.has(flavour);
+    })) {
+      this.animationRail?.close();
+      return;
+    }
     const anchor = this.doc.vm.get(ids[0])?.instance?.hostElement;
     if (!anchor) return;
     this.animationRail ??= new ObjectAnimationToolbarController(this.doc, () => {

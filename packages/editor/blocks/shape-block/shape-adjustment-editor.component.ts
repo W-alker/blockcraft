@@ -61,10 +61,10 @@ import type {ShapeAdjustmentValues, ShapeKind} from './shape.types'
 
     .shape-adjustment-editor__handle {
       position: absolute;
-      width: 12px;
-      height: 12px;
+      width: 8px;
+      height: 8px;
       padding: 0;
-      border: 2px solid var(--bc-warning-color, #f5a623);
+      border: 1px solid var(--bc-warning-color, #f5a623);
       border-radius: 50%;
       background: var(--bc-bg-primary, #fff);
       transform: translate(-50%, -50%);

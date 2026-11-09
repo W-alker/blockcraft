@@ -16,6 +16,9 @@ These plugins provide floating toolbars that appear when specific block types ar
 
 `ObjectFormatToolbarPlugin` 在形状、文本框、艺术字的「布局 / 形状 / 文本」旁增加独立「动画」tab，图标为 `bc_icon bc_donghua`。
 其他支持 absolute placement 的对象（包括组合）使用共用动画侧栏；单选、同平面多选均可。
+日期（`date-card`）、天气（`weather`）、人员（`person-card`）和图片（`image`）块不显示此浮动动画入口，
+混选包含上述类型时也不创建动画侧栏。它们原有的物料/图片工具栏保留；贴纸与整体组合继续提供动画入口。
+此限制只作用于工具栏展示，不更改 `doc.objectAnimation` 的支持范围、已保存的 `props.animation` 或播放行为。
 编辑文本光标或普通正文选区不显示。设置面板使用同一 `doc.objectAnimation` 事务 API，
 预设分为进入（淡入、飞入、缩放、弹入、翻入、旋入、滚入、落入）和强调（呼吸、摇摆、心跳、抖动、弹跳、漂浮、晃动、旋转），保留“无”选项。
 打开时定位到已保存效果的分类；切换分类只浏览，不修改草稿。另有方向、时长、延迟、重复、速度曲线以及预览/确定。

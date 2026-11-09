@@ -4,6 +4,14 @@
 >
 > Last updated: 2026-11-09 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-11-09：移除图片与动态物料的浮动动画入口
+
+- Severity: patch（精简默认工具栏入口；版本由用户决定）。
+- What changed / Why: 日期、天气、人员及图片块不再额外显示共用动画侧栏，避免叠加独立的浮动动画按钮。
+- Behavior Changes: `ObjectFormatToolbarPlugin` 对上述四类块及包含它们的混选关闭动画侧栏；原物料/图片工具栏、形状/文本框/艺术字动画 tab、贴纸和整体组合动画侧栏保留。
+- Migration Recipe: 无数据迁移。`doc.objectAnimation`、`props.animation` 及已保存动画的播放行为不变；宿主自定义动画操作仍可使用现有 API。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-plugins-toolbar.md`。
+
 ## 未发布 — 2026-11-09：附件后缀与大小优先显示
 
 - Severity: patch（附件显示结构调整；版本由用户决定）。

@@ -90,10 +90,10 @@ import type {CustomShapeGeometry, ShapeKind} from './shape.types'
 
     .shape-geometry-editor__handle {
       position: absolute;
-      width: 12px;
-      height: 12px;
+      width: 8px;
+      height: 8px;
       padding: 0;
-      border: 2px solid var(--bc-warning-color, #f5a623);
+      border: 1px solid var(--bc-warning-color, #f5a623);
       border-radius: 50%;
       background: var(--bc-bg-primary, #fff);
       transform: translate(-50%, -50%);
@@ -103,8 +103,6 @@ import type {CustomShapeGeometry, ShapeKind} from './shape.types'
     }
 
     .shape-geometry-editor__handle--control {
-      width: 10px;
-      height: 10px;
       border-width: 1px;
       border-color: var(--bc-active-color, #4857e2);
       border-radius: 2px;

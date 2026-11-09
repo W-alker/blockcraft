@@ -114,8 +114,11 @@ export const DATE_CARD_TEMPLATE = `
          [style.--dc-font-day]="look().fontSizes.day"
          [style.--dc-font-primary]="look().fontSizes.primary"
          [style.--dc-font-secondary]="look().fontSizes.secondary"
-         style="${DATE_CARD_BOX_STYLE}">
-        <ng-container *ngComponentOutlet="styleDef().component; inputs: { parts: parts(), format: look().format }"></ng-container>
+         style="position:relative;display:inline-block;width:100%;height:100%;max-width:100%;vertical-align:middle;">
+        <!-- Keep card content clipped without cutting off the resize handles. -->
+        <div style="${DATE_CARD_BOX_STYLE}display:block;">
+            <ng-container *ngComponentOutlet="styleDef().component; inputs: { parts: parts(), format: look().format }"></ng-container>
+        </div>
         @if (!isReadonly) {
             <mtl-scale-resizer [target]="boxEl" [maxWidthContainer]="resizeMaxWidth"
                                [geometryScale]="viewGeometryScale"

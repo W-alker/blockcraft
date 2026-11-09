@@ -260,7 +260,7 @@ test('all built-in floatable families share settings; unsupported blocks and rea
   expect(result).toEqual({applied: true, values: Array(8).fill('bc-fade-in 1000ms ease-out 0ms 1 normal none'), undo: true, redo: true, unsupported: false, readonly: false});
 });
 
-test('animation tab switches with existing format tabs and non-format objects share a side rail', async ({page}) => {
+test('animation tabs remain for format objects and stickers, but not image or material blocks', async ({page}) => {
   await setup(page, true);
   const rail = page.locator('bc-object-format-toolbar');
   await expect(rail.locator('.bc_donghua')).toBeVisible();
@@ -271,10 +271,13 @@ test('animation tab switches with existing format tabs and non-format objects sh
   for (const flavour of ['image', 'sticker', 'date-card', 'weather', 'person-card']) {
     const id = await page.evaluate(flavour => {
       const doc = (window as any).__animationDoc;
-      const args = flavour === 'image' ? [{src: '', wr: 20, ar: 2}] : flavour === 'sticker' ? ['sunburst'] : [];
+      const canvas = document.createElement('canvas');
+      canvas.width = 200; canvas.height = 100;
+      const args = flavour === 'image' ? [{src: canvas.toDataURL(), wr: 20, ar: 2}] : flavour === 'sticker' ? ['sunburst'] : [];
       const snapshot = doc.schemas.createSnapshot(flavour, args);
       const id = doc.placement.insertAbsoluteSnapshot(snapshot, {anchorRect: null});
       doc.crud.updateBlockProps(id, {position: '50 50'});
+      if (flavour !== 'sticker') doc.objectAnimation.update([id], 'bc-pulse 1s ease-in-out 0s infinite normal both');
       return id;
     }, flavour);
     await expect(block(page, id)).toBeVisible();
@@ -282,6 +285,34 @@ test('animation tab switches with existing format tabs and non-format objects sh
       const doc = (window as any).__animationDoc; doc.selection.selectBlock(doc.getBlockById(id));
     }, id);
     const sideRail = page.locator('bc-object-animation-toolbar');
+    if (flavour !== 'sticker') {
+      const ownToolbar = page.locator(flavour === 'image' ? 'bc-image-toolbar' : 'bc-material-toolbar');
+      await expect(ownToolbar).toBeVisible();
+      await expect(sideRail).toHaveCount(0);
+      await expect(page.getByRole('button', {name: '动画', exact: true})).toHaveCount(0);
+      expect(await page.evaluate(id => (window as any).__animationDoc.model.getProps(id).animation, id)).toContain('bc-pulse');
+      await page.evaluate(id => {
+        const doc = (window as any).__animationDoc;
+        const parentId = doc.model.getParentId(id);
+        doc.selection.replay({
+          anchor: {type: 'boundary', blockId: parentId, index: 0},
+          head: {type: 'boundary', blockId: parentId, index: doc.model.getChildrenIds(parentId).length},
+          commonParent: parentId,
+        });
+      }, id);
+      await expect(page.locator('bc-object-group-toolbar')).toBeVisible();
+      await expect(sideRail).toHaveCount(0);
+      await page.evaluate(async id => {
+        const doc = (window as any).__animationDoc;
+        doc.selection.blur();
+        doc.placement.setMode(id, 'relative');
+        await doc.navigateToBlock(id);
+        doc.selection.selectBlock(doc.getBlockById(id));
+      }, id);
+      await expect(ownToolbar).toBeVisible();
+      await expect(sideRail).toHaveCount(0);
+      continue;
+    }
     await expect(sideRail.locator('.bc_donghua')).toBeVisible();
     await sideRail.getByRole('button', {name: '动画', exact: true}).click();
     const panel = page.getByRole('dialog', {name: '块动画设置'});
