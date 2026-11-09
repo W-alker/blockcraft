@@ -51,25 +51,39 @@
     }
 
     &__name {
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
+      display: flex;
+      align-items: center;
       color: var(--bc-color);
       font-size: var(--bc-fs-sm);
       font-style: normal;
       font-weight: 500;
     }
 
+    .attachment-block__name-stem {
+      flex: 0 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .attachment-block__name-extension {
+      flex: 0 0 auto;
+      max-width: 100%;
+      white-space: normal;
+      // Even unusual long suffixes stay readable in very narrow table cells.
+      overflow-wrap: anywhere;
+    }
+
     &__size {
       flex-shrink: 0;
       max-width: 100%;
       margin-inline-start: 8px;
-      white-space: nowrap;
+      white-space: normal;
+      overflow-wrap: anywhere;
       font-size: var(--bc-fs-xs);
       font-variant-numeric: tabular-nums;
       color: var(--bc-color-light);
-      overflow: hidden;
-      text-overflow: ellipsis;
     }
 
     &__icon-wrapper {

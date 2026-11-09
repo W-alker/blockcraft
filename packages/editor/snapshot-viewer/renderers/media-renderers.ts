@@ -1,4 +1,5 @@
 import {getAttachmentFileIcon} from '../../blocks/attachment-block/icons';
+import {splitAttachmentName} from '../../blocks/attachment-block/attachment-name';
 import {normalizeShapeRotation} from '../../blocks/shape-block/shape.types';
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
 import {InlineModel} from "../../framework/block-std/types/inline.type";
@@ -436,7 +437,15 @@ function renderAttachment(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) 
 
   const name = document.createElement("div")
   name.classList.add("attachment-block__name")
-  name.textContent = name.title = `${props["name"] || "附件"}`
+  name.title = `${props["name"] || "附件"}`
+  const fileName = splitAttachmentName(name.title)
+  const stem = document.createElement('span')
+  stem.className = 'attachment-block__name-stem'
+  stem.textContent = fileName.stem
+  const extension = document.createElement('span')
+  extension.className = 'attachment-block__name-extension'
+  extension.textContent = fileName.extension
+  name.append(stem, extension)
 
   const size = document.createElement("div")
   size.classList.add("attachment-block__size")

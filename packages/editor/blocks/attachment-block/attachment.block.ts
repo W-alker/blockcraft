@@ -4,6 +4,7 @@ import {CsIconComponent} from "@cses/ui";
 import {AttachmentBlockModel} from "./index";
 import {FileSizePipe} from "./file-size.pipe";
 import {getAttachmentFileIcon, getAttachmentIcon} from "./icons";
+import {splitAttachmentName} from './attachment-name';
 
 @Component({
   selector: 'div.attachment-block',
@@ -33,17 +34,10 @@ import {getAttachmentFileIcon, getAttachmentIcon} from "./icons";
         }
       </div>
       <div class="attachment-block__info">
-        <div class="attachment-block__name" spellcheck="false" [title]="props.name">{{ props.name }}</div>
+        @let fileName = splitAttachmentName(props.name);
+        <div class="attachment-block__name" spellcheck="false" [title]="props.name"><span class="attachment-block__name-stem">{{ fileName.stem }}</span><span class="attachment-block__name-extension">{{ fileName.extension }}</span></div>
       </div>
-      <div class="attachment-block__size">
-        @if (peerUploading) {
-          同步中...
-        } @else if (uploadProgress !== 100) {
-          上传中...
-        } @else {
-          {{ props.size | fileSize }}
-        }
-      </div>
+      <div class="attachment-block__size">{{ peerUploading ? '同步中...' : uploadProgress !== 100 ? '上传中...' : (props.size | fileSize) }}</div>
     }
   `,
   standalone: true,
@@ -52,6 +46,7 @@ import {getAttachmentFileIcon, getAttachmentIcon} from "./icons";
 })
 export class AttachmentBlockComponent extends BaseBlockComponent<AttachmentBlockModel> {
   protected uploadProgress = 100;
+  protected readonly splitAttachmentName = splitAttachmentName;
 
   protected get fileIcon(): string {
     return getAttachmentFileIcon(this.props.type, this.props.name);

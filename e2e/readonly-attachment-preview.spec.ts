@@ -316,3 +316,57 @@ test('紧凑布局保留本地上传进度、完成状态和远端同步状态',
   await expect(block.locator('.attachment-block__size')).toHaveText('同步中...');
   await expect(block.locator('.attachment-block__spinner')).toBeVisible();
 });
+
+for (const mode of ['editor', 'snapshot'] as const) {
+  test(`${mode} 附件优先显示后缀和大小，标题只使用剩余宽度`, async ({page}, testInfo) => {
+    const card = page.locator(mode === 'editor'
+      ? '#readonly-attachment-fixture .attachment-block'
+      : 'bc-snapshot-viewer .attachment-block');
+    const names = [
+      ['完整项目需求说明书与验收清单-final-2026.DOCX', '.DOCX'],
+      ['archive.backup.tar.gz', '.gz'],
+      ['README', ''], ['.gitignore', ''], ['report.', ''],
+      ['很长的文件标题.verylongextension', '.verylongextension'],
+    ];
+    for (const [name, suffix] of names) {
+      await page.evaluate(({name, mode}) => {
+        const p = (window as any).readonlyAttachmentProbe;
+        p.doc.toggleReadonly(false);
+        p.doc.getBlockById(p.attachmentId).updateProps({name, size: 123456789});
+        if (mode === 'snapshot') {
+          const app = (window as any).ng.getComponent(document.querySelector('playground-home'));
+          app.snapshotViewerSnapshot = p.doc.exportSnapshot();
+          app.activeMainTab = 'viewer';
+          app.activeViewerMode = 'snapshot';
+          app.cdr.detectChanges();
+          document.getElementById('readonly-attachment-fixture')!.style.display = 'none';
+        }
+      }, {name, mode});
+      await expect(card.locator('.attachment-block__name')).toHaveText(name);
+      await expect(card.locator('.attachment-block__name')).toHaveAttribute('title', name);
+      await expect(card.locator('.attachment-block__name-extension')).toHaveText(suffix);
+      for (const width of [320, 200, 140, 100]) {
+        await card.evaluate((el, width) => (el as HTMLElement).style.width = `${width}px`, width);
+        const result = await card.evaluate(el => {
+          const rect = el.getBoundingClientRect();
+          const stem = el.querySelector<HTMLElement>('.attachment-block__name-stem')!;
+          const parts = ['.attachment-block__name-extension', '.attachment-block__size'].map(selector => {
+            const part = el.querySelector<HTMLElement>(selector)!;
+            const bounds = part.getBoundingClientRect();
+            return {selector, width: part.clientWidth, scrollWidth: part.scrollWidth,
+              height: part.clientHeight, scrollHeight: part.scrollHeight,
+              visible: part.scrollWidth <= part.clientWidth + 1 && part.scrollHeight <= part.clientHeight + 1 &&
+                bounds.left >= rect.left && bounds.right <= rect.right && bounds.bottom <= rect.bottom};
+          });
+          return {visible: parts.every(part => part.visible), parts, truncated: stem.scrollWidth > stem.clientWidth,
+            stemWidth: stem.clientWidth, stemScrollWidth: stem.scrollWidth, text: stem.textContent};
+        });
+        expect(result.visible, JSON.stringify({mode, name, width, ...result})).toBe(true);
+        if (name.startsWith('完整')) expect(result.truncated, JSON.stringify({mode, width, ...result})).toBe(true);
+        if (name.startsWith('完整') && width === 320) {
+          await card.screenshot({path: testInfo.outputPath(`${mode}-suffix-priority.png`)});
+        }
+      }
+    }
+  });
+}

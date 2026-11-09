@@ -2,7 +2,15 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-11-06 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-11-09 | Tracks `@ccc/blockcraft` npm releases.
+
+## 未发布 — 2026-11-09：附件后缀与大小优先显示
+
+- Severity: patch（附件显示结构调整；版本由用户决定）。
+- What changed / Why: 附件名称拆为主体和后缀，仅主体占用剩余宽度并省略，避免长名称遮住文件类型。大小保留独立空间，极窄容器中大小和超长后缀可折行。
+- DOM: `.attachment-block__name` 内新增 `.attachment-block__name-stem` 与 `.attachment-block__name-extension`；编辑器与快照预览一致。
+- Migration Recipe: 无数据迁移；完整名称与重命名逻辑不变。宿主若覆盖名称省略样式，应将其作用于 `__name-stem`。
+- Affected ai-skills files: `blockcraft-plugins-toolbar.md`。
 
 ## 未发布 — 2026-11-06：代码块行首 IME 临时光标租约
 

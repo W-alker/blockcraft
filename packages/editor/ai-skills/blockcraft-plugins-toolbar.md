@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-11-05
+> Last updated: 2026-11-09
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -76,7 +76,7 @@ Manages click behavior on attachment blocks (file picker for empty blocks, uploa
 
 附件工具栏由鼠标/笔悬停 200ms 打开，不再依赖整块选区；移出附件与工具栏后延迟 200ms 关闭，跨越二者间隙时可继续操作。悬停不修改选区；触屏保留点击访问工具栏，点击外部关闭。块 hover 使用主题浅底色和边框，区别于选中态。重命名打开独立输入面板，关闭后保持原有选区恢复。只读模式保留预览/下载与非编辑扩展项，点击空附件上传、上传中提示和文件粘贴沿用原行为。Escape、块/文档销毁清理浮层。
 
-附件工具栏与卡片右侧对齐，空间不足时仍使用既有浮层翻转/边界约束。附件采用单行紧凑卡片：左侧单个文件图标、文件名，右侧仅显示大小；上传/同步时保留进度状态。长文件名省略并可通过 title 查看，极窄容器下大小独立换行。编辑视图与快照采用同一布局，`attachment-block__icon-wrapper` 位于开头，`attachment-block__size` 是卡片直接子节点，不再渲染重复的 `attachment-block__prefix`。
+附件工具栏与卡片右侧对齐，空间不足时仍使用既有浮层翻转/边界约束。附件采用单行紧凑卡片：左侧单个文件图标、文件名，右侧仅显示大小；上传/同步时保留进度状态。文件名主体在剩余宽度内省略，后缀与文件大小优先完整显示；完整文件名可通过 title 查看，极窄容器下大小独立换行，超长后缀允许折行。`.attachment-block__name` 内拆为 `.attachment-block__name-stem` 和 `.attachment-block__name-extension`；无后缀、点文件和末尾句点不拆分。编辑视图与快照采用同一布局，`attachment-block__icon-wrapper` 位于开头，`attachment-block__size` 是卡片直接子节点，不再渲染重复的 `attachment-block__prefix`。
 
 附件编辑视图和快照预览使用 `@cses/ui` 文件图标，按 MIME 类型并以文件名后缀兜底；旧 `props.icon` 保留存储兼容。Angular 快照组件默认从组件库解析 SVG；纯 DOM renderer 的自定义 `resolveSvgIcon` 会收到 `file-pdf` 等组件库名称，无解析器时使用组件库通用文件字体图标。
 
