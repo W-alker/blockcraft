@@ -48,6 +48,26 @@ const run = <T>(page: Page, fn: (doc: any) => T) => page.evaluate(fn => {
 const block = (page: Page, id: string) => page.locator(`[data-block-id="${id}"]`).last();
 const active = (page: Page, id: string) => block(page, id).evaluate(el => el.getAnimations().filter(a => 'animationName' in a).length);
 
+// Settings remain available to explicit host integrations after default animation entries are removed.
+async function openCustomAnimationPanel(page: Page) {
+  const toolbar = page.locator('bc-object-format-toolbar');
+  await expect(toolbar).toBeVisible();
+  await toolbar.evaluate(element => {
+    const component = (window as any).ng.getComponent(element);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset['testid'] = 'host-animation-entry';
+    button.textContent = '宿主动画设置';
+    button.addEventListener('click', () => component.doc.ngZone.run(() => {
+      component.open('animation');
+      component.cdr.detectChanges();
+    }));
+    element.querySelector('.object-format__rail')!.append(button);
+  });
+  await toolbar.getByTestId('host-animation-entry').click();
+  await toolbar.getByTestId('host-animation-entry').evaluate(element => element.remove());
+}
+
 // The serialized value is browser CSS, with no parallel duration/effect props.
 test('draft settings auto preview, confirm saves once, closing discards and undo restores CSS', async ({page}, testInfo) => {
   const id = await setup(page, true);
@@ -58,7 +78,7 @@ test('draft settings auto preview, confirm saves once, closing discards and undo
     await page.evaluate(id => {
       const doc = (window as any).__animationDoc; doc.selection.selectBlock(doc.getBlockById(id));
     }, id);
-    await page.locator('bc-object-format-toolbar').getByRole('button', {name: '动画', exact: true}).click();
+    await openCustomAnimationPanel(page);
     await expect(panel).toBeVisible();
   };
   await open();
@@ -100,7 +120,7 @@ test('draft settings auto preview, confirm saves once, closing discards and undo
 test('repeat dropdown remembers count and category browsing preserves the draft', async ({page}, testInfo) => {
   const id = await setup(page, true);
   const rail = page.locator('bc-object-format-toolbar');
-  await rail.getByRole('button', {name: '动画', exact: true}).click();
+  await openCustomAnimationPanel(page);
   const panel = page.getByRole('dialog', {name: '块动画设置'});
   await panel.getByRole('button', {name: '强调', exact: true}).click();
   await panel.getByRole('button', {name: '呼吸', exact: true}).click();
@@ -130,7 +150,7 @@ test('repeat dropdown remembers count and category browsing preserves the draft'
   await page.waitForTimeout(250);
   expect(await active(page, id)).toBe(0);
   expect(await page.evaluate(id => (window as any).__animationDoc.model.getProps(id).animation ?? null, id)).toBeNull();
-  await rail.getByRole('button', {name: '动画', exact: true}).click();
+  await openCustomAnimationPanel(page);
   await expect(panel.getByRole('button', {name: '无', exact: true})).toHaveAttribute('aria-pressed', 'true');
 });
 
@@ -260,15 +280,13 @@ test('all built-in floatable families share settings; unsupported blocks and rea
   expect(result).toEqual({applied: true, values: Array(8).fill('bc-fade-in 1000ms ease-out 0ms 1 normal none'), undo: true, redo: true, unsupported: false, readonly: false});
 });
 
-test('animation tabs remain for format objects and stickers, but not image or material blocks', async ({page}) => {
+test('all default floating animation entries are absent while ordinary object toolbars remain', async ({page}) => {
   await setup(page, true);
-  const rail = page.locator('bc-object-format-toolbar');
-  await expect(rail.locator('.bc_donghua')).toBeVisible();
-  await rail.getByRole('button', {name: '动画', exact: true}).click();
-  await expect(page.getByRole('dialog', {name: '块动画设置'})).toBeVisible();
-  await rail.getByRole('button', {name: '布局与排列', exact: true}).click();
-  await expect(page.getByRole('dialog', {name: '块动画设置'})).toHaveCount(0);
-  for (const flavour of ['image', 'sticker', 'date-card', 'weather', 'person-card']) {
+  const animationRail = page.locator('bc-object-animation-toolbar');
+  const animationButton = page.getByRole('button', {name: '动画', exact: true});
+  await expect(page.locator('bc-object-format-toolbar')).toBeVisible();
+  await expect(animationButton).toHaveCount(0);
+  for (const flavour of ['image', 'sticker', 'date-card', 'weather', 'person-card', 'text-box', 'word-art']) {
     const id = await page.evaluate(flavour => {
       const doc = (window as any).__animationDoc;
       const canvas = document.createElement('canvas');
@@ -277,52 +295,48 @@ test('animation tabs remain for format objects and stickers, but not image or ma
       const snapshot = doc.schemas.createSnapshot(flavour, args);
       const id = doc.placement.insertAbsoluteSnapshot(snapshot, {anchorRect: null});
       doc.crud.updateBlockProps(id, {position: '50 50'});
-      if (flavour !== 'sticker') doc.objectAnimation.update([id], 'bc-pulse 1s ease-in-out 0s infinite normal both');
+      doc.objectAnimation.update([id], 'bc-pulse 1s ease-in-out 0s infinite normal both');
       return id;
     }, flavour);
     await expect(block(page, id)).toBeVisible();
     await page.evaluate(id => {
-      const doc = (window as any).__animationDoc; doc.selection.selectBlock(doc.getBlockById(id));
+      const doc = (window as any).__animationDoc;
+      doc.selection.selectBlock(doc.getBlockById(id));
     }, id);
-    const sideRail = page.locator('bc-object-animation-toolbar');
-    if (flavour !== 'sticker') {
-      const ownToolbar = page.locator(flavour === 'image' ? 'bc-image-toolbar' : 'bc-material-toolbar');
-      await expect(ownToolbar).toBeVisible();
-      await expect(sideRail).toHaveCount(0);
-      await expect(page.getByRole('button', {name: '动画', exact: true})).toHaveCount(0);
-      expect(await page.evaluate(id => (window as any).__animationDoc.model.getProps(id).animation, id)).toContain('bc-pulse');
-      await page.evaluate(id => {
-        const doc = (window as any).__animationDoc;
-        const parentId = doc.model.getParentId(id);
-        doc.selection.replay({
-          anchor: {type: 'boundary', blockId: parentId, index: 0},
-          head: {type: 'boundary', blockId: parentId, index: doc.model.getChildrenIds(parentId).length},
-          commonParent: parentId,
-        });
-      }, id);
-      await expect(page.locator('bc-object-group-toolbar')).toBeVisible();
-      await expect(sideRail).toHaveCount(0);
-      await page.evaluate(async id => {
-        const doc = (window as any).__animationDoc;
-        doc.selection.blur();
-        doc.placement.setMode(id, 'relative');
-        await doc.navigateToBlock(id);
-        doc.selection.selectBlock(doc.getBlockById(id));
-      }, id);
-      await expect(ownToolbar).toBeVisible();
-      await expect(sideRail).toHaveCount(0);
-      continue;
-    }
-    await expect(sideRail.locator('.bc_donghua')).toBeVisible();
-    await sideRail.getByRole('button', {name: '动画', exact: true}).click();
-    const panel = page.getByRole('dialog', {name: '块动画设置'});
-    await panel.getByRole('button', {name: '淡入', exact: true}).click();
-    await panel.getByRole('button', {name: '确定', exact: true}).click();
-    expect(await page.evaluate(id => (window as any).__animationDoc.model.getProps(id).animation, id)).toContain('bc-fade-in');
+    const toolbarSelector = flavour === 'image' ? 'bc-image-toolbar'
+      : ['date-card', 'weather', 'person-card'].includes(flavour) ? 'bc-material-toolbar'
+      : ['text-box', 'word-art'].includes(flavour) ? 'bc-object-format-toolbar' : null;
+    if (toolbarSelector) await expect(page.locator(toolbarSelector)).toBeVisible();
+    await expect(animationRail).toHaveCount(0);
+    await expect(animationButton).toHaveCount(0);
+    await expect(page.getByRole('dialog', {name: '块动画设置'})).toHaveCount(0);
+    expect(await page.evaluate(id => (window as any).__animationDoc.model.getProps(id).animation, id)).toContain('bc-pulse');
+    await page.evaluate(id => {
+      const doc = (window as any).__animationDoc;
+      const parentId = doc.model.getParentId(id);
+      doc.selection.replay({
+        anchor: {type: 'boundary', blockId: parentId, index: 0},
+        head: {type: 'boundary', blockId: parentId, index: doc.model.getChildrenIds(parentId).length},
+        commonParent: parentId,
+      });
+    }, id);
+    await expect(page.locator('bc-object-group-toolbar')).toBeVisible();
+    await expect(animationRail).toHaveCount(0);
+    await expect(animationButton).toHaveCount(0);
+    await page.evaluate(async id => {
+      const doc = (window as any).__animationDoc;
+      doc.selection.blur();
+      doc.placement.setMode(id, 'relative');
+      await doc.navigateToBlock(id);
+      doc.selection.selectBlock(doc.getBlockById(id));
+    }, id);
+    if (toolbarSelector) await expect(page.locator(toolbarSelector)).toBeVisible();
+    await expect(animationRail).toHaveCount(0);
+    await expect(animationButton).toHaveCount(0);
   }
 });
 
-test('group animation has a side tab and closing editor panels does not cancel reader playback', async ({page}) => {
+test('group tools remain without animation entries and saved reader playback continues', async ({page}) => {
   await setup(page, true);
   const id = await run(page, doc => {
     const first = doc.placement.getAbsoluteBlockIds()[0];
@@ -332,20 +346,15 @@ test('group animation has a side tab and closing editor panels does not cancel r
   }) as string;
   await expect(block(page, id)).toBeVisible();
   await page.evaluate(id => {
-    const doc = (window as any).__animationDoc; doc.selection.selectBlock(doc.getBlockById(id));
+    const doc = (window as any).__animationDoc;
+    doc.selection.selectBlock(doc.getBlockById(id));
+    doc.objectAnimation.update([id], 'bc-pulse 1s ease-in-out 0s infinite normal both');
   }, id);
-  const tab = page.locator('bc-object-animation-toolbar').getByRole('button', {name: '动画', exact: true});
-  await tab.click();
-  const panel = page.getByRole('dialog', {name: '块动画设置'});
-  await panel.getByRole('button', {name: '强调', exact: true}).click();
-  await panel.getByRole('button', {name: '呼吸', exact: true}).click();
-  await panel.getByRole('button', {name: '预览', exact: true}).click();
-  await expect.poll(() => active(page, id)).toBe(1);
-  await run(page, doc => {
-    doc.objectAnimation.update(doc.placement.getAbsoluteBlockIds(), 'bc-pulse 1s ease-in-out 0s infinite normal both');
-    doc.toggleReadonly(true);
-  });
-  await expect(panel).toHaveCount(0);
+  await expect(page.locator('bc-object-group-toolbar')).toBeVisible();
+  await expect(page.locator('bc-object-animation-toolbar')).toHaveCount(0);
+  await expect(page.getByRole('button', {name: '动画', exact: true})).toHaveCount(0);
+  await run(page, doc => doc.toggleReadonly(true));
+  await expect(page.locator('bc-object-group-toolbar')).toHaveCount(0);
   await expect.poll(() => active(page, id)).toBe(1);
 });
 
@@ -386,7 +395,7 @@ test('new entrance and emphasis presets confirm and reopen in the saved category
     await page.evaluate(id => {
       const doc = (window as any).__animationDoc; doc.selection.selectBlock(doc.getBlockById(id));
     }, id);
-    await page.locator('bc-object-format-toolbar').getByRole('button', {name: '动画', exact: true}).click();
+    await openCustomAnimationPanel(page);
   };
   await open();
   await expect(panel.getByRole('group', {name: '动画效果'}).getByRole('button')).toHaveCount(9);
@@ -412,7 +421,7 @@ test('new entrance and emphasis presets confirm and reopen in the saved category
 test('confirm keeps infinite editor playback; selection pauses only edited objects and blur resumes', async ({page}) => {
   const id = await setup(page, true);
   const panel = page.getByRole('dialog', {name: '块动画设置'});
-  await page.locator('bc-object-format-toolbar').getByRole('button', {name: '动画', exact: true}).click();
+  await openCustomAnimationPanel(page);
   await panel.getByRole('button', {name: '强调', exact: true}).click();
   await panel.getByRole('button', {name: '呼吸', exact: true}).click();
   await panel.locator('cs-select[aria-label="动画重复"]').click();
@@ -455,7 +464,7 @@ test('confirm keeps infinite editor playback; selection pauses only edited objec
   expect(afterDrag!.y - beforeDrag!.y).toBeCloseTo(20, 0);
   const saved = await page.evaluate(id => (window as any).__animationDoc.model.getProps(id).animation, id);
   // Native form focus clears model selection, but the open toolbar still pauses its object.
-  await page.locator('bc-object-format-toolbar').getByRole('button', {name: '动画', exact: true}).click();
+  await openCustomAnimationPanel(page);
   await panel.locator('cs-select[aria-label="动画重复"]').click();
   await page.getByRole('option', {name: '持续循环', exact: true}).click();
   await panel.getByRole('button', {name: '关闭动画设置'}).click();

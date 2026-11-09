@@ -4,6 +4,14 @@
 >
 > Last updated: 2026-11-09 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-11-09：暂停全部默认浮动动画入口
+
+- Severity: patch（精简默认工具栏；版本由用户决定）。
+- What changed / Why: 统一移除当前默认浮动动画入口，替代此前仅排除图片和动态物料的规则。
+- Behavior Changes: `ObjectFormatToolbarPlugin` 不再自动创建动画侧栏；形状、文本框、艺术字默认对象侧栏移除“动画”页签。贴纸、组合和混选也不提供动画浮动按钮，其他编辑工具栏保留。
+- Migration Recipe: 无数据迁移。`doc.objectAnimation`、`props.animation`、已有动画播放和宿主显式打开的设置组件不变；不删除已有动画配置。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-plugins-toolbar.md`。
+
 ## 未发布 — 2026-11-09：移除图片与动态物料的浮动动画入口
 
 - Severity: patch（精简默认工具栏入口；版本由用户决定）。

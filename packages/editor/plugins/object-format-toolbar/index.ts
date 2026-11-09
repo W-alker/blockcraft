@@ -1,4 +1,3 @@
-import {ObjectAnimationToolbarController} from '../object-animation/toolbar-controller';
 import {
   FlexibleConnectedPositionStrategy,
   OverlayRef,
@@ -49,12 +48,6 @@ import { InlineObjectInteractionController } from "../object-layout/inline-objec
 export * from "./object-format-toolbar.component";
 
 const TOOLBAR_GAP = 10;
-const ANIMATION_RAIL_EXCLUDED_FLAVOURS = new Set<BlockCraft.BlockFlavour>([
-  "date-card",
-  "weather",
-  "person-card",
-  "image",
-]);
 
 interface GroupToolbarState {
   mode: ObjectGroupToolbarMode;
@@ -84,7 +77,6 @@ const GROUP_ALIGNMENT_ACTIONS = new Set<BlockObjectAlignment>([
 export class ObjectFormatToolbarPlugin extends DocPlugin {
   override name = "object-format-toolbar";
 
-  private animationRail?: ObjectAnimationToolbarController;
   private panelResizeObserver?: ResizeObserver;
   private updateToolbarPosition?: () => void;
   private readonly subscription = new Subscription();
@@ -130,7 +122,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
         .subscribe((event) => {
           const target = this.resolveElement(event.target);
           if (
-            (isObjectToolbarOwnedTarget(this.overlayRef?.overlayElement, target) || this.animationRail?.owns(target))
+            isObjectToolbarOwnedTarget(this.overlayRef?.overlayElement, target)
           ) {
             this.toolbarPointerActive = true;
             this.toolbarFocusActive = true;
@@ -181,7 +173,6 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   }
 
   close = (): void => {
-    this.animationRail?.close();
     this.panelResizeObserver?.disconnect();
     this.panelResizeObserver = undefined;
     this.activeWordArtHost?.classList.remove("word-art-block--object-selected");
@@ -227,7 +218,6 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     const groupState = this.resolveGroupToolbarState(selection);
     if (groupState) {
       this.openGroupToolbar(groupState);
-      this.openAnimationRail(groupState.blockIds);
       this.retainObjectChrome(true);
       return;
     }
@@ -235,14 +225,6 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     const parentId = state && state.blockIds.length > 1
       ? this.doc.model.getParentId(state.blockIds[0]!)
       : null;
-    if (!state) {
-      const ids = this.doc.objectAnimation?.getSelectionIds(selection) ?? [];
-      if (ids.length) {
-        if (this.toolbarKind) this.close();
-        this.openAnimationRail(ids);
-        return;
-      }
-    }
     if (!state || (parentId && this.doc.placement.isObjectGroup(parentId))) {
       // A live text/gap selection supersedes toolbar focus and pointer grace.
       // Group-member multi-selection must also close the member's format rail;
@@ -252,27 +234,6 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     }
     this.open(state, false);
     this.retainObjectChrome(true);
-  }
-
-  private openAnimationRail(ids: readonly string[]): void {
-    if (ids.some((id) => {
-      const flavour = this.doc.model.getFlavour(id);
-      return flavour != null && ANIMATION_RAIL_EXCLUDED_FLAVOURS.has(flavour);
-    })) {
-      this.animationRail?.close();
-      return;
-    }
-    const anchor = this.doc.vm.get(ids[0])?.instance?.hostElement;
-    if (!anchor) return;
-    this.animationRail ??= new ObjectAnimationToolbarController(this.doc, () => {
-      if (!this.overlayRef) {
-        this.releaseRetainedObjectChrome();
-        this.toolbarPointerActive = false;
-        this.toolbarFocusActive = false;
-        this.toolbarPointerGraceUntil = 0;
-      }
-    });
-    this.animationRail.open(anchor, ids);
   }
 
   private open(
@@ -649,7 +610,6 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   }
 
   private ownsInteraction(): boolean {
-    if (this.animationRail?.isOpen && this.animationRail.owns(this.doc.root.hostElement.ownerDocument.activeElement)) return true;
     if (this.toolbarPointerActive) return true;
     if (this.toolbarFocusActive) return true;
     if (Date.now() < this.toolbarPointerGraceUntil) return true;
@@ -665,7 +625,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   private handleFocusIn(event: FocusEvent): void {
     if (!this.overlayRef) return;
     const target = this.resolveElement(event.target);
-    if (isObjectToolbarOwnedTarget(this.overlayRef.overlayElement, target) || this.animationRail?.owns(target)) {
+    if (isObjectToolbarOwnedTarget(this.overlayRef.overlayElement, target)) {
       this.toolbarFocusActive = true;
       this.retainObjectChrome();
       // The browser may collapse a whole-object Range to an empty container

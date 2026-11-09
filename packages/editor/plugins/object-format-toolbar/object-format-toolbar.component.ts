@@ -1540,11 +1540,10 @@ export class ObjectFormatToolbarComponent {
   // must not force a large panel open beside it.
   get activePanel(): ObjectFormatPanel | null { return this.popup.activePanel; }
   set activePanel(value: ObjectFormatPanel | null) { this.popup.activePanel = value; }
-  readonly panels = [
+  readonly panels: Array<{value: ObjectFormatPanel; label: string; icon: string}> = [
     { value: "layout" as const, label: "布局与排列", icon: "bc_buju" },
     { value: "shape" as const, label: "形状选项", icon: "bc_tuxing" },
     { value: "text" as const, label: "文本选项", icon: "bc_wenben" },
-    { value: "animation" as const, label: "动画", icon: "bc_donghua" },
   ];
   get layoutOptions() {
     return BLOCK_OBJECT_LAYOUT_OPTIONS.filter((item) =>
