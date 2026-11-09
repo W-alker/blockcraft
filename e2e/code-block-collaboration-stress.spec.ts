@@ -2,7 +2,6 @@ import {expect, test, type BrowserContext, type Page} from '@playwright/test';
 import * as decoding from 'lib0/decoding';
 import * as Y from 'yjs';
 
-const baseURL = 'http://127.0.0.1:8081';
 const websocketPort = 12345;
 
 interface TextRange {anchor: number; head: number}
@@ -58,7 +57,7 @@ class NetworkOracle {
   }
 }
 
-async function prepareTransport(page: Page, room: string): Promise<void> {
+async function prepareTransport(page: Page, room: string, baseURL: string): Promise<void> {
   // 初始化 demo 会启动外链预览；固定该无关响应，避免其延迟跨域错误
   // 在 demo 已删除后污染代码协同的 pageerror 断言。真实协同传输不拦截。
   await page.route('https://affine-worker.toeverything.workers.dev/api/worker/link-preview', route =>
@@ -73,7 +72,7 @@ async function prepareTransport(page: Page, room: string): Promise<void> {
       body: '{}',
     }));
   // 只关闭开发服务 HMR，真实协同连接仍由现有 provider 建立。
-  await page.routeWebSocket(url => url.port === '8081', socket => socket.close());
+  await page.routeWebSocket(url => url.port === new URL(baseURL).port, socket => socket.close());
   await page.addInitScript(({port, roomName}) => {
     const NativeWebSocket = window.WebSocket;
     window.WebSocket = new Proxy(NativeWebSocket, {
@@ -332,8 +331,9 @@ function editFor(text: string, round: number): Edit {
   }
 }
 
-test('two clients keep 1000 code lines, syntax and relative selections through 12 edit/Undo/Redo rounds', async ({browser}) => {
+test('two clients keep 1000 code lines, syntax and relative selections through 12 edit/Undo/Redo rounds', async ({browser, baseURL}) => {
   test.setTimeout(240_000);
+  if (!baseURL) throw new Error('Playground baseURL is required');
   const room = `code-collab-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const contexts: BrowserContext[] = [];
   const oracle = new NetworkOracle();
@@ -345,7 +345,7 @@ test('two clients keep 1000 code lines, syntax and relative selections through 1
     const pages = await Promise.all(contexts.map(context => context.newPage()));
     for (const [index, page] of pages.entries()) {
       oracle.observe(page, room, index);
-      await prepareTransport(page, room);
+      await prepareTransport(page, room, baseURL);
       page.on('console', message => {
         if (message.type() === 'error' && /\[CodeInlineRuntime\]|BlockCraftError|Block not found|Cannot read properties|virtualization(?:Reconcile|Fallback|FullMount)Error|children repair failed|syncYEvent: skip broken event/.test(message.text())) {
           errors.push(`client ${index}: ${message.text()}`);

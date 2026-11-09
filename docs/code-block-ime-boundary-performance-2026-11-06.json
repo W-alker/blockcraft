@@ -1,0 +1,1848 @@
+{
+  "format": "blockcraft-ime-boundary-performance/v1",
+  "date": "2026-11-06",
+  "scope": "仅比较代码块 IME 首尾处理；before 为 60dfb27a，after 为同提交上的 Cursor 局部更新及源文本缓存工作区修改。",
+  "environment": {
+    "node": "v20.19.0",
+    "platform": "darwin",
+    "arch": "x64",
+    "osRelease": "25.5.0",
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13700K",
+    "logicalCpus": 24,
+    "memoryBytes": 68719476736,
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "scriptSha256": "ebfaec17f950a64240d5e2a7ba374efec1b1d37549f48e46d575ca89e3bd312f",
+    "browser": "chromium",
+    "browserVersion": "145.0.7632.6",
+    "url": "http://127.0.0.1:8083",
+    "server": "同一个本地 Angular development 服务（自有 8083），每个测试页关闭 HMR WebSocket；采样串行且无并发编译/E2E。"
+  },
+  "sampling": {
+    "sizes": [
+      1000,
+      5000
+    ],
+    "positions": [
+      "line-start",
+      "line-middle"
+    ],
+    "actions": [
+      "commit",
+      "cancel"
+    ],
+    "groupsPerRun": 8,
+    "coldPerGroup": 1,
+    "warmupPerGroup": 3,
+    "measuredPerGroup": 9,
+    "totalOperationsPerRun": 104,
+    "statistics": "只对9个有效样本计算中位数/最小值/最大值；不计算P95，不设置耗时阈值。",
+    "cold": "已完成首次高亮的新块上的首次IME操作，不是浏览器或模块冷启动。",
+    "input": "独立 Chromium 的 CDP 原生组合输入（单次 imeSetComposition + 提交/取消），不是 OS 候选窗口交互；多轮候选由 E2E 另验。"
+  },
+  "timing": {
+    "unit": "ms",
+    "clock": "页面内 performance.now()",
+    "syncStartMs": "compositionStart 事件分发同步总耗时；包含 sessionStartMs / acquireCaretMs。",
+    "sessionStartMs": "CompositionSession.start 同步耗时；acquireCaretMs 是其嵌套子阶段。",
+    "prepareCommitMs": "CompositionSession.prepareCommit 同步耗时；包含实际 Cursor release。",
+    "releaseCaretMs": "acquireCompositionCaret 返回的释放函数实际执行耗时。",
+    "sessionEndMs": "当前操作期间全部 Session.end 调用之和，可能含 start 中的 reset；不只提交末尾。",
+    "syncCommitMs": "compositionEnd 同步事件分发；action=cancel 时是取消的同步结束耗时。runtimeRenderMs/syncHighlightMs/prepareCommitMs 都可能嵌套其中。",
+    "recoveryFromCommitMs": "从 compositionEnd 分发开始到本次有效 renderCode 恢复完成，须对应最终generation且模型/DOM/光标一致。",
+    "startAndRecoveryMs": "逐样本 syncStartMs + recoveryFromCommitMs，排除候选/CDP间隙；中位数不能由两个阶段中位数直接相加。",
+    "elapsedStartToRecoveryMs": "诊断用开始至恢复的墙钟耗时，包含CDP往返、预编辑、正确性读取间隙，不能当纯处理时间。",
+    "afterTwoFramesMs": "从 compositionEnd 到有效恢复后另外两次RAF；仅调度边界，不代表真实paint或合成呈现。",
+    "warning": "嵌套阶段不能相加；阶段计时不包含初始加载、设置选区或CDP往返。"
+  },
+  "interpretation": [
+    "行首 acquire/release 与同步结束耗时明显下降；收益限定在已测规模与位置。",
+    "1000行行中提交中位变慢：syncCommit 64.6→79.0ms，恢复91.8→106.2ms；范围重叠，但本报告不据此断言只是噪声。",
+    "5000行行中提交中位基本相同。不能概括为所有IME场景均提速；未做统计显著性或多机器验证。"
+  ],
+  "sampleEncoding": "cold/warmup/samples 中每个数组行按 sampleColumns 解码，保留原始浮点值、identity及正确性字段；cold/warmup不计入summary。",
+  "sampleColumns": [
+    "round",
+    "syncStartMs",
+    "sessionStartMs",
+    "acquireCaretMs",
+    "prepareCommitMs",
+    "releaseCaretMs",
+    "sessionEndMs",
+    "acquiredCarets",
+    "releasedCarets",
+    "syncCommitMs",
+    "runtimeRenderMs",
+    "syncHighlightMs",
+    "recoveryMs",
+    "recoveryFromCommitMs",
+    "startAndRecoveryMs",
+    "elapsedStartToRecoveryMs",
+    "afterTwoFramesMs",
+    "buildMs",
+    "builds",
+    "identity",
+    "validRecoveries",
+    "staleRecoveries",
+    "modelDomCaretValid"
+  ],
+  "runs": [
+    {
+      "label": "before",
+      "revision": "60dfb27a",
+      "measuredAt": "2026-11-06T10:19:03.296Z",
+      "browser": "chromium",
+      "browserVersion": "145.0.7632.6",
+      "productSha256": {
+        "packages/editor/framework/block-std/inline/blot/scroll-blot.ts": "27bb93613b8f2e7e4ed49177022d33b5c432a05802714e5566d2d56f9984f627",
+        "packages/editor/framework/block-std/inline/blot/logical-line-index.ts": "9c921ed9dfed44689cfe28b6cc81c6074f7bd93655ddacf236c52718eb522d80"
+      },
+      "groups": [
+        {
+          "lines": 1000,
+          "position": "line-start",
+          "action": "commit",
+          "mode": "current",
+          "characters": 71779,
+          "coldCheckpoints": 16,
+          "lineContainers": 1000,
+          "initialNodes": 31001,
+          "summary": {
+            "syncStartMs": {
+              "median": 29,
+              "min": 23.899999976158142,
+              "max": 42.60000002384186
+            },
+            "sessionStartMs": {
+              "median": 28.09999990463257,
+              "min": 23,
+              "max": 41.5
+            },
+            "acquireCaretMs": {
+              "median": 28.09999990463257,
+              "min": 22.800000071525574,
+              "max": 41.5
+            },
+            "prepareCommitMs": {
+              "median": 26.5,
+              "min": 23.100000023841858,
+              "max": 33.60000002384186
+            },
+            "releaseCaretMs": {
+              "median": 26.399999976158142,
+              "min": 23.100000023841858,
+              "max": 33.60000002384186
+            },
+            "sessionEndMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "syncCommitMs": {
+              "median": 74.19999992847443,
+              "min": 61.89999997615814,
+              "max": 98.89999997615814
+            },
+            "runtimeRenderMs": {
+              "median": 31.799999952316284,
+              "min": 25.600000023841858,
+              "max": 47.10000002384186
+            },
+            "syncHighlightMs": {
+              "median": 31.699999928474426,
+              "min": 25.600000023841858,
+              "max": 47.10000002384186
+            },
+            "recoveryMs": {
+              "median": 29.40000009536743,
+              "min": 19.200000047683716,
+              "max": 39.200000047683716
+            },
+            "recoveryFromCommitMs": {
+              "median": 106,
+              "min": 91.69999992847443,
+              "max": 141.59999990463257
+            },
+            "startAndRecoveryMs": {
+              "median": 147.30000007152557,
+              "min": 119.79999995231628,
+              "max": 184.19999992847443
+            },
+            "elapsedStartToRecoveryMs": {
+              "median": 287.5,
+              "min": 237.09999990463257,
+              "max": 363.1999999284744
+            },
+            "afterTwoFramesMs": {
+              "median": 125.09999990463257,
+              "min": 109.60000002384186,
+              "max": 180.69999992847443
+            },
+            "buildMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          "cold": ["cold",46.10000002384186,40.700000047683716,40.39999997615814,30.100000023841858,29.899999976158142,0.19999992847442627,1,1,123.69999992847443,70.89999997615814,70.79999995231628,48.200000047683716,177,223.10000002384186,372.2000000476837,250.89999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],
+          "warmup": [["warmup-1",35.09999990463257,30.899999976158142,30.899999976158142,26.5,26.5,0,1,1,70.10000002384186,29.600000023841858,29.600000023841858,21.199999928474426,94.5,129.59999990463257,255.19999992847443,120.80000007152557,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-2",27.899999976158142,26.59999990463257,26.59999990463257,37.10000002384186,37,0,1,1,95.89999997615814,42.60000002384186,42.5,33.5,133.39999997615814,161.29999995231628,309.7000000476837,156.09999990463257,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-3",27.899999976158142,26.899999976158142,26.899999976158142,22.800000071525574,22.800000071525574,0.09999990463256836,1,1,67.39999997615814,33,32.89999997615814,29.299999952316284,99.69999992847443,127.59999990463257,233.19999992847443,123,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "samples": [["sample-1",33.89999997615814,32.800000071525574,32.800000071525574,31.199999928474426,31.199999928474426,0,1,1,83.29999995231628,35,34.799999952316284,29.40000009536743,118,151.89999997615814,287.5,128.59999990463257,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-2",23.899999976158142,23,22.800000071525574,24.699999928474426,24.699999928474426,0.09999990463256836,1,1,71.10000002384186,31.799999952316284,31.699999928474426,23.299999952316284,97.39999997615814,121.29999995231628,237.09999990463257,123.80000007152557,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-3",28.100000023841858,27,27,23.100000023841858,23.100000023841858,0,1,1,61.89999997615814,25.600000023841858,25.600000023841858,25.5,91.69999992847443,119.79999995231628,252.39999997615814,109.60000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-4",39.10000002384186,37.5,37.5,26.199999928474426,26.100000023841858,0,1,1,69.09999990463257,29.199999928474426,29.100000023841858,19.200000047683716,92.29999995231628,131.39999997615814,297.2000000476837,110.39999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-5",28.40000009536743,27.399999976158142,27.399999976158142,23.399999976158142,23.399999976158142,0.09999990463256836,1,1,76.5,35.799999952316284,35.799999952316284,39.200000047683716,122.20000004768372,150.60000014305115,269.7000000476837,153.10000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-6",28.600000023841858,27.199999928474426,27,26.5,26.399999976158142,0.10000002384185791,1,1,67.5,26.799999952316284,26.600000023841858,33.10000002384186,104.20000004768372,132.80000007152557,257.90000009536743,124.39999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-7",41.300000071525574,40.200000047683716,40.200000047683716,26.5,26.399999976158142,0.10000002384185791,1,1,74.19999992847443,30.700000047683716,30.600000023841858,26.100000023841858,106,147.30000007152557,295.40000009536743,125.09999990463257,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-8",29,28.09999990463257,28.09999990463257,33.60000002384186,33.60000002384186,0,1,1,96.10000002384186,43.59999990463257,43.59999990463257,32.700000047683716,134.89999997615814,163.89999997615814,298.10000002384186,163.60000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-9",42.60000002384186,41.5,41.5,31.699999928474426,31.699999928474426,0,1,1,98.89999997615814,47.10000002384186,47.10000002384186,36.5,141.59999990463257,184.19999992847443,363.1999999284744,180.69999992847443,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "checks": {
+            "operations": 13,
+            "modelDomCaretValid": true,
+            "allRecordedIdentitiesPreserved": true,
+            "builds": 0,
+            "acquiredAndReleasedCaretsPerOperation": 1,
+            "pageErrors": []
+          }
+        },
+        {
+          "lines": 1000,
+          "position": "line-start",
+          "action": "cancel",
+          "mode": "current",
+          "characters": 71779,
+          "coldCheckpoints": 16,
+          "lineContainers": 1000,
+          "initialNodes": 31001,
+          "summary": {
+            "syncStartMs": {
+              "median": 30.09999990463257,
+              "min": 23.5,
+              "max": 39.699999928474426
+            },
+            "sessionStartMs": {
+              "median": 29.09999990463257,
+              "min": 22.90000009536743,
+              "max": 38.699999928474426
+            },
+            "acquireCaretMs": {
+              "median": 29.09999990463257,
+              "min": 22.90000009536743,
+              "max": 38.59999990463257
+            },
+            "prepareCommitMs": {
+              "median": 25.600000023841858,
+              "min": 22.399999976158142,
+              "max": 32.800000071525574
+            },
+            "releaseCaretMs": {
+              "median": 25.600000023841858,
+              "min": 22.399999976158142,
+              "max": 32.800000071525574
+            },
+            "sessionEndMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "syncCommitMs": {
+              "median": 62.89999997615814,
+              "min": 53.299999952316284,
+              "max": 77.5
+            },
+            "runtimeRenderMs": {
+              "median": 28.5,
+              "min": 22.200000047683716,
+              "max": 35.799999952316284
+            },
+            "syncHighlightMs": {
+              "median": 28.5,
+              "min": 22.200000047683716,
+              "max": 35.700000047683716
+            },
+            "recoveryMs": {
+              "median": 27.09999990463257,
+              "min": 22.200000047683716,
+              "max": 36
+            },
+            "recoveryFromCommitMs": {
+              "median": 94.60000002384186,
+              "min": 82,
+              "max": 122.89999997615814
+            },
+            "startAndRecoveryMs": {
+              "median": 124.70000004768372,
+              "min": 111.80000007152557,
+              "max": 149.79999995231628
+            },
+            "elapsedStartToRecoveryMs": {
+              "median": 266.2000000476837,
+              "min": 188.5,
+              "max": 306.6999999284744
+            },
+            "afterTwoFramesMs": {
+              "median": 120.5,
+              "min": 104.29999995231628,
+              "max": 167.29999995231628
+            },
+            "buildMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          "cold": ["cold",52.39999997615814,44.699999928474426,44.39999997615814,26.399999976158142,26.399999976158142,0,1,1,61.5,25.399999976158142,25.299999952316284,33.299999952316284,156.60000002384186,209,339.89999997615814,252.10000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],
+          "warmup": [["warmup-1",39.300000071525574,38,37.90000009536743,30.09999990463257,30.09999990463257,0,1,1,88.29999995231628,42.200000047683716,42.10000002384186,34.89999997615814,133.10000002384186,172.40000009536743,317.7000000476837,176.20000004768372,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-2",24.399999976158142,21.699999928474426,21.600000023841858,20.100000023841858,20.100000023841858,0,1,1,51.5,24.699999928474426,24.59999990463257,25.5,84.40000009536743,108.80000007152557,250.20000004768372,104.20000004768372,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-3",22.700000047683716,22,22,18.700000047683716,18.700000047683716,0,1,1,49,23.399999976158142,23.299999952316284,19.800000071525574,75.10000002384186,97.80000007152557,223.80000007152557,95,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "samples": [["sample-1",34.200000047683716,33.60000002384186,33.5,29.100000023841858,28.899999976158142,0,1,1,68.19999992847443,32.60000002384186,32.60000002384186,33.699999928474426,111.79999995231628,146,284,153,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-2",33.39999997615814,32.5,32.39999997615814,22.399999976158142,22.399999976158142,0,1,1,60.39999997615814,31.299999952316284,31.199999928474426,26,94.60000002384186,128,266.2000000476837,124.29999995231628,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-3",29.800000071525574,29,29,24.5,24.5,0,1,1,53.299999952316284,23,22.899999976158142,22.899999976158142,82,111.80000007152557,275.7000000476837,104.29999995231628,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-4",32.799999952316284,31.799999952316284,31.799999952316284,28.199999928474426,28.199999928474426,0,1,1,62.89999997615814,28.5,28.5,22.200000047683716,87.70000004768372,120.5,188.5,107.30000007152557,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-5",26.899999976158142,26.299999952316284,26.200000047683716,32.800000071525574,32.800000071525574,0,1,1,77.5,35.799999952316284,35.700000047683716,36,122.89999997615814,149.79999995231628,304.10000002384186,167.29999995231628,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-6",30.09999990463257,29.09999990463257,29.09999990463257,24.799999952316284,24.699999928474426,0,1,1,55.40000009536743,23.799999952316284,23.799999952316284,23.300000071525574,85.30000007152557,115.39999997615814,254.39999997615814,112.80000007152557,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-7",39.699999928474426,38.699999928474426,38.59999990463257,32.39999997615814,32.39999997615814,0,1,1,68.29999995231628,26.899999976158142,26.799999952316284,27.09999990463257,101.59999990463257,141.299999833107,306.6999999284744,141.29999995231628,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-8",23.5,22.90000009536743,22.90000009536743,25.600000023841858,25.600000023841858,0,1,1,65.30000007152557,32.199999928474426,32.10000002384186,30.799999952316284,101.20000004768372,124.70000004768372,212.79999995231628,120.10000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-9",29.300000071525574,28.5,28.5,25.600000023841858,25.5,0,1,1,54.89999997615814,22.200000047683716,22.200000047683716,27.09999990463257,89.19999992847443,118.5,265.5,120.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "checks": {
+            "operations": 13,
+            "modelDomCaretValid": true,
+            "allRecordedIdentitiesPreserved": true,
+            "builds": 0,
+            "acquiredAndReleasedCaretsPerOperation": 1,
+            "pageErrors": []
+          }
+        },
+        {
+          "lines": 1000,
+          "position": "line-middle",
+          "action": "commit",
+          "mode": "current",
+          "characters": 71779,
+          "coldCheckpoints": 16,
+          "lineContainers": 1000,
+          "initialNodes": 31001,
+          "summary": {
+            "syncStartMs": {
+              "median": 1.2000000476837158,
+              "min": 0.8999999761581421,
+              "max": 2.1999999284744263
+            },
+            "sessionStartMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "acquireCaretMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "prepareCommitMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "releaseCaretMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "sessionEndMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.09999990463256836
+            },
+            "syncCommitMs": {
+              "median": 64.59999990463257,
+              "min": 57.59999990463257,
+              "max": 100.5
+            },
+            "runtimeRenderMs": {
+              "median": 49.89999997615814,
+              "min": 42.200000047683716,
+              "max": 81.5
+            },
+            "syncHighlightMs": {
+              "median": 49.89999997615814,
+              "min": 42.200000047683716,
+              "max": 81.40000009536743
+            },
+            "recoveryMs": {
+              "median": 24.199999928474426,
+              "min": 18.299999952316284,
+              "max": 33.89999997615814
+            },
+            "recoveryFromCommitMs": {
+              "median": 91.79999995231628,
+              "min": 84.5,
+              "max": 139
+            },
+            "startAndRecoveryMs": {
+              "median": 92.89999997615814,
+              "min": 85.89999997615814,
+              "max": 140.40000009536743
+            },
+            "elapsedStartToRecoveryMs": {
+              "median": 257.09999990463257,
+              "min": 226.29999995231628,
+              "max": 289.3000000715256
+            },
+            "afterTwoFramesMs": {
+              "median": 116.60000002384186,
+              "min": 100.80000007152557,
+              "max": 185.5
+            },
+            "buildMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          "cold": ["cold",4.299999952316284,0.2999999523162842,0,0.09999990463256836,0,0,0,0,109.10000002384186,88.29999995231628,88.20000004768372,34.10000002384186,154.30000007152557,158.60000002384186,280,416,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],
+          "warmup": [["warmup-1",1.7999999523162842,0,0,0,0,0,0,0,107.30000007152557,82.39999997615814,82.29999995231628,33.59999990463257,145,146.79999995231628,285.2999999523163,175.80000007152557,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-2",1.2000000476837158,0,0,0,0,0,0,0,92.70000004768372,73.5,73.39999997615814,28.899999976158142,125.89999997615814,127.10000002384186,253.89999997615814,149.10000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-3",2.0999999046325684,0,0,0,0,0,0,0,82.60000002384186,65.80000007152557,65.70000004768372,23.399999976158142,109.60000002384186,111.69999992847443,290.6999999284744,141.80000007152557,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "samples": [["sample-1",1.100000023841858,0,0,0,0,0,0,0,64.59999990463257,48.299999952316284,48.299999952316284,22,91.79999995231628,92.89999997615814,246.5,111.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-2",2.1999999284744263,0.10000002384185791,0,0,0,0,0,0,60.39999997615814,45.799999952316284,45.60000002384186,23,87,89.19999992847443,240.29999995231628,114.29999995231628,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-3",1.2000000476837158,0.10000002384185791,0,0.10000002384185791,0,0,0,0,74.19999992847443,59,58.89999997615814,28.5,106.60000002384186,107.80000007152557,286.7000000476837,130.79999995231628,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-4",1,0,0,0,0,0,0,0,92.60000002384186,71.89999997615814,71.89999997615814,26.5,124.30000007152557,125.30000007152557,282.8000000715256,156.30000007152557,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-5",1.4000000953674316,0.10000002384185791,0,0,0,0,0,0,100.5,81.5,81.40000009536743,33.89999997615814,139,140.40000009536743,289.3000000715256,185.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-6",1.399999976158142,0,0,0,0,0,0,0,61.300000071525574,48.60000002384186,48.60000002384186,18.299999952316284,84.5,85.89999997615814,263.2999999523163,100.80000007152557,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-7",0.8999999761581421,0,0,0.09999990463256836,0,0,0,0,61.5,49.89999997615814,49.89999997615814,20.09999990463257,90.29999995231628,91.19999992847443,257.09999990463257,116.60000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-8",0.8999999761581421,0,0,0,0,0,0,0,57.59999990463257,42.200000047683716,42.200000047683716,26.600000023841858,87.79999995231628,88.69999992847443,226.29999995231628,107.89999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-9",1.2999999523162842,0.10000002384185791,0,0,0,0.09999990463256836,0,0,80.79999995231628,65,65,24.199999928474426,109.29999995231628,110.59999990463257,244.09999990463257,129.39999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "checks": {
+            "operations": 13,
+            "modelDomCaretValid": true,
+            "allRecordedIdentitiesPreserved": true,
+            "builds": 0,
+            "acquiredAndReleasedCaretsPerOperation": 0,
+            "pageErrors": []
+          }
+        },
+        {
+          "lines": 1000,
+          "position": "line-middle",
+          "action": "cancel",
+          "mode": "current",
+          "characters": 71779,
+          "coldCheckpoints": 16,
+          "lineContainers": 1000,
+          "initialNodes": 31001,
+          "summary": {
+            "syncStartMs": {
+              "median": 3.3000000715255737,
+              "min": 2.100000023841858,
+              "max": 5.299999952316284
+            },
+            "sessionStartMs": {
+              "median": 0.10000002384185791,
+              "min": 0,
+              "max": 0.20000004768371582
+            },
+            "acquireCaretMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "prepareCommitMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "releaseCaretMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "sessionEndMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "syncCommitMs": {
+              "median": 41.300000071525574,
+              "min": 36.59999990463257,
+              "max": 55.799999952316284
+            },
+            "runtimeRenderMs": {
+              "median": 31.899999976158142,
+              "min": 27.5,
+              "max": 41.199999928474426
+            },
+            "syncHighlightMs": {
+              "median": 31.799999952316284,
+              "min": 27.5,
+              "max": 41
+            },
+            "recoveryMs": {
+              "median": 33,
+              "min": 28.700000047683716,
+              "max": 37
+            },
+            "recoveryFromCommitMs": {
+              "median": 80.40000009536743,
+              "min": 71.5,
+              "max": 102
+            },
+            "startAndRecoveryMs": {
+              "median": 84.39999997615814,
+              "min": 75.89999997615814,
+              "max": 105.89999997615814
+            },
+            "elapsedStartToRecoveryMs": {
+              "median": 212.80000007152557,
+              "min": 164.40000009536743,
+              "max": 287.39999997615814
+            },
+            "afterTwoFramesMs": {
+              "median": 101.80000007152557,
+              "min": 92.80000007152557,
+              "max": 137.60000002384186
+            },
+            "buildMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          "cold": ["cold",11.299999952316284,0.3999999761581421,0,0,0,0.09999990463256836,0,0,45.199999928474426,33.10000002384186,33.10000002384186,33,148,159.29999995231628,308,217.79999995231628,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],
+          "warmup": [["warmup-1",2.700000047683716,0.10000002384185791,0,0,0,0,0,0,36,27.59999990463257,27.59999990463257,30.100000023841858,68.80000007152557,71.50000011920929,143.20000004768372,102.60000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-2",2,0.10000002384185791,0.10000002384185791,0,0,0,0,0,40.10000002384186,32,31.899999976158142,23.799999952316284,67.70000004768372,69.70000004768372,137.60000002384186,88.70000004768372,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-3",2.600000023841858,0.10000002384185791,0,0,0,0,0,0,41.5,30.40000009536743,30.40000009536743,36.60000002384186,86.10000002384186,88.70000004768372,230.60000002384186,112.29999995231628,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "samples": [["sample-1",5.299999952316284,0.10000002384185791,0,0.10000002384185791,0,0,0,0,41.300000071525574,31,30.899999976158142,30.799999952316284,79.10000002384186,84.39999997615814,246.29999995231628,97.39999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-2",2.899999976158142,0.10000002384185791,0,0,0,0.10000002384185791,0,0,54.10000002384186,40.299999952316284,40.10000002384186,37,94.60000002384186,97.5,185.69999992847443,127.20000004768372,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-3",2.100000023841858,0,0,0,0,0,0,0,37.300000071525574,29,29,29.899999976158142,75.20000004768372,77.30000007152557,204.5,101.80000007152557,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-4",4.399999976158142,0.09999990463256836,0,0,0,0,0,0,36.59999990463257,27.5,27.5,28.700000047683716,71.5,75.89999997615814,195.20000004768372,100.59999990463257,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-5",3.3000000715255737,0.10000002384185791,0,0,0,0,0,0,40.89999997615814,31.200000047683716,31.100000023841858,33,82.89999997615814,86.20000004768372,212.80000007152557,103.39999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-6",3.899999976158142,0,0,0.10000002384185791,0,0,0,0,55.799999952316284,41.199999928474426,41,36.700000047683716,102,105.89999997615814,287.39999997615814,137.60000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-7",3.8000000715255737,0.20000004768371582,0.10000002384185791,0,0,0.10000002384185791,0,0,39.800000071525574,31.90000009536743,31.800000071525574,36.300000071525574,80.40000009536743,84.200000166893,164.40000009536743,92.80000007152557,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-8",3.3000000715255737,0.10000002384185791,0,0,0,0,0,0,43.10000002384186,33.799999952316284,33.59999990463257,33.5,83.5,86.80000007152557,236.70000004768372,119.10000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-9",2.399999976158142,0,0,0.10000002384185791,0,0,0,0,41.700000047683716,31.899999976158142,31.799999952316284,29.299999952316284,78.39999997615814,80.79999995231628,214.79999995231628,96.29999995231628,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "checks": {
+            "operations": 13,
+            "modelDomCaretValid": true,
+            "allRecordedIdentitiesPreserved": true,
+            "builds": 0,
+            "acquiredAndReleasedCaretsPerOperation": 0,
+            "pageErrors": []
+          }
+        },
+        {
+          "lines": 5000,
+          "position": "line-start",
+          "action": "commit",
+          "mode": "current",
+          "characters": 367779,
+          "coldCheckpoints": 79,
+          "lineContainers": 5000,
+          "initialNodes": 155001,
+          "summary": {
+            "syncStartMs": {
+              "median": 153.20000004768372,
+              "min": 135.79999995231628,
+              "max": 180.30000007152557
+            },
+            "sessionStartMs": {
+              "median": 151.20000004768372,
+              "min": 133.5,
+              "max": 177.80000007152557
+            },
+            "acquireCaretMs": {
+              "median": 151.10000002384186,
+              "min": 133.39999997615814,
+              "max": 177.80000007152557
+            },
+            "prepareCommitMs": {
+              "median": 129.10000002384186,
+              "min": 106.19999992847443,
+              "max": 141
+            },
+            "releaseCaretMs": {
+              "median": 129.10000002384186,
+              "min": 106.19999992847443,
+              "max": 141
+            },
+            "sessionEndMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.20000004768371582
+            },
+            "syncCommitMs": {
+              "median": 339.3000000715256,
+              "min": 289,
+              "max": 417.6999999284744
+            },
+            "runtimeRenderMs": {
+              "median": 152.5,
+              "min": 118.20000004768372,
+              "max": 196.79999995231628
+            },
+            "syncHighlightMs": {
+              "median": 152.5,
+              "min": 118.10000002384186,
+              "max": 196.69999992847443
+            },
+            "recoveryMs": {
+              "median": 135.39999997615814,
+              "min": 116.70000004768372,
+              "max": 274
+            },
+            "recoveryFromCommitMs": {
+              "median": 505.39999997615814,
+              "min": 414.89999997615814,
+              "max": 699.7999999523163
+            },
+            "startAndRecoveryMs": {
+              "median": 682.2000000476837,
+              "min": 550.6999999284744,
+              "max": 855.0999999046326
+            },
+            "elapsedStartToRecoveryMs": {
+              "median": 1225.7000000476837,
+              "min": 1122.3999999761581,
+              "max": 1487.8999999761581
+            },
+            "afterTwoFramesMs": {
+              "median": 603.6000000238419,
+              "min": 519.6999999284744,
+              "max": 875.3999999761581
+            },
+            "buildMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          "cold": ["cold",239.40000009536743,224.40000009536743,224.10000002384186,185.5,185.39999997615814,0.20000004768371582,1,1,453.89999997615814,177.79999995231628,177.69999992847443,232,692.1999999284744,931.6000000238419,1641.6000000238419,800.8999999761581,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],
+          "warmup": [["warmup-1",187.5,184.70000004768372,184.60000002384186,138.60000002384186,138.5,0,1,1,353,157.20000004768372,157.20000004768372,155.20000004768372,515.7000000476837,703.2000000476837,1331.7000000476837,646.3999999761581,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-2",160.60000002384186,158.19999992847443,158.10000002384186,129.5,129.5,0,1,1,360.60000002384186,167.79999995231628,167.60000002384186,122.69999992847443,489.6999999284744,650.2999999523163,1269.8999999761581,565.1999999284744,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-3",213.19999992847443,210,210,149.60000002384186,149.60000002384186,0.10000002384185791,1,1,366.2000000476837,149.69999992847443,149.60000002384186,174.5,548,761.1999999284744,1391.3999999761581,612.6000000238419,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "samples": [["sample-1",151.80000007152557,148.60000002384186,148.39999997615814,135.79999995231628,135.79999995231628,0.20000004768371582,1,1,396.89999997615814,174.5,174.5,132.30000007152557,541.1000000238419,692.9000000953674,1252.3000000715256,654.3999999761581,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-2",176.80000007152557,174.40000009536743,174.30000007152557,113.70000004768372,113.70000004768372,0,1,1,329.39999997615814,152.5,152.5,166.60000002384186,505.39999997615814,682.2000000476837,1225.7000000476837,586.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-3",180.30000007152557,177.80000007152557,177.80000007152557,131.80000007152557,131.70000004768372,0,1,1,389.89999997615814,166.29999995231628,166.29999995231628,175.39999997615814,578,758.3000000715256,1342,755.8000000715256,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-4",153.20000004768372,151.20000004768372,151.10000002384186,141,141,0,1,1,398.7999999523163,177.19999992847443,177.19999992847443,128.29999995231628,534.2999999523163,687.5,1200.1000000238419,687.3999999761581,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-5",145.90000009536743,143,143,128.09999990463257,128.09999990463257,0.10000002384185791,1,1,321.2000000476837,130,130,116.70000004768372,443.90000009536743,589.8000001907349,1219.4000000953674,577.6000000238419,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-6",155.29999995231628,153.39999997615814,153.39999997615814,129.10000002384186,129.10000002384186,0,1,1,417.6999999284744,196.79999995231628,196.69999992847443,274,699.7999999523163,855.0999999046326,1487.8999999761581,875.3999999761581,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-7",157.79999995231628,155,155,130.70000004768372,130.70000004768372,0,1,1,339.3000000715256,148.10000002384186,148.10000002384186,135.39999997615814,481.39999997615814,639.1999999284744,1358.1999999284744,603.6000000238419,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-8",135.79999995231628,133.5,133.39999997615814,106.19999992847443,106.19999992847443,0,1,1,289,118.20000004768372,118.10000002384186,119.80000007152557,414.89999997615814,550.6999999284744,1122.3999999761581,529.0999999046326,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-9",136.69999992847443,134.60000002384186,134.60000002384186,117.39999997615814,117.39999997615814,0,1,1,306.59999990463257,128.30000007152557,128.30000007152557,137.60000002384186,450.6999999284744,587.3999998569489,1155.6999999284744,519.6999999284744,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "checks": {
+            "operations": 13,
+            "modelDomCaretValid": true,
+            "allRecordedIdentitiesPreserved": true,
+            "builds": 0,
+            "acquiredAndReleasedCaretsPerOperation": 1,
+            "pageErrors": []
+          }
+        },
+        {
+          "lines": 5000,
+          "position": "line-start",
+          "action": "cancel",
+          "mode": "current",
+          "characters": 367779,
+          "coldCheckpoints": 79,
+          "lineContainers": 5000,
+          "initialNodes": 155001,
+          "summary": {
+            "syncStartMs": {
+              "median": 180.29999995231628,
+              "min": 144.80000007152557,
+              "max": 211.89999997615814
+            },
+            "sessionStartMs": {
+              "median": 178.5,
+              "min": 143.5,
+              "max": 210.09999990463257
+            },
+            "acquireCaretMs": {
+              "median": 178.5,
+              "min": 143.30000007152557,
+              "max": 210.09999990463257
+            },
+            "prepareCommitMs": {
+              "median": 136.59999990463257,
+              "min": 96.79999995231628,
+              "max": 179.5
+            },
+            "releaseCaretMs": {
+              "median": 136.59999990463257,
+              "min": 96.79999995231628,
+              "max": 179.5
+            },
+            "sessionEndMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "syncCommitMs": {
+              "median": 322.2999999523163,
+              "min": 248.70000004768372,
+              "max": 384.10000002384186
+            },
+            "runtimeRenderMs": {
+              "median": 130.39999997615814,
+              "min": 108.89999997615814,
+              "max": 166.70000004768372
+            },
+            "syncHighlightMs": {
+              "median": 130.39999997615814,
+              "min": 108.79999995231628,
+              "max": 166.60000002384186
+            },
+            "recoveryMs": {
+              "median": 142.89999997615814,
+              "min": 136.29999995231628,
+              "max": 171
+            },
+            "recoveryFromCommitMs": {
+              "median": 472.09999990463257,
+              "min": 392.39999997615814,
+              "max": 528.7000000476837
+            },
+            "startAndRecoveryMs": {
+              "median": 655.7000000476837,
+              "min": 573.7999999523163,
+              "max": 691.3000000715256
+            },
+            "elapsedStartToRecoveryMs": {
+              "median": 1210.5,
+              "min": 1095.2999999523163,
+              "max": 1274.7000000476837
+            },
+            "afterTwoFramesMs": {
+              "median": 575.5999999046326,
+              "min": 459.89999997615814,
+              "max": 694.5999999046326
+            },
+            "buildMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          "cold": ["cold",271.39999997615814,254.90000009536743,254.5,148.09999990463257,148,0,1,1,384,189.79999995231628,189.79999995231628,178.10000002384186,570.5,841.8999999761581,1548.2000000476837,780.3999999761581,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],
+          "warmup": [["warmup-1",168.60000002384186,167,167,162.60000002384186,162.5,0,1,1,369.5,159,158.89999997615814,163.90000009536743,541.2000000476837,709.8000000715256,1268.2000000476837,671.7000000476837,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-2",149.20000004768372,147.39999997615814,147.39999997615814,173.20000004768372,173.10000002384186,0.10000002384185791,1,1,344,137.59999990463257,137.59999990463257,153.80000007152557,504.10000002384186,653.3000000715256,1157.9000000953674,588.1999999284744,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-3",150.90000009536743,149.60000002384186,149.5,157.60000002384186,157.5,0,1,1,318.2999999523163,124.40000009536743,124.30000007152557,117.69999992847443,440.59999990463257,591.5,1096,496.7999999523163,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "samples": [["sample-1",180.29999995231628,178.5,178.5,129.89999997615814,129.80000007152557,0.10000002384185791,1,1,279.39999997615814,108.89999997615814,108.79999995231628,139.39999997615814,425.89999997615814,606.1999999284744,1095.2999999523163,467.89999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-2",160.09999990463257,158.20000004768372,158,122.39999997615814,122.39999997615814,0,1,1,285.09999990463257,128.89999997615814,128.89999997615814,171,461.6999999284744,621.799999833107,1158.1999999284744,575.5999999046326,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-3",149.5,148.29999995231628,148.20000004768372,179.5,179.5,0,1,1,384.10000002384186,155.79999995231628,155.70000004768372,137.89999997615814,528.7000000476837,678.2000000476837,1210.5,589.2000000476837,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-4",204.89999997615814,203.39999997615814,203.39999997615814,163.80000007152557,163.80000007152557,0,1,1,334.5,130.39999997615814,130.39999997615814,146.30000007152557,486.40000009536743,691.3000000715256,1274.7000000476837,607.4000000953674,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-5",190,188.70000004768372,188.70000004768372,136.59999990463257,136.59999990463257,0,1,1,322.2999999523163,147.89999997615814,147.89999997615814,142.89999997615814,472.09999990463257,662.0999999046326,1213.2999999523163,551.1999999284744,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-6",144.80000007152557,143.5,143.30000007152557,167.29999995231628,167.29999995231628,0,1,1,347,145.80000007152557,145.80000007152557,155.69999992847443,510.89999997615814,655.7000000476837,1217,661.1000000238419,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-7",179.40000009536743,177,177,137.89999997615814,137.89999997615814,0,1,1,342,166.70000004768372,166.60000002384186,152.20000004768372,504.39999997615814,683.8000000715256,1254.3000000715256,694.5999999046326,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-8",211.89999997615814,210.09999990463257,210.09999990463257,96.79999995231628,96.79999995231628,0,1,1,249.39999997615814,120.70000004768372,120.60000002384186,136.29999995231628,392.39999997615814,604.2999999523163,1109.3999999761581,538.3999999761581,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-9",180.29999995231628,178.5,178.5,103.09999990463257,103.09999990463257,0,1,1,248.70000004768372,118.10000002384186,118,138.29999995231628,393.5,573.7999999523163,1108.2999999523163,459.89999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "checks": {
+            "operations": 13,
+            "modelDomCaretValid": true,
+            "allRecordedIdentitiesPreserved": true,
+            "builds": 0,
+            "acquiredAndReleasedCaretsPerOperation": 1,
+            "pageErrors": []
+          }
+        },
+        {
+          "lines": 5000,
+          "position": "line-middle",
+          "action": "commit",
+          "mode": "current",
+          "characters": 367779,
+          "coldCheckpoints": 79,
+          "lineContainers": 5000,
+          "initialNodes": 155001,
+          "summary": {
+            "syncStartMs": {
+              "median": 2.700000047683716,
+              "min": 1.5999999046325684,
+              "max": 4
+            },
+            "sessionStartMs": {
+              "median": 0.09999990463256836,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "acquireCaretMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "prepareCommitMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "releaseCaretMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "sessionEndMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "syncCommitMs": {
+              "median": 370.8000000715256,
+              "min": 316.60000002384186,
+              "max": 423.89999997615814
+            },
+            "runtimeRenderMs": {
+              "median": 293.89999997615814,
+              "min": 255.5,
+              "max": 331.90000009536743
+            },
+            "syncHighlightMs": {
+              "median": 293.89999997615814,
+              "min": 255.5,
+              "max": 331.90000009536743
+            },
+            "recoveryMs": {
+              "median": 143.10000002384186,
+              "min": 120.40000009536743,
+              "max": 170.5
+            },
+            "recoveryFromCommitMs": {
+              "median": 525.1000000238419,
+              "min": 466.2000000476837,
+              "max": 580.8999999761581
+            },
+            "startAndRecoveryMs": {
+              "median": 528.2000000476837,
+              "min": 468.90000009536743,
+              "max": 583.6000000238419
+            },
+            "elapsedStartToRecoveryMs": {
+              "median": 1151.3999999761581,
+              "min": 1034.8000000715256,
+              "max": 1291
+            },
+            "afterTwoFramesMs": {
+              "median": 636.6000000238419,
+              "min": 537.8999999761581,
+              "max": 692.2999999523163
+            },
+            "buildMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          "cold": ["cold",13.399999976158142,0.3999999761581421,0.09999990463256836,0,0,0.10000002384185791,0,0,486.5,380.8000000715256,380.8000000715256,189.5,687,700.3999999761581,1294.5,873.8999999761581,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],
+          "warmup": [["warmup-1",2.6999999284744263,0.10000002384185791,0,0,0,0.10000002384185791,0,0,453.7999999523163,378.5,378.39999997615814,173.5,635.1999999284744,637.8999998569489,1236.5999999046326,764.2999999523163,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-2",3.200000047683716,0.10000002384185791,0,0,0,0,0,0,391.8000000715256,313.2000000476837,313.10000002384186,186,590.8000000715256,594.0000001192093,1296.4000000953674,669.1000000238419,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-3",2.8000000715255737,0.10000002384185791,0,0,0,0,0,0,396.6999999284744,315.59999990463257,315.59999990463257,151.20000004768372,555.5,558.3000000715256,1165.2000000476837,666.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "samples": [["sample-1",2.899999976158142,0.10000002384185791,0,0,0,0,0,0,421.2000000476837,331.90000009536743,331.90000009536743,147.59999990463257,576,578.8999999761581,1279.7999999523163,691.3000000715256,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-2",2.700000047683716,0.10000002384185791,0,0,0,0,0,0,316.60000002384186,255.5,255.5,142.80000007152557,466.2000000476837,468.90000009536743,1034.8000000715256,537.8999999761581,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-3",1.5999999046325684,0.09999990463256836,0,0,0,0,0,0,370.8000000715256,298.90000009536743,298.90000009536743,170.5,547.8999999761581,549.4999998807907,1133.5999999046326,662.2000000476837,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-4",4,0,0,0,0,0.10000002384185791,0,0,364.8000000715256,286.7999999523163,286.7000000476837,120.40000009536743,492.3000000715256,496.3000000715256,1174.1000000238419,562.2000000476837,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-5",2.5,0.10000002384185791,0,0.10000002384185791,0,0,0,0,360.2999999523163,277.60000002384186,277.5,141.39999997615814,510.6999999284744,513.1999999284744,1102.3999999761581,667.6000000238419,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-6",2.600000023841858,0,0,0,0,0,0,0,391.3000000715256,315.7000000476837,315.60000002384186,160.80000007152557,561.9000000953674,564.5000001192093,1228.7000000476837,636.6000000238419,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-7",2.700000047683716,0,0,0.09999990463256836,0,0,0,0,423.89999997615814,320.1999999284744,320.09999990463257,148.79999995231628,580.8999999761581,583.6000000238419,1291,692.2999999523163,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-8",3.100000023841858,0,0,0,0,0,0,0,373.10000002384186,293.89999997615814,293.89999997615814,143.10000002384186,525.1000000238419,528.2000000476837,1151.3999999761581,600.2000000476837,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-9",3,0.10000002384185791,0,0,0,0,0,0,336.89999997615814,271.5,271.39999997615814,126,473,476,1069.7000000476837,580.0999999046326,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "checks": {
+            "operations": 13,
+            "modelDomCaretValid": true,
+            "allRecordedIdentitiesPreserved": true,
+            "builds": 0,
+            "acquiredAndReleasedCaretsPerOperation": 0,
+            "pageErrors": []
+          }
+        },
+        {
+          "lines": 5000,
+          "position": "line-middle",
+          "action": "cancel",
+          "mode": "current",
+          "characters": 367779,
+          "coldCheckpoints": 79,
+          "lineContainers": 5000,
+          "initialNodes": 155001,
+          "summary": {
+            "syncStartMs": {
+              "median": 10.700000047683716,
+              "min": 7.799999952316284,
+              "max": 18.399999976158142
+            },
+            "sessionStartMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.20000004768371582
+            },
+            "acquireCaretMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "prepareCommitMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.09999990463256836
+            },
+            "releaseCaretMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "sessionEndMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "syncCommitMs": {
+              "median": 212.70000004768372,
+              "min": 185.70000004768372,
+              "max": 244.79999995231628
+            },
+            "runtimeRenderMs": {
+              "median": 163.80000007152557,
+              "min": 142.20000004768372,
+              "max": 197.89999997615814
+            },
+            "syncHighlightMs": {
+              "median": 163.70000004768372,
+              "min": 142.20000004768372,
+              "max": 197.79999995231628
+            },
+            "recoveryMs": {
+              "median": 181.19999992847443,
+              "min": 155.69999992847443,
+              "max": 223.60000002384186
+            },
+            "recoveryFromCommitMs": {
+              "median": 395.2999999523163,
+              "min": 364.2999999523163,
+              "max": 475.39999997615814
+            },
+            "startAndRecoveryMs": {
+              "median": 406,
+              "min": 373.9999998807907,
+              "max": 485.60000002384186
+            },
+            "elapsedStartToRecoveryMs": {
+              "median": 951.3999999761581,
+              "min": 856.0999999046326,
+              "max": 1043.2999999523163
+            },
+            "afterTwoFramesMs": {
+              "median": 497.7000000476837,
+              "min": 431.39999997615814,
+              "max": 568.3999999761581
+            },
+            "buildMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          "cold": ["cold",15.199999928474426,0.5,0.10000002384185791,0,0,0.09999990463256836,0,0,227,173.60000002384186,173.5,170.60000002384186,403.60000002384186,418.7999999523163,908.6999999284744,509.40000009536743,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],
+          "warmup": [["warmup-1",20.699999928474426,0.19999992847442627,0.09999990463256836,0,0,0.09999990463256836,0,0,193.69999992847443,148.39999997615814,148.30000007152557,276.2999999523163,477.7999999523163,498.4999998807907,1097.2999999523163,569.7999999523163,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-2",7.400000095367432,0,0,0.09999990463256836,0,0,0,0,249.5,201.39999997615814,201.29999995231628,204.89999997615814,463.2999999523163,470.7000000476837,1005.5,549.7999999523163,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-3",7.400000095367432,0.10000002384185791,0,0,0,0,0,0,196.40000009536743,156.30000007152557,156.20000004768372,185.59999990463257,387.5,394.90000009536743,1002.5,476.60000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "samples": [["sample-1",7.799999952316284,0,0,0,0,0,0,0,244.79999995231628,197.89999997615814,197.79999995231628,183.30000007152557,434.60000002384186,442.39999997615814,958.6000000238419,538.2999999523163,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-2",11.799999952316284,0.20000004768371582,0,0.09999990463256836,0,0,0,0,210.20000004768372,163.89999997615814,163.89999997615814,176.20000004768372,391.40000009536743,403.2000000476837,884.5,487.7000000476837,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-3",12.800000071525574,0.10000002384185791,0,0,0,0,0,0,214.39999997615814,164.89999997615814,164.89999997615814,181.19999992847443,402.7999999523163,415.60000002384186,991.3999999761581,497.7000000476837,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-4",10.599999904632568,0,0,0,0,0,0,0,212.70000004768372,162.60000002384186,162.60000002384186,193.5,412.60000002384186,423.1999999284744,912.8999999761581,501.60000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-5",18.399999976158142,0,0,0,0,0,0,0,185.70000004768372,142.20000004768372,142.20000004768372,189.5,382.10000002384186,400.5,1043.2999999523163,431.39999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-6",9.699999928474426,0.19999992847442627,0,0,0,0,0,0,202.39999997615814,161.60000002384186,161.60000002384186,155.69999992847443,364.2999999523163,373.9999998807907,856.0999999046326,454.7999999523163,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-7",10.200000047683716,0.10000002384185791,0,0.09999990463256836,0,0,0,0,242,192.60000002384186,192.5,223.60000002384186,475.39999997615814,485.60000002384186,1041.7000000476837,568.3999999761581,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-8",12.399999976158142,0,0,0,0,0,0,0,201.39999997615814,150.69999992847443,150.69999992847443,161.29999995231628,370.2999999523163,382.6999999284744,925.0999999046326,463.60000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-9",10.700000047683716,0,0,0,0,0,0,0,215.79999995231628,163.80000007152557,163.70000004768372,172,395.2999999523163,406,951.3999999761581,506.6999999284744,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "checks": {
+            "operations": 13,
+            "modelDomCaretValid": true,
+            "allRecordedIdentitiesPreserved": true,
+            "builds": 0,
+            "acquiredAndReleasedCaretsPerOperation": 0,
+            "pageErrors": []
+          }
+        }
+      ]
+    },
+    {
+      "label": "after",
+      "revision": "60dfb27a+working-tree-ime-cursor-local",
+      "measuredAt": "2026-11-06T10:27:33.109Z",
+      "browser": "chromium",
+      "browserVersion": "145.0.7632.6",
+      "productSha256": {
+        "packages/editor/framework/block-std/inline/blot/scroll-blot.ts": "70337c86b819973293a495a2c9a11d954fcd5fe3a1e777a1997b8c15c5fd403f",
+        "packages/editor/framework/block-std/inline/blot/logical-line-index.ts": "b5342b1b31a852e370dfa1781494952069d338c5cd7112d394fa7c8157bd283b"
+      },
+      "groups": [
+        {
+          "lines": 1000,
+          "position": "line-start",
+          "action": "commit",
+          "mode": "current",
+          "characters": 71779,
+          "coldCheckpoints": 16,
+          "lineContainers": 1000,
+          "initialNodes": 31001,
+          "summary": {
+            "syncStartMs": {
+              "median": 3.600000023841858,
+              "min": 2.899999976158142,
+              "max": 5.799999952316284
+            },
+            "sessionStartMs": {
+              "median": 2.799999952316284,
+              "min": 2.0999999046325684,
+              "max": 4
+            },
+            "acquireCaretMs": {
+              "median": 2.700000047683716,
+              "min": 2.0999999046325684,
+              "max": 4
+            },
+            "prepareCommitMs": {
+              "median": 1.3000000715255737,
+              "min": 0.8999999761581421,
+              "max": 1.7000000476837158
+            },
+            "releaseCaretMs": {
+              "median": 1.3000000715255737,
+              "min": 0.8999999761581421,
+              "max": 1.7000000476837158
+            },
+            "sessionEndMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "syncCommitMs": {
+              "median": 37.40000009536743,
+              "min": 32.5,
+              "max": 58.89999997615814
+            },
+            "runtimeRenderMs": {
+              "median": 27.300000071525574,
+              "min": 23.299999952316284,
+              "max": 43.699999928474426
+            },
+            "syncHighlightMs": {
+              "median": 27.300000071525574,
+              "min": 23.299999952316284,
+              "max": 43.60000002384186
+            },
+            "recoveryMs": {
+              "median": 26.399999976158142,
+              "min": 22.799999952316284,
+              "max": 35.299999952316284
+            },
+            "recoveryFromCommitMs": {
+              "median": 68.30000007152557,
+              "min": 61.39999997615814,
+              "max": 90.70000004768372
+            },
+            "startAndRecoveryMs": {
+              "median": 72.89999997615814,
+              "min": 64.79999995231628,
+              "max": 93.89999997615814
+            },
+            "elapsedStartToRecoveryMs": {
+              "median": 217.89999997615814,
+              "min": 185.5,
+              "max": 255.39999997615814
+            },
+            "afterTwoFramesMs": {
+              "median": 97.60000002384186,
+              "min": 84.30000007152557,
+              "max": 117.09999990463257
+            },
+            "buildMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          "cold": ["cold",47.299999952316284,42.699999928474426,42.39999997615814,2.299999952316284,2.299999952316284,0.10000002384185791,1,1,83.60000002384186,63.39999997615814,63.299999952316284,29.300000071525574,177.10000002384186,224.39999997615814,409,285,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],
+          "warmup": [["warmup-1",5.600000023841858,2.5,2.5,3.100000023841858,3.100000023841858,0,1,1,52,36.5,36.299999952316284,28.200000047683716,85,90.60000002384186,250.5,104.89999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-2",4.100000023841858,2.600000023841858,2.600000023841858,1,1,0,1,1,44,31.100000023841858,31,29.699999928474426,77,81.10000002384186,227.29999995231628,110.80000007152557,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-3",5.399999976158142,3.600000023841858,3.600000023841858,1.100000023841858,1.100000023841858,0,1,1,39.5,28.100000023841858,28,26.100000023841858,69.70000004768372,75.10000002384186,233,90.60000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "samples": [["sample-1",2.899999976158142,2.0999999046325684,2.0999999046325684,1.5,1.399999976158142,0.09999990463256836,1,1,48.09999990463257,37.5,37.199999928474426,29,82,84.89999997615814,247.30000007152557,117.09999990463257,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-2",5.799999952316284,4,4,1.7000000476837158,1.7000000476837158,0,1,1,42,29.100000023841858,29,22.799999952316284,68.89999997615814,74.69999992847443,219.79999995231628,109.20000004768372,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-3",3.5999999046325684,2.799999952316284,2.700000047683716,1.3000000715255737,1.3000000715255737,0,1,1,37.199999928474426,26.59999990463257,26.5,22.800000071525574,62.5,66.09999990463257,197.89999997615814,86.19999992847443,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-4",3.399999976158142,2.299999952316284,2.1999999284744263,1.100000023841858,1.100000023841858,0,1,1,34.39999997615814,25.300000071525574,25.200000047683716,23,61.39999997615814,64.79999995231628,185.5,88.19999992847443,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-5",3.8000000715255737,2.9000000953674316,2.8000000715255737,1.5,1.399999976158142,0,1,1,48.90000009536743,35.89999997615814,35.89999997615814,35.299999952316284,89,92.80000007152557,255.39999997615814,116.70000004768372,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-6",3.1999999284744263,2.299999952316284,2.200000047683716,1.399999976158142,1.399999976158142,0.10000002384185791,1,1,58.89999997615814,43.699999928474426,43.60000002384186,26.300000071525574,90.70000004768372,93.89999997615814,222.10000002384186,111.39999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-7",3.600000023841858,2.399999976158142,2.399999976158142,0.8999999761581421,0.8999999761581421,0,1,1,36,26.799999952316284,26.699999928474426,26.899999976158142,66.89999997615814,70.5,216.30000007152557,96.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-8",4.599999904632568,3.299999952316284,3.299999952316284,1.100000023841858,1.100000023841858,0,1,1,37.40000009536743,27.300000071525574,27.300000071525574,26.399999976158142,68.30000007152557,72.89999997615814,217.89999997615814,84.30000007152557,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-9",4,3,3,1.100000023841858,1.100000023841858,0,1,1,32.5,23.299999952316284,23.299999952316284,28.300000071525574,63.90000009536743,67.90000009536743,188.60000002384186,97.60000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "checks": {
+            "operations": 13,
+            "modelDomCaretValid": true,
+            "allRecordedIdentitiesPreserved": true,
+            "builds": 0,
+            "acquiredAndReleasedCaretsPerOperation": 1,
+            "pageErrors": []
+          }
+        },
+        {
+          "lines": 1000,
+          "position": "line-start",
+          "action": "cancel",
+          "mode": "current",
+          "characters": 71779,
+          "coldCheckpoints": 16,
+          "lineContainers": 1000,
+          "initialNodes": 31001,
+          "summary": {
+            "syncStartMs": {
+              "median": 3.8000000715255737,
+              "min": 3.5,
+              "max": 6.899999976158142
+            },
+            "sessionStartMs": {
+              "median": 3,
+              "min": 2.5,
+              "max": 5.5
+            },
+            "acquireCaretMs": {
+              "median": 2.9000000953674316,
+              "min": 2.4000000953674316,
+              "max": 5.399999976158142
+            },
+            "prepareCommitMs": {
+              "median": 1.5,
+              "min": 1.1999999284744263,
+              "max": 2.799999952316284
+            },
+            "releaseCaretMs": {
+              "median": 1.5,
+              "min": 1.1999999284744263,
+              "max": 2.700000047683716
+            },
+            "sessionEndMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "syncCommitMs": {
+              "median": 32.699999928474426,
+              "min": 27.399999976158142,
+              "max": 49.700000047683716
+            },
+            "runtimeRenderMs": {
+              "median": 29.200000047683716,
+              "min": 23.300000071525574,
+              "max": 45.40000009536743
+            },
+            "syncHighlightMs": {
+              "median": 29.100000023841858,
+              "min": 23.300000071525574,
+              "max": 45.40000009536743
+            },
+            "recoveryMs": {
+              "median": 28,
+              "min": 20.899999976158142,
+              "max": 38.799999952316284
+            },
+            "recoveryFromCommitMs": {
+              "median": 67,
+              "min": 58.89999997615814,
+              "max": 89
+            },
+            "startAndRecoveryMs": {
+              "median": 70.80000007152557,
+              "min": 62.799999952316284,
+              "max": 93.49999988079071
+            },
+            "elapsedStartToRecoveryMs": {
+              "median": 232,
+              "min": 154.09999990463257,
+              "max": 311.39999997615814
+            },
+            "afterTwoFramesMs": {
+              "median": 94.90000009536743,
+              "min": 71.5,
+              "max": 119.59999990463257
+            },
+            "buildMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          "cold": ["cold",53.60000002384186,49,48.700000047683716,2.399999976158142,2.1999999284744263,0,1,1,49.10000002384186,41.200000047683716,41.10000002384186,28,137.60000002384186,191.20000004768372,301.7000000476837,438.1999999284744,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],
+          "warmup": [["warmup-1",7,3.8000000715255737,3.8000000715255737,1.6999999284744263,1.6999999284744263,0,1,1,43.39999997615814,38.699999928474426,38.60000002384186,33.40000009536743,85.20000004768372,92.20000004768372,263.90000009536743,113.20000004768372,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-2",4.200000047683716,3,3,1.2000000476837158,1.2000000476837158,0,1,1,34.5,30.899999976158142,30.899999976158142,27.899999976158142,65.89999997615814,70.10000002384186,165.20000004768372,86.89999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-3",4.400000095367432,3.5,3.399999976158142,1.5,1.399999976158142,0,1,1,35.700000047683716,31.699999928474426,31.5,25,63.700000047683716,68.10000014305115,153.20000004768372,84.10000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "samples": [["sample-1",3.600000023841858,2.600000023841858,2.5,1.1999999284744263,1.1999999284744263,0,1,1,33.89999997615814,30.299999952316284,30.199999928474426,29.600000023841858,71.39999997615814,75,232,101.79999995231628,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-2",3.5,2.5,2.4000000953674316,2,1.8000000715255737,0,1,1,27.399999976158142,23.300000071525574,23.300000071525574,24.90000009536743,62.60000002384186,66.10000002384186,178.40000009536743,86.79999995231628,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-3",3.8000000715255737,3,2.9000000953674316,1.399999976158142,1.2999999523162842,0,1,1,32.699999928474426,29.200000047683716,29.100000023841858,27,67,70.80000007152557,225.80000007152557,87.39999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-4",3.899999976158142,3,3,1.600000023841858,1.600000023841858,0,1,1,30.100000023841858,26.300000071525574,26.300000071525574,25.799999952316284,58.89999997615814,62.799999952316284,154.09999990463257,71.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-5",6.899999976158142,5.5,5.399999976158142,2.799999952316284,2.700000047683716,0,1,1,40.699999928474426,35.39999997615814,35.299999952316284,38.799999952316284,86.59999990463257,93.49999988079071,311.39999997615814,119.59999990463257,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-6",3.600000023841858,2.600000023841858,2.5,2,2,0,1,1,49.700000047683716,45.40000009536743,45.40000009536743,35.89999997615814,89,92.60000002384186,188,110.90000009536743,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-7",3.700000047683716,2.899999976158142,2.899999976158142,1.399999976158142,1.399999976158142,0,1,1,29.40000009536743,26.100000023841858,26,28,66.5,70.20000004768372,256.5,94.90000009536743,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-8",4.399999976158142,3.399999976158142,3.399999976158142,1.399999976158142,1.399999976158142,0,1,1,30.300000071525574,27.300000071525574,27.200000047683716,20.899999976158142,60.5,64.89999997615814,273.2999999523163,79.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-9",4.300000071525574,3.200000047683716,3.200000047683716,1.5,1.5,0,1,1,39.39999997615814,35.59999990463257,35.5,33.699999928474426,83.39999997615814,87.70000004768372,280.89999997615814,118.60000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "checks": {
+            "operations": 13,
+            "modelDomCaretValid": true,
+            "allRecordedIdentitiesPreserved": true,
+            "builds": 0,
+            "acquiredAndReleasedCaretsPerOperation": 1,
+            "pageErrors": []
+          }
+        },
+        {
+          "lines": 1000,
+          "position": "line-middle",
+          "action": "commit",
+          "mode": "current",
+          "characters": 71779,
+          "coldCheckpoints": 16,
+          "lineContainers": 1000,
+          "initialNodes": 31001,
+          "summary": {
+            "syncStartMs": {
+              "median": 1,
+              "min": 0.7000000476837158,
+              "max": 1.2999999523162842
+            },
+            "sessionStartMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "acquireCaretMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.09999990463256836
+            },
+            "prepareCommitMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "releaseCaretMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "sessionEndMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "syncCommitMs": {
+              "median": 79,
+              "min": 63.10000002384186,
+              "max": 98.29999995231628
+            },
+            "runtimeRenderMs": {
+              "median": 59.299999952316284,
+              "min": 50.60000002384186,
+              "max": 80.80000007152557
+            },
+            "syncHighlightMs": {
+              "median": 59.299999952316284,
+              "min": 50.299999952316284,
+              "max": 80.80000007152557
+            },
+            "recoveryMs": {
+              "median": 25.600000023841858,
+              "min": 20.699999928474426,
+              "max": 35.800000071525574
+            },
+            "recoveryFromCommitMs": {
+              "median": 106.19999992847443,
+              "min": 94.39999997615814,
+              "max": 122.19999992847443
+            },
+            "startAndRecoveryMs": {
+              "median": 107.09999990463257,
+              "min": 95.60000002384186,
+              "max": 123.09999990463257
+            },
+            "elapsedStartToRecoveryMs": {
+              "median": 278.60000002384186,
+              "min": 245.09999990463257,
+              "max": 326.60000002384186
+            },
+            "afterTwoFramesMs": {
+              "median": 132.79999995231628,
+              "min": 116.09999990463257,
+              "max": 157.39999997615814
+            },
+            "buildMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          "cold": ["cold",4.5,0.19999992847442627,0.10000002384185791,0,0,0,0,0,123.70000004768372,99.60000002384186,99.5,40.39999997615814,175.70000004768372,180.20000004768372,281.60000002384186,322,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],
+          "warmup": [["warmup-1",1.3000000715255737,0,0,0.10000002384185791,0,0,0,0,108,83.89999997615814,83.89999997615814,38.700000047683716,150.70000004768372,152.0000001192093,281.8000000715256,181.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-2",1.1999999284744263,0,0,0.10000002384185791,0,0,0,0,69.10000002384186,53.699999928474426,53.60000002384186,27.799999952316284,100.29999995231628,101.49999988079071,226.09999990463257,130.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-3",1,0,0,0.10000002384185791,0,0,0,0,77,59.39999997615814,59.200000047683716,27,107.10000002384186,108.10000002384186,238.60000002384186,130.60000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "samples": [["sample-1",1,0.09999990463256836,0.09999990463256836,0,0,0,0,0,69,54.699999928474426,54.60000002384186,25.300000071525574,97.40000009536743,98.40000009536743,272.90000009536743,122.30000007152557,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-2",1.2000000476837158,0.10000002384185791,0,0,0,0,0,0,67,51.700000047683716,51.700000047683716,24.300000071525574,94.39999997615814,95.60000002384186,262.3000000715256,116.09999990463257,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-3",0.8999999761581421,0,0,0,0,0,0,0,98.29999995231628,80.80000007152557,80.80000007152557,20.699999928474426,122.19999992847443,123.09999990463257,297.39999997615814,141.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-4",1.2999999523162842,0,0,0,0,0,0,0,63.10000002384186,50.60000002384186,50.299999952316284,27.699999928474426,94.69999992847443,95.99999988079071,245.09999990463257,125.79999995231628,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-5",0.7000000476837158,0.10000002384185791,0,0,0,0,0,0,79,64.20000004768372,64.20000004768372,21.199999928474426,104.60000002384186,105.30000007152557,278.60000002384186,126.10000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-6",1,0,0,0.10000002384185791,0,0,0,0,92.19999992847443,71.79999995231628,71.60000002384186,25.600000023841858,121.69999992847443,122.69999992847443,264.6999999284744,157.39999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-7",1,0,0,0,0,0,0,0,86,69.70000004768372,69.70000004768372,26.600000023841858,120.90000009536743,121.90000009536743,326.60000002384186,150,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-8",0.8999999761581421,0,0,0.10000002384185791,0,0,0,0,68.29999995231628,55.700000047683716,55.60000002384186,34.299999952316284,106.19999992847443,107.09999990463257,280.89999997615814,132.79999995231628,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-9",1,0,0,0.09999990463256836,0,0,0,0,80.10000002384186,59.299999952316284,59.299999952316284,35.800000071525574,121.30000007152557,122.30000007152557,290.10000002384186,148,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "checks": {
+            "operations": 13,
+            "modelDomCaretValid": true,
+            "allRecordedIdentitiesPreserved": true,
+            "builds": 0,
+            "acquiredAndReleasedCaretsPerOperation": 0,
+            "pageErrors": []
+          }
+        },
+        {
+          "lines": 1000,
+          "position": "line-middle",
+          "action": "cancel",
+          "mode": "current",
+          "characters": 71779,
+          "coldCheckpoints": 16,
+          "lineContainers": 1000,
+          "initialNodes": 31001,
+          "summary": {
+            "syncStartMs": {
+              "median": 3,
+              "min": 2.600000023841858,
+              "max": 3.399999976158142
+            },
+            "sessionStartMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "acquireCaretMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "prepareCommitMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.09999990463256836
+            },
+            "releaseCaretMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "sessionEndMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "syncCommitMs": {
+              "median": 41.200000047683716,
+              "min": 35.60000002384186,
+              "max": 78.20000004768372
+            },
+            "runtimeRenderMs": {
+              "median": 31.799999952316284,
+              "min": 26.5,
+              "max": 63.199999928474426
+            },
+            "syncHighlightMs": {
+              "median": 31.799999952316284,
+              "min": 26.5,
+              "max": 63.09999990463257
+            },
+            "recoveryMs": {
+              "median": 33.799999952316284,
+              "min": 30.600000023841858,
+              "max": 57.800000071525574
+            },
+            "recoveryFromCommitMs": {
+              "median": 82.29999995231628,
+              "min": 75.20000004768372,
+              "max": 141.20000004768372
+            },
+            "startAndRecoveryMs": {
+              "median": 85.10000002384186,
+              "min": 78.60000002384186,
+              "max": 144.20000004768372
+            },
+            "elapsedStartToRecoveryMs": {
+              "median": 223.39999997615814,
+              "min": 153.60000002384186,
+              "max": 253.80000007152557
+            },
+            "afterTwoFramesMs": {
+              "median": 106.5,
+              "min": 102,
+              "max": 191.39999997615814
+            },
+            "buildMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          "cold": ["cold",6,0.30000007152557373,0.10000002384185791,0.10000002384185791,0,0.09999990463256836,0,0,62.5,46.300000071525574,46.200000047683716,43.10000002384186,237.30000007152557,243.30000007152557,408.39999997615814,297.60000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],
+          "warmup": [["warmup-1",4.599999904632568,0,0,0.10000002384185791,0,0,0,0,40.60000002384186,31.399999976158142,31.299999952316284,37,83.39999997615814,87.99999988079071,243.59999990463257,100.20000004768372,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-2",2.5,0,0,0.09999990463256836,0,0,0,0,57.10000002384186,43.5,43.39999997615814,45.10000002384186,107.60000002384186,110.10000002384186,196.10000002384186,127.20000004768372,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-3",2.600000023841858,0.10000002384185791,0.10000002384185791,0,0,0,0,0,41,32.300000071525574,32.200000047683716,35.10000002384186,86.60000002384186,89.20000004768372,231.40000009536743,111,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "samples": [["sample-1",3,0.10000002384185791,0,0,0,0.10000002384185791,0,0,78.20000004768372,63.199999928474426,63.09999990463257,57.800000071525574,141.20000004768372,144.20000004768372,238.10000002384186,191.39999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-2",3.200000047683716,0,0,0.09999990463256836,0,0,0,0,46.59999990463257,36.39999997615814,36.300000071525574,34.5,89.39999997615814,92.60000002384186,253.80000007152557,114.79999995231628,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-3",2.899999976158142,0,0,0,0,0,0,0,46.5,35.800000071525574,35.700000047683716,33.799999952316284,89.39999997615814,92.29999995231628,223.39999997615814,117.10000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-4",3,0.10000002384185791,0.10000002384185791,0,0,0,0,0,35.700000047683716,26.5,26.5,32.299999952316284,76.20000004768372,79.20000004768372,204.5,106.70000004768372,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-5",3,0,0,0,0,0,0,0,41.200000047683716,31.799999952316284,31.799999952316284,32.60000002384186,77.10000002384186,80.10000002384186,153.60000002384186,102,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-6",3.399999976158142,0,0,0,0,0,0,0,38.200000047683716,29.300000071525574,29.300000071525574,37.799999952316284,82.29999995231628,85.69999992847443,225.79999995231628,106.29999995231628,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-7",3.399999976158142,0.10000002384185791,0,0,0,0,0,0,35.60000002384186,27.899999976158142,27.699999928474426,32.40000009536743,75.20000004768372,78.60000002384186,211.60000002384186,102.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-8",3,0.10000002384185791,0,0,0,0,0,0,39.300000071525574,29.800000071525574,29.800000071525574,35.40000009536743,81.90000009536743,84.90000009536743,242.5,103.30000007152557,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-9",2.600000023841858,0,0,0,0,0,0,0,48.10000002384186,37.199999928474426,37.09999990463257,30.600000023841858,82.5,85.10000002384186,164.29999995231628,106.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "checks": {
+            "operations": 13,
+            "modelDomCaretValid": true,
+            "allRecordedIdentitiesPreserved": true,
+            "builds": 0,
+            "acquiredAndReleasedCaretsPerOperation": 0,
+            "pageErrors": []
+          }
+        },
+        {
+          "lines": 5000,
+          "position": "line-start",
+          "action": "commit",
+          "mode": "current",
+          "characters": 367779,
+          "coldCheckpoints": 79,
+          "lineContainers": 5000,
+          "initialNodes": 155001,
+          "summary": {
+            "syncStartMs": {
+              "median": 12.099999904632568,
+              "min": 8.899999976158142,
+              "max": 18.200000047683716
+            },
+            "sessionStartMs": {
+              "median": 9.799999952316284,
+              "min": 7.399999976158142,
+              "max": 14.600000023841858
+            },
+            "acquireCaretMs": {
+              "median": 9.699999928474426,
+              "min": 7.399999976158142,
+              "max": 14.5
+            },
+            "prepareCommitMs": {
+              "median": 5.300000071525574,
+              "min": 4,
+              "max": 6.399999976158142
+            },
+            "releaseCaretMs": {
+              "median": 5.300000071525574,
+              "min": 4,
+              "max": 6.399999976158142
+            },
+            "sessionEndMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "syncCommitMs": {
+              "median": 169.5,
+              "min": 163.69999992847443,
+              "max": 247.80000007152557
+            },
+            "runtimeRenderMs": {
+              "median": 133.89999997615814,
+              "min": 122.89999997615814,
+              "max": 193
+            },
+            "syncHighlightMs": {
+              "median": 133.79999995231628,
+              "min": 122.89999997615814,
+              "max": 193
+            },
+            "recoveryMs": {
+              "median": 148.70000004768372,
+              "min": 106.80000007152557,
+              "max": 163.29999995231628
+            },
+            "recoveryFromCommitMs": {
+              "median": 331.5,
+              "min": 282.39999997615814,
+              "max": 405.2000000476837
+            },
+            "startAndRecoveryMs": {
+              "median": 346.5,
+              "min": 294.2999999523163,
+              "max": 414.10000002384186
+            },
+            "elapsedStartToRecoveryMs": {
+              "median": 955,
+              "min": 817.2999999523163,
+              "max": 1036.3999999761581
+            },
+            "afterTwoFramesMs": {
+              "median": 417.8000000715256,
+              "min": 375.2000000476837,
+              "max": 499.6999999284744
+            },
+            "buildMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          "cold": ["cold",230.69999992847443,217.10000002384186,216.90000009536743,4.5,4.5,0,1,1,222.59999990463257,174.20000004768372,174.10000002384186,158.60000002384186,387.39999997615814,618.0999999046326,1375,463.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],
+          "warmup": [["warmup-1",14.399999976158142,12.200000047683716,12.200000047683716,6.099999904632568,6.099999904632568,0,1,1,235.5,189.10000002384186,189.10000002384186,165.5,413.89999997615814,428.2999999523163,1061.8999999761581,542.7999999523163,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-2",23.59999990463257,20.09999990463257,20.09999990463257,4.299999952316284,4.299999952316284,0,1,1,226.80000007152557,184.30000007152557,184.20000004768372,139.69999992847443,375,398.59999990463257,1039.6999999284744,429.2000000476837,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-3",12.600000023841858,10.299999952316284,10.299999952316284,6.100000023841858,6.100000023841858,0,1,1,212.69999992847443,162.59999990463257,162.59999990463257,138.20000004768372,360,372.60000002384186,981.3000000715256,473.39999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "samples": [["sample-1",11.299999952316284,9.299999952316284,9.299999952316284,4.199999928474426,4.199999928474426,0,1,1,169.30000007152557,130.5,130.30000007152557,163.29999995231628,340.89999997615814,352.1999999284744,975.6999999284744,417.8000000715256,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-2",18.200000047683716,14.600000023841858,14.5,5.599999904632568,5.5,0.10000002384185791,1,1,188,147.39999997615814,147.29999995231628,142.20000004768372,337.5,355.7000000476837,945.9000000953674,454.09999990463257,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-3",13.200000047683716,10.700000047683716,10.600000023841858,5.700000047683716,5.700000047683716,0,1,1,164.80000007152557,123.79999995231628,123.69999992847443,156.39999997615814,329.60000002384186,342.8000000715256,955,375.2000000476837,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-4",11.799999952316284,9.699999928474426,9.600000023841858,5.300000071525574,5.300000071525574,0,1,1,163.69999992847443,122.89999997615814,122.89999997615814,124.79999995231628,296.1999999284744,307.9999998807907,817.2999999523163,407.10000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-5",12.099999904632568,9.400000095367432,9.300000071525574,4.200000047683716,4.200000047683716,0,1,1,188.20000004768372,151,151,126.5,320.8000000715256,332.89999997615814,935.3999999761581,411.10000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-6",11.899999976158142,9.799999952316284,9.699999928474426,5.899999976158142,5.899999976158142,0,1,1,169.5,133.89999997615814,133.79999995231628,106.80000007152557,282.39999997615814,294.2999999523163,850.5,405.89999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-7",8.899999976158142,7.399999976158142,7.399999976158142,6.399999976158142,6.399999976158142,0,1,1,247.80000007152557,193,193,148.70000004768372,405.2000000476837,414.10000002384186,1034.6000000238419,468.60000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-8",15,12.399999976158142,12.399999976158142,4,4,0,1,1,169.5,131.29999995231628,131.29999995231628,154.39999997615814,331.5,346.5,972,469.1999999284744,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-9",15.099999904632568,12.799999952316284,12.699999928474426,5.099999904632568,5.099999904632568,0,1,1,209,152.80000007152557,152.70000004768372,152.70000004768372,371.5,386.59999990463257,1036.3999999761581,499.6999999284744,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "checks": {
+            "operations": 13,
+            "modelDomCaretValid": true,
+            "allRecordedIdentitiesPreserved": true,
+            "builds": 0,
+            "acquiredAndReleasedCaretsPerOperation": 1,
+            "pageErrors": []
+          }
+        },
+        {
+          "lines": 5000,
+          "position": "line-start",
+          "action": "cancel",
+          "mode": "current",
+          "characters": 367779,
+          "coldCheckpoints": 79,
+          "lineContainers": 5000,
+          "initialNodes": 155001,
+          "summary": {
+            "syncStartMs": {
+              "median": 10.899999976158142,
+              "min": 9.899999976158142,
+              "max": 22.199999928474426
+            },
+            "sessionStartMs": {
+              "median": 9.399999976158142,
+              "min": 8.600000023841858,
+              "max": 19.600000023841858
+            },
+            "acquireCaretMs": {
+              "median": 9.299999952316284,
+              "min": 8.600000023841858,
+              "max": 19.600000023841858
+            },
+            "prepareCommitMs": {
+              "median": 5.799999952316284,
+              "min": 4.300000071525574,
+              "max": 7.900000095367432
+            },
+            "releaseCaretMs": {
+              "median": 5.799999952316284,
+              "min": 4.300000071525574,
+              "max": 7.900000095367432
+            },
+            "sessionEndMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "syncCommitMs": {
+              "median": 142.20000004768372,
+              "min": 113.60000002384186,
+              "max": 186.39999997615814
+            },
+            "runtimeRenderMs": {
+              "median": 132.29999995231628,
+              "min": 105,
+              "max": 174.59999990463257
+            },
+            "syncHighlightMs": {
+              "median": 132.19999992847443,
+              "min": 104.89999997615814,
+              "max": 174.5
+            },
+            "recoveryMs": {
+              "median": 121.10000002384186,
+              "min": 109.79999995231628,
+              "max": 141.89999997615814
+            },
+            "recoveryFromCommitMs": {
+              "median": 273.39999997615814,
+              "min": 236.10000002384186,
+              "max": 339.60000002384186
+            },
+            "startAndRecoveryMs": {
+              "median": 284.2999999523163,
+              "min": 246.29999995231628,
+              "max": 351.89999997615814
+            },
+            "elapsedStartToRecoveryMs": {
+              "median": 885.3999999761581,
+              "min": 825.0999999046326,
+              "max": 939.3999999761581
+            },
+            "afterTwoFramesMs": {
+              "median": 398.39999997615814,
+              "min": 277.7000000476837,
+              "max": 454.7999999523163
+            },
+            "buildMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          "cold": ["cold",184.89999997615814,171.5,171.29999995231628,6,5.899999976158142,0,1,1,175.29999995231628,155.80000007152557,155.80000007152557,149.70000004768372,333,517.8999999761581,1116.5,440.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],
+          "warmup": [["warmup-1",11,9.5,9.5,5.600000023841858,5.600000023841858,0,1,1,127.69999992847443,116.39999997615814,116.30000007152557,147.89999997615814,282.6999999284744,293.6999999284744,893.2999999523163,331.7999999523163,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-2",12.100000023841858,10.600000023841858,10.600000023841858,5.599999904632568,5.599999904632568,0,1,1,157.60000002384186,146.40000009536743,146.40000009536743,116.19999992847443,279.2999999523163,291.39999997615814,841.5,389.6999999284744,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-3",10.800000071525574,9.400000095367432,9.300000071525574,4.800000071525574,4.800000071525574,0,1,1,108.60000002384186,98.80000007152557,98.70000004768372,124.59999990463257,238.19999992847443,249,863.8999999761581,339.39999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "samples": [["sample-1",9.899999976158142,8.600000023841858,8.600000023841858,5.099999904632568,5.099999904632568,0,1,1,142.20000004768372,132.29999995231628,132.19999992847443,110.09999990463257,255.79999995231628,265.6999999284744,825.0999999046326,354.2000000476837,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-2",22.199999928474426,19.600000023841858,19.600000023841858,5.299999952316284,5.299999952316284,0.10000002384185791,1,1,167.20000004768372,155.89999997615814,155.79999995231628,129.5,301.8000000715256,324,939.3999999761581,420.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-3",10.899999976158142,9.399999976158142,9.299999952316284,7.5,7.399999976158142,0,1,1,136.10000002384186,123.5,123.40000009536743,129.39999997615814,273.39999997615814,284.2999999523163,866.6999999284744,403.7999999523163,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-4",12.600000023841858,10.700000047683716,10.700000047683716,5.899999976158142,5.899999976158142,0,1,1,130.89999997615814,120.70000004768372,120.70000004768372,114.60000002384186,251.10000002384186,263.7000000476837,904.6000000238419,344.7000000476837,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-5",13.300000071525574,11.399999976158142,11.399999976158142,5.899999976158142,5.899999976158142,0.10000002384185791,1,1,152.89999997615814,142,141.89999997615814,121.10000002384186,280.2999999523163,293.60000002384186,909.2000000476837,398.39999997615814,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-6",10.199999928474426,8.899999976158142,8.899999976158142,4.300000071525574,4.300000071525574,0,1,1,113.60000002384186,105,104.89999997615814,114.39999997615814,236.10000002384186,246.29999995231628,833.7999999523163,277.7000000476837,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-7",12.299999952316284,11.100000023841858,11,5.399999976158142,5.399999976158142,0,1,1,186.39999997615814,174.59999990463257,174.5,141.89999997615814,339.60000002384186,351.89999997615814,885.3999999761581,454.7999999523163,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-8",9.899999976158142,8.600000023841858,8.600000023841858,5.799999952316284,5.799999952316284,0,1,1,141.30000007152557,130.69999992847443,130.69999992847443,109.79999995231628,256.5,266.39999997615814,846.5999999046326,316.90000009536743,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-9",10.100000023841858,8.899999976158142,8.899999976158142,7.900000095367432,7.900000095367432,0,1,1,153.39999997615814,140.69999992847443,140.69999992847443,128.5,287.60000002384186,297.7000000476837,896.9000000953674,400.6999999284744,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "checks": {
+            "operations": 13,
+            "modelDomCaretValid": true,
+            "allRecordedIdentitiesPreserved": true,
+            "builds": 0,
+            "acquiredAndReleasedCaretsPerOperation": 1,
+            "pageErrors": []
+          }
+        },
+        {
+          "lines": 5000,
+          "position": "line-middle",
+          "action": "commit",
+          "mode": "current",
+          "characters": 367779,
+          "coldCheckpoints": 79,
+          "lineContainers": 5000,
+          "initialNodes": 155001,
+          "summary": {
+            "syncStartMs": {
+              "median": 2.1999999284744263,
+              "min": 1.5999999046325684,
+              "max": 3.299999952316284
+            },
+            "sessionStartMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "acquireCaretMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "prepareCommitMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "releaseCaretMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "sessionEndMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "syncCommitMs": {
+              "median": 368.90000009536743,
+              "min": 342,
+              "max": 425.60000002384186
+            },
+            "runtimeRenderMs": {
+              "median": 299.89999997615814,
+              "min": 271.59999990463257,
+              "max": 330.5
+            },
+            "syncHighlightMs": {
+              "median": 299.7999999523163,
+              "min": 271.5,
+              "max": 330.5
+            },
+            "recoveryMs": {
+              "median": 151.39999997615814,
+              "min": 124,
+              "max": 165.20000004768372
+            },
+            "recoveryFromCommitMs": {
+              "median": 524.5,
+              "min": 502.3000000715256,
+              "max": 584.3999999761581
+            },
+            "startAndRecoveryMs": {
+              "median": 527.7999999523163,
+              "min": 504.60000002384186,
+              "max": 586
+            },
+            "elapsedStartToRecoveryMs": {
+              "median": 1160.8999999761581,
+              "min": 1096.8999999761581,
+              "max": 1220
+            },
+            "afterTwoFramesMs": {
+              "median": 619.5,
+              "min": 571.8000000715256,
+              "max": 710.3999999761581
+            },
+            "buildMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          "cold": ["cold",17.5,0.5,0.10000002384185791,0,0,0.09999990463256836,0,0,526,336.7000000476837,336.60000002384186,148.30000007152557,682.9000000953674,700.4000000953674,1398.1000000238419,799.8000000715256,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],
+          "warmup": [["warmup-1",2.200000047683716,0.10000002384185791,0,0,0,0,0,0,385.89999997615814,309.8000000715256,309.7000000476837,161,555.5,557.7000000476837,1210.5,672,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-2",3,0.10000002384185791,0,0.10000002384185791,0,0,0,0,445,343.10000002384186,343.10000002384186,201.39999997615814,653.0999999046326,656.0999999046326,1274.8999999761581,732.1999999284744,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-3",2.299999952316284,0.09999990463256836,0,0,0,0,0,0,376.60000002384186,287.5,287.40000009536743,165.59999990463257,549.6999999284744,551.9999998807907,1226.7999999523163,658.8999999761581,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "samples": [["sample-1",2.899999976158142,0,0,0,0,0,0,0,364.7000000476837,295.7999999523163,295.6999999284744,153.90000009536743,526.8000000715256,529.7000000476837,1166,576.3000000715256,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-2",2.6999999284744263,0.10000002384185791,0,0,0,0,0,0,403.60000002384186,316.8000000715256,316.7000000476837,165.20000004768372,576.5,579.1999999284744,1201.8999999761581,710.3999999761581,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-3",2.1999999284744263,0,0,0,0,0,0,0,384.89999997615814,303.10000002384186,303.10000002384186,157.60000002384186,550.2000000476837,552.3999999761581,1215,619.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-4",2,0,0,0,0,0,0,0,370.89999997615814,302.3000000715256,302.3000000715256,124,503.09999990463257,505.09999990463257,1096.8999999761581,620.2999999523163,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-5",2.299999952316284,0,0,0,0,0,0,0,363.39999997615814,292.89999997615814,292.7999999523163,131.80000007152557,502.3000000715256,504.60000002384186,1101.6000000238419,571.8000000715256,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-6",2.0999999046325684,0,0,0,0,0,0,0,342,271.59999990463257,271.5,163.69999992847443,515.1999999284744,517.299999833107,1129.1999999284744,592.1999999284744,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-7",3.299999952316284,0.09999990463256836,0,0,0,0,0,0,365,295.2999999523163,295.1999999284744,150.39999997615814,524.5,527.7999999523163,1160.8999999761581,608.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-8",1.600000023841858,0.10000002384185791,0,0,0,0,0,0,425.60000002384186,330.5,330.5,151.39999997615814,584.3999999761581,586,1220,696.7000000476837,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-9",1.5999999046325684,0,0,0,0,0,0,0,368.90000009536743,299.89999997615814,299.7999999523163,139.60000002384186,519.1000000238419,520.6999999284744,1117.6999999284744,641.2000000476837,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "checks": {
+            "operations": 13,
+            "modelDomCaretValid": true,
+            "allRecordedIdentitiesPreserved": true,
+            "builds": 0,
+            "acquiredAndReleasedCaretsPerOperation": 0,
+            "pageErrors": []
+          }
+        },
+        {
+          "lines": 5000,
+          "position": "line-middle",
+          "action": "cancel",
+          "mode": "current",
+          "characters": 367779,
+          "coldCheckpoints": 79,
+          "lineContainers": 5000,
+          "initialNodes": 155001,
+          "summary": {
+            "syncStartMs": {
+              "median": 10.900000095367432,
+              "min": 8.5,
+              "max": 13.699999928474426
+            },
+            "sessionStartMs": {
+              "median": 0.10000002384185791,
+              "min": 0,
+              "max": 0.20000004768371582
+            },
+            "acquireCaretMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "prepareCommitMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "releaseCaretMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "sessionEndMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0.10000002384185791
+            },
+            "syncCommitMs": {
+              "median": 183,
+              "min": 165.90000009536743,
+              "max": 237.40000009536743
+            },
+            "runtimeRenderMs": {
+              "median": 140.10000002384186,
+              "min": 123.69999992847443,
+              "max": 188.29999995231628
+            },
+            "syncHighlightMs": {
+              "median": 140.10000002384186,
+              "min": 123.69999992847443,
+              "max": 188.09999990463257
+            },
+            "recoveryMs": {
+              "median": 150.70000004768372,
+              "min": 136.60000002384186,
+              "max": 232.70000004768372
+            },
+            "recoveryFromCommitMs": {
+              "median": 366.2000000476837,
+              "min": 308.60000002384186,
+              "max": 489.90000009536743
+            },
+            "startAndRecoveryMs": {
+              "median": 374.7000000476837,
+              "min": 322.2999999523163,
+              "max": 500.8000000715256
+            },
+            "elapsedStartToRecoveryMs": {
+              "median": 935.3999999761581,
+              "min": 843.1999999284744,
+              "max": 1126.2000000476837
+            },
+            "afterTwoFramesMs": {
+              "median": 444.7999999523163,
+              "min": 389.5,
+              "max": 541.3000000715256
+            },
+            "buildMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          "cold": ["cold",13.200000047683716,0.30000007152557373,0.10000002384185791,0,0,0.20000004768371582,0,0,235.10000002384186,170.30000007152557,170,168.10000002384186,409.60000002384186,422.8000000715256,1014.6000000238419,515.3999999761581,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],
+          "warmup": [["warmup-1",18.5,0.10000002384185791,0.10000002384185791,0.10000002384185791,0,0.10000002384185791,0,0,182.5,141.19999992847443,141.19999992847443,199.10000002384186,388.60000002384186,407.10000002384186,1012,438.7000000476837,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-2",16.299999952316284,0.10000002384185791,0,0,0,0,0,0,191.19999992847443,150.10000002384186,150,167.60000002384186,365.39999997615814,381.6999999284744,1054,459.6999999284744,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["warmup-3",11.299999952316284,0.09999990463256836,0,0.10000002384185791,0,0,0,0,175.30000007152557,131,131,152.5,333.90000009536743,345.2000000476837,911.7000000476837,394.40000009536743,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "samples": [["sample-1",10.899999976158142,0.10000002384185791,0,0.10000002384185791,0,0.10000002384185791,0,0,237.40000009536743,188.29999995231628,188.09999990463257,232.70000004768372,489.90000009536743,500.8000000715256,1126.2000000476837,541.3000000715256,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-2",10.199999928474426,0.10000002384185791,0,0,0,0,0,0,215.20000004768372,159,159,150.70000004768372,374.5,384.6999999284744,1003.7999999523163,428.2000000476837,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-3",8.5,0,0,0,0,0.10000002384185791,0,0,190.70000004768372,149.39999997615814,149.39999997615814,168.70000004768372,366.2000000476837,374.7000000476837,924.6000000238419,467,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-4",12.100000023841858,0.10000002384185791,0.10000002384185791,0,0,0,0,0,183,140.10000002384186,140.10000002384186,145.39999997615814,339,351.10000002384186,939.5,389.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-5",12.799999952316284,0.10000002384185791,0.10000002384185791,0.10000002384185791,0,0,0,0,171.89999997615814,123.69999992847443,123.69999992847443,148.29999995231628,328.10000002384186,340.89999997615814,969.3999999761581,426.10000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-6",12.899999976158142,0.20000004768371582,0,0,0,0,0,0,182.10000002384186,139.40000009536743,139.40000009536743,204.29999995231628,393.2000000476837,406.10000002384186,935.3999999761581,474.60000002384186,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-7",13.699999928474426,0.19999992847442627,0.10000002384185791,0,0,0,0,0,165.90000009536743,125.5,125.5,136.60000002384186,308.60000002384186,322.2999999523163,843.1999999284744,397.2000000476837,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-8",9.5,0.10000002384185791,0,0,0,0.10000002384185791,0,0,174.89999997615814,133.39999997615814,133.39999997615814,199,379.60000002384186,389.10000002384186,928.5,496.5,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true],["sample-9",10.900000095367432,0,0,0,0,0,0,0,202.59999990463257,145.89999997615814,145.89999997615814,144.60000002384186,354.1999999284744,365.10000002384186,889.1000000238419,444.7999999523163,0,0,{"firstLine":true,"lastLine":true,"firstLeaf":true,"lastLeaf":true,"targetLine":true},1,0,true]],
+          "checks": {
+            "operations": 13,
+            "modelDomCaretValid": true,
+            "allRecordedIdentitiesPreserved": true,
+            "builds": 0,
+            "acquiredAndReleasedCaretsPerOperation": 0,
+            "pageErrors": []
+          }
+        }
+      ]
+    }
+  ],
+  "comparison": [
+    {
+      "lines": 1000,
+      "position": "line-start",
+      "action": "commit",
+      "medianChangePercent": {
+        "syncStartMs": -87.6,
+        "acquireCaretMs": -90.4,
+        "prepareCommitMs": -95.1,
+        "releaseCaretMs": -95.1,
+        "syncCommitMs": -49.6,
+        "recoveryFromCommitMs": -35.6,
+        "startAndRecoveryMs": -50.5
+      }
+    },
+    {
+      "lines": 1000,
+      "position": "line-start",
+      "action": "cancel",
+      "medianChangePercent": {
+        "syncStartMs": -87.4,
+        "acquireCaretMs": -90,
+        "prepareCommitMs": -94.1,
+        "releaseCaretMs": -94.1,
+        "syncCommitMs": -48,
+        "recoveryFromCommitMs": -29.2,
+        "startAndRecoveryMs": -43.2
+      }
+    },
+    {
+      "lines": 1000,
+      "position": "line-middle",
+      "action": "commit",
+      "medianChangePercent": {
+        "syncStartMs": -16.7,
+        "acquireCaretMs": null,
+        "prepareCommitMs": null,
+        "releaseCaretMs": null,
+        "syncCommitMs": 22.3,
+        "recoveryFromCommitMs": 15.7,
+        "startAndRecoveryMs": 15.3
+      }
+    },
+    {
+      "lines": 1000,
+      "position": "line-middle",
+      "action": "cancel",
+      "medianChangePercent": {
+        "syncStartMs": -9.1,
+        "acquireCaretMs": null,
+        "prepareCommitMs": null,
+        "releaseCaretMs": null,
+        "syncCommitMs": -0.2,
+        "recoveryFromCommitMs": 2.4,
+        "startAndRecoveryMs": 0.8
+      }
+    },
+    {
+      "lines": 5000,
+      "position": "line-start",
+      "action": "commit",
+      "medianChangePercent": {
+        "syncStartMs": -92.1,
+        "acquireCaretMs": -93.6,
+        "prepareCommitMs": -95.9,
+        "releaseCaretMs": -95.9,
+        "syncCommitMs": -50,
+        "recoveryFromCommitMs": -34.4,
+        "startAndRecoveryMs": -49.2
+      }
+    },
+    {
+      "lines": 5000,
+      "position": "line-start",
+      "action": "cancel",
+      "medianChangePercent": {
+        "syncStartMs": -94,
+        "acquireCaretMs": -94.8,
+        "prepareCommitMs": -95.8,
+        "releaseCaretMs": -95.8,
+        "syncCommitMs": -55.9,
+        "recoveryFromCommitMs": -42.1,
+        "startAndRecoveryMs": -56.6
+      }
+    },
+    {
+      "lines": 5000,
+      "position": "line-middle",
+      "action": "commit",
+      "medianChangePercent": {
+        "syncStartMs": -18.5,
+        "acquireCaretMs": null,
+        "prepareCommitMs": null,
+        "releaseCaretMs": null,
+        "syncCommitMs": -0.5,
+        "recoveryFromCommitMs": -0.1,
+        "startAndRecoveryMs": -0.1
+      }
+    },
+    {
+      "lines": 5000,
+      "position": "line-middle",
+      "action": "cancel",
+      "medianChangePercent": {
+        "syncStartMs": 1.9,
+        "acquireCaretMs": null,
+        "prepareCommitMs": null,
+        "releaseCaretMs": null,
+        "syncCommitMs": -14,
+        "recoveryFromCommitMs": -7.4,
+        "startAndRecoveryMs": -7.7
+      }
+    }
+  ],
+  "verification": {
+    "operationsChecked": 208,
+    "allPerformanceCorrectnessChecksPassed": true,
+    "e2e": {
+      "status": "passed",
+      "effectivePassed": 84,
+      "skipped": 42,
+      "initial": {
+        "passed": 81,
+        "failed": 3,
+        "skipped": 42,
+        "log": "/private/tmp/blockcraft-ime-boundary-after-e2e.log",
+        "errors": [
+          "    Error: page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:8081/",
+          "    Error: page.goto: NS_ERROR_CONNECTION_REFUSED",
+          "    Error: page.goto: Could not connect to the server."
+        ],
+        "failureClassification": "协同fixture硬编码8081；本轮服务8083，3项在page.goto连接失败，未进入业务断言。其余81项通过。"
+      },
+      "collaborationRerun": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "log": "/private/tmp/blockcraft-ime-boundary-collab-final.log",
+        "fixtureCorrection": "仅改为读取Playwright baseURL，并按该URL端口关闭HMR；全部内容、语法、选区和历史断言保持。"
+      },
+      "files": [
+        "e2e/code-block-line-start-ime.spec.ts",
+        "e2e/code-block-ime-history.spec.ts",
+        "e2e/code-block-collaboration-stress.spec.ts",
+        "e2e/code-block-toolbar-lifecycle.spec.ts"
+      ],
+      "browsers": [
+        "chromium",
+        "firefox",
+        "webkit"
+      ],
+      "workers": 1,
+      "skippedReason": "行首IME按引擎选原生CDP或模拟分支（36）；IME历史原生仅Chrome（2）；toolbar原生仅Chrome（4）。"
+    }
+  },
+  "rawArtifacts": {
+    "before": "/private/tmp/blockcraft-ime-boundary-before.json",
+    "after": "/private/tmp/blockcraft-ime-boundary-after.json",
+    "beforeLog": "/private/tmp/blockcraft-ime-boundary-before.log",
+    "afterLog": "/private/tmp/blockcraft-ime-boundary-after.log"
+  }
+}

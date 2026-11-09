@@ -181,7 +181,8 @@ export class LogicalLineIndex implements LogicalLineAccess {
     this._lengths.add(index, next.length - previous.length)
     this._childCounts.add(index, next.children.length - previous.children.length)
     this._leafCounts.add(index, next.leaves.length - previous.leaves.length)
-    this._plainText = undefined
+    // Cursor-only changes and TextBlot splits leave the source projection intact.
+    if (next.text !== previous.text) this._plainText = undefined
     return next
   }
 

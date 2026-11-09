@@ -48,6 +48,7 @@ export class ScrollBlot implements IScrollBlot {
   private _lineIndexNeedsRebuild = true
   private _mutationDepth = 0
   private _controlledMutationFailed = false
+  private _cursorAnchors = new WeakMap<CursorBlot, Text>()
   private readonly _lineObserver?: MutationObserver
   private readonly _lineAccess?: LogicalLineAccess
 
@@ -335,6 +336,7 @@ export class ScrollBlot implements IScrollBlot {
     this._lineObserver?.disconnect()
     this._lineIndex = undefined
     this._lineTrusted = false
+    this._cursorAnchors = new WeakMap()
     const children = this._children
     this._children = []
     this._leadingGap = null
@@ -561,7 +563,10 @@ export class ScrollBlot implements IScrollBlot {
    * If the offset falls inside a TextBlot, the TextBlot is split.
    */
   insertCursorBlot(modelOffset: number, cursor: CursorBlot) {
-    this._withControlledMutation(() => this._insertCursorBlot(modelOffset, cursor))
+    this._withControlledMutation(() => {
+      if (!this._tryInsertCursorInLine(modelOffset, cursor)) this._insertCursorBlot(modelOffset, cursor)
+    })
+    this._cursorAnchors.set(cursor, cursor.anchorNode)
   }
 
   private _insertCursorBlot(modelOffset: number, cursor: CursorBlot) {
@@ -613,7 +618,57 @@ export class ScrollBlot implements IScrollBlot {
    * Remove a CursorBlot from the tree.
    */
   removeCursorBlot(cursor: CursorBlot) {
-    this._withControlledMutation(() => this._removeCursorBlot(cursor))
+    this._withControlledMutation(() => {
+      if (!this._tryRemoveCursorInLine(cursor)) this._removeCursorBlot(cursor)
+    })
+    this._cursorAnchors.delete(cursor)
+  }
+
+  private _tryInsertCursorInLine(modelOffset: number, cursor: CursorBlot): boolean {
+    // Nested converter/teardown callbacks may see an outer mutation's old index.
+    const index = this._mutationDepth === 1 && this._lineTrusted ? this._lineIndex : undefined
+    if (!index || !Number.isInteger(modelOffset) || modelOffset < 0 || modelOffset > index.textLength) return false
+    const found = index.findByOffset(modelOffset)
+    if (found?.blot instanceof EmbedBlot) return false
+    let line = found ? index.lineOf(found.blot) : index.sourceLines()[0]
+    if (!line) return false
+    let insertAt = found ? line.children.indexOf(found.blot) + (found.localOffset > 0 ? 1 : 0)
+      : line.children.findIndex(child => child.type === BlotType.Break)
+    if (found?.blot instanceof TextBlot && found.blot.text === '\n' && found.localOffset === 1) {
+      // The LF belongs to the preceding source line; the zero-length caret does
+      // not. This also covers a hidden LF and the final Break-only empty line.
+      line = index.sourceLines()[index.locate(line)!.lineIndex + 1]
+      insertAt = 0
+    }
+    if (!line || insertAt < 0 || line.leaves.some(leaf => leaf instanceof EmbedBlot)) return false
+    const position = index.locate(line)!
+    const children = [...line.children]
+    const inserted: IBlot[] = [cursor]
+    if (found?.blot instanceof TextBlot && found.localOffset > 0 && found.localOffset < found.blot.length) {
+      const right = found.blot.split(found.localOffset)
+      right.parent = this
+      inserted.push(right)
+    }
+    cursor.parent = this
+    children.splice(insertAt, 0, ...inserted)
+    this._commitSingleLine(line, children, position.childStart)
+    return true
+  }
+
+  private _tryRemoveCursorInLine(cursor: CursorBlot): boolean {
+    const index = this._mutationDepth === 1 && this._lineTrusted ? this._lineIndex : undefined
+    if (!index) return false
+    const line = index.lineOf(cursor)
+    if (!line) {
+      // An already released caret has nothing left to invalidate or rebuild.
+      this._lineIndexNeedsRebuild = false
+      return true
+    }
+    const position = index.locate(line)!
+    const children = line.children.filter(child => child !== cursor)
+    cursor.detach()
+    this._commitSingleLine(line, children, position.childStart)
+    return true
   }
 
   private _removeCursorBlot(cursor: CursorBlot) {
@@ -630,10 +685,27 @@ export class ScrollBlot implements IScrollBlot {
 
   private _invalidateExternalMutations(records: readonly MutationRecord[]): void {
     if (!records.length) return
+    // Only character data in an owned caret's original anchor has no model
+    // contribution. Any structural/attribute/other-leaf record revokes the whole
+    // batch, even if it arrived alongside otherwise valid native preedit text.
+    if (records.every(record => this._isCursorTextMutation(record))) return
     this._lineTrusted = false
     this._lineIndex = undefined
     this._lineIndexNeedsRebuild = true
     this._invalidateIndex()
+  }
+
+  private _isCursorTextMutation(record: MutationRecord): boolean {
+    if (record.type !== 'characterData' || !this._lineTrusted || !this._lineIndex) return false
+    const text = record.target
+    const cText = text.parentElement
+    const element = cText?.parentElement
+    if (!cText || !element) return false
+    const cursor = this._lineIndex.blotFromDom(element)
+    return cursor instanceof CursorBlot && cursor.parent === this && this._cursorAnchors.get(cursor) === text &&
+      element.childNodes.length === 1 && element.firstChild === cText &&
+      cText.childNodes.length === 1 && cText.firstChild === text &&
+      !!element.parentNode && this.isCanonicalLineContainer(element.parentNode)
   }
 
   private _trustedLineIndex(): LogicalLineIndex | undefined {

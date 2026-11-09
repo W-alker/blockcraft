@@ -4,7 +4,9 @@ import {CursorBlot} from './cursor-blot'
 import {BlotType} from './blot'
 import {InlineRuntime} from '../runtime/inline-runtime'
 import {InlinePaginationProjection} from '../runtime/inline-pagination-projection'
-import {getLogicalLineAccess} from './logical-line-access'
+import {getLogicalLineAccess, type LogicalSourceLine} from './logical-line-access'
+import {InlinePositionMapper} from '../position/inline-position-mapper'
+import {STR_ZERO_WIDTH_SPACE} from '../const'
 
 describe('ScrollBlot canonical logical lines', () => {
   let container: HTMLElement
@@ -134,6 +136,235 @@ describe('ScrollBlot canonical logical lines', () => {
     scroll.removeCursorBlot(cursor)
     expect(rows().map(lineText)).toEqual(['a\n', 'b\n', ''])
     expect(scroll.hasCanonicalDomOrder()).toBeTrue()
+  })
+
+  describe('local composition cursor updates', () => {
+    function largeCursorFixture() {
+      const source = Array.from({length: 128}, (_, index) => `value${index}`).join('\n')
+      scroll.build([{insert: source, attributes: {'s:color': 'red', 'a:bold': true}}])
+      const access = getLogicalLineAccess(scroll)!
+      const lines = [...access.sourceLines()]
+      const target = access.locate(lines[64])!
+      const suffix = access.locate(lines[65])!
+      return {source, lines, target, suffix, domRows: rows()}
+    }
+
+    function rejectUnrelatedReads(lines: readonly LogicalSourceLine[]) {
+      for (const line of [lines[0], lines.at(-1)!]) {
+        const leaf = line.leaves[0] as TextBlot
+        spyOnProperty(leaf, 'text', 'get').and.throwError('unrelated cursor text scan')
+        spyOnProperty(leaf, 'length', 'get').and.throwError('unrelated cursor length scan')
+      }
+    }
+
+    for (const localOffset of [0, 3]) {
+      it(`inserts and removes a cursor locally at source-line offset ${localOffset}`, () => {
+        const {source, lines, target, suffix, domRows} = largeCursorFixture()
+        rejectUnrelatedReads(lines)
+        const cursor = new CursorBlot()
+        const at = target.modelOffset + localOffset
+
+        scroll.insertCursorBlot(at, cursor)
+
+        let access = getLogicalLineAccess(scroll)!
+        const split = localOffset > 0 ? 1 : 0
+        expect(access.sourceLines()[0]).toBe(lines[0])
+        expect(access.sourceLines()[63]).toBe(lines[63])
+        expect(access.sourceLines()[65]).toBe(lines[65])
+        expect(access.sourceLines()[64]).not.toBe(lines[64])
+        expect(access.locate(lines[65])!.childStart).toBe(suffix.childStart + 1 + split)
+        expect(access.locate(lines[65])!.leafStart).toBe(suffix.leafStart + split)
+        expect(scroll.offsetOf(cursor)).toBe(at)
+        expect(cursor.domNode.parentNode).toBe(domRows[64])
+        expect(access.blotFromDom(cursor.domNode)).toBe(cursor)
+        expect(access.trustedPlainText()).toBe(source)
+        expect(scroll.textLength).toBe(source.length)
+        if (split) {
+          const fragments = access.sourceLines()[64].leaves as readonly TextBlot[]
+          expect(fragments.map(leaf => leaf.text)).toEqual(['val', 'ue64', '\n'])
+          expect(fragments.every(leaf => leaf.attrs?.['a:bold'] === true && leaf.attrs?.['s:color'] === 'red')).toBeTrue()
+        }
+
+        scroll.removeCursorBlot(cursor)
+
+        access = getLogicalLineAccess(scroll)!
+        expect(access.sourceLines()[0]).toBe(lines[0])
+        expect(access.sourceLines()[65]).toBe(lines[65])
+        expect(access.locate(lines[65])!.childStart).toBe(suffix.childStart + split)
+        expect(access.locate(lines[65])!.leafStart).toBe(suffix.leafStart + split)
+        expect(access.trustedPlainText()).toBe(source)
+        expect(scroll.offsetOf(cursor)).toBe(-1)
+        expect(rows()).toEqual(domRows)
+        expect(scroll.hasCanonicalDomOrder()).toBeTrue()
+      })
+    }
+
+    for (const delivered of [false, true]) {
+      it(`keeps original-anchor candidate edits local after ${delivered ? 'observer delivery' : 'synchronous record draining'}`, async () => {
+        const {source, lines, target, domRows} = largeCursorFixture()
+        const cursor = new CursorBlot()
+        scroll.insertCursorBlot(target.modelOffset, cursor)
+        rejectUnrelatedReads(lines)
+        const anchor = cursor.anchorNode
+        const mapper = new InlinePositionMapper()
+        mapper.setScrollBlot(scroll)
+
+        for (const candidate of ['zhong', 'zhongwen', '中文🙂']) {
+          anchor.data = STR_ZERO_WIDTH_SPACE + candidate
+          if (delivered) await Promise.resolve()
+          const access = getLogicalLineAccess(scroll)!
+          expect(access).toBeDefined()
+          expect(access.sourceLines()[0]).toBe(lines[0])
+          expect(access.sourceLines()[65]).toBe(lines[65])
+          expect(access.trustedPlainText()).toBe(source)
+          expect(mapper.domPointToModelPoint(container, anchor, anchor.length)).toBe(target.modelOffset)
+          expect(cursor.domNode.parentNode).toBe(domRows[64])
+        }
+
+        scroll.removeCursorBlot(cursor)
+
+        const access = getLogicalLineAccess(scroll)!
+        expect(access.sourceLines()[0]).toBe(lines[0])
+        expect(access.sourceLines()[65]).toBe(lines[65])
+        expect(access.trustedPlainText()).toBe(source)
+        expect(rows()).toEqual(domRows)
+        expect(container.textContent).not.toContain('中文🙂')
+      })
+    }
+
+    it('preserves the correct line at empty, terminal and both sides of LF boundaries', () => {
+      for (const [source, at, rowIndex] of [
+        ['', 0, 0], ['a\nb', 0, 0], ['a\nb', 1, 0], ['a\nb', 2, 1],
+        ['a\nb', 3, 1], ['a\n\nb', 2, 1], ['a\n', 2, 1], ['a\r\nb', 3, 1],
+      ] as const) {
+        scroll.build(source ? [{insert: source}] : [])
+        const domRows = rows()
+        const cursor = new CursorBlot()
+        scroll.insertCursorBlot(at, cursor)
+        expect(cursor.domNode.parentNode).withContext(`${JSON.stringify(source)} at ${at}`).toBe(domRows[rowIndex])
+        expect(scroll.offsetOf(cursor)).toBe(at)
+        expect(getLogicalLineAccess(scroll)!.trustedPlainText()).toBe(source)
+        const mapper = new InlinePositionMapper()
+        mapper.setScrollBlot(scroll)
+        expect(mapper.domPointToModelPoint(container, cursor.anchorNode, 1)).toBe(at)
+        scroll.removeCursorBlot(cursor)
+        expect(rows()).toEqual(domRows)
+        for (let offset = 0; offset <= source.length; offset++) {
+          const point = mapper.modelPointToDomPoint(container, offset)
+          expect(mapper.domPointToModelPoint(container, point.node, point.offset)).toBe(offset)
+        }
+      }
+    })
+
+    it('keeps a hidden-LF source boundary inside its shared display row', () => {
+      scroll.build([
+        {insert: 'left'}, {insert: '\n', attributes: {'s:display': 'none'}}, {insert: 'right\nlast'},
+      ])
+      const before = [...getLogicalLineAccess(scroll)!.sourceLines()]
+      const domRows = rows()
+      const cursor = new CursorBlot()
+      scroll.insertCursorBlot(5, cursor)
+      const access = getLogicalLineAccess(scroll)!
+      expect(access.sourceLines()[0]).toBe(before[0])
+      expect(access.sourceLines()[1].children[0]).toBe(cursor)
+      expect(access.sourceLines()[2]).toBe(before[2])
+      expect(cursor.domNode.parentNode).toBe(domRows[0])
+      expect(scroll.offsetOf(cursor)).toBe(5)
+      scroll.removeCursorBlot(cursor)
+      expect(rows()).toEqual(domRows)
+      expect(getLogicalLineAccess(scroll)!.trustedPlainText()).toBe('left\nright\nlast')
+    })
+
+    it('does not rescan or remove a newer cursor when an old cursor is removed again', () => {
+      const {source, lines, target} = largeCursorFixture()
+      rejectUnrelatedReads(lines)
+      const oldCursor = new CursorBlot()
+      scroll.insertCursorBlot(target.modelOffset, oldCursor)
+      scroll.removeCursorBlot(oldCursor)
+      const current = new CursorBlot()
+      scroll.insertCursorBlot(target.modelOffset, current)
+      scroll.removeCursorBlot(oldCursor)
+      expect(current.domNode.isConnected).toBeTrue()
+      expect(scroll.offsetOf(current)).toBe(target.modelOffset)
+      expect(getLogicalLineAccess(scroll)!.trustedPlainText()).toBe(source)
+      expect(getLogicalLineAccess(scroll)!.sourceLines()[0]).toBe(lines[0])
+      scroll.removeCursorBlot(current)
+    })
+
+    for (const at of [2, 3]) {
+      it(`keeps newest-first cursor order at the same offset ${at} across line-boundary and split insertion`, () => {
+        scroll.build([{insert: 'a\nbcd\ntail'}])
+        const prefix = getLogicalLineAccess(scroll)!.sourceLines()[0]
+        const first = new CursorBlot()
+        const second = new CursorBlot()
+        scroll.insertCursorBlot(at, first)
+        scroll.insertCursorBlot(at, second)
+        const access = getLogicalLineAccess(scroll)!
+        expect(access.sourceLines()[0]).toBe(prefix)
+        expect(access.sourceLines()[1].children.filter(child => child instanceof CursorBlot)).toEqual([second, first])
+        expect<Node[]>(Array.from(rows()[1].childNodes).filter(node => node === first.domNode || node === second.domNode))
+          .toEqual([second.domNode, first.domNode])
+        expect(scroll.offsetOf(first)).toBe(at)
+        expect(scroll.offsetOf(second)).toBe(at)
+        scroll.removeCursorBlot(first)
+        expect(second.domNode.parentNode).toBe(rows()[1])
+        expect(scroll.offsetOf(second)).toBe(at)
+        scroll.removeCursorBlot(second)
+        expect(getLogicalLineAccess(scroll)!.trustedPlainText()).toBe('a\nbcd\ntail')
+      })
+    }
+
+    for (const delivered of [false, true]) {
+      it(`does not hide unrelated native changes on cursor removal (${delivered ? 'delivered' : 'pending'} records)`, async () => {
+        scroll.build([{insert: 'first\nmiddle\nlast'}])
+        const cursor = new CursorBlot()
+        scroll.insertCursorBlot(6, cursor)
+        const first = getLogicalLineAccess(scroll)!.sourceLines()[0].leaves[0] as TextBlot
+        cursor.anchorNode.data = STR_ZERO_WIDTH_SPACE + '候选'
+        first.textNode.data = 'FIRST'
+        if (delivered) {
+          await Promise.resolve()
+          expect(getLogicalLineAccess(scroll)).toBeUndefined()
+        }
+        // For pending records, removal itself must drain them before trusting
+        // the old line index; no accessor invalidates it on the caller's behalf.
+        scroll.removeCursorBlot(cursor)
+        expect(getLogicalLineAccess(scroll)!.trustedPlainText()).toBe('FIRST\nmiddle\nlast')
+        expect(modelText()).toBe('FIRST\nmiddle\nlast')
+      })
+    }
+
+    for (const pollution of ['replaced anchor', 'cursor attributes', 'moved cursor', 'managed leaf in cursor', 'unknown node'] as const) {
+      it(`revokes trust for ${pollution} and keeps the full recovery boundary`, () => {
+        scroll.build([{insert: 'first\nmiddle\nlast'}])
+        const cursor = new CursorBlot()
+        scroll.insertCursorBlot(6, cursor)
+        let unknown: Text | undefined
+        let movedLeaf: TextBlot | undefined
+        if (pollution === 'replaced anchor') cursor.anchorNode.replaceWith(document.createTextNode('候选'))
+        else if (pollution === 'cursor attributes') cursor.cElement.setAttribute('data-native', 'changed')
+        else if (pollution === 'moved cursor') rows()[0].appendChild(cursor.domNode)
+        else if (pollution === 'managed leaf in cursor') {
+          movedLeaf = getLogicalLineAccess(scroll)!.sourceLines()[2].leaves[0] as TextBlot
+          cursor.cElement.appendChild(movedLeaf.domNode)
+        }
+        else {
+          unknown = document.createTextNode('unmanaged')
+          rows()[2].appendChild(unknown)
+        }
+        expect(getLogicalLineAccess(scroll)).toBeUndefined()
+        scroll.removeCursorBlot(cursor)
+        if (unknown) {
+          expect(unknown.isConnected).toBeTrue()
+          expect(getLogicalLineAccess(scroll)).toBeUndefined()
+          unknown.remove()
+          scroll.restoreCanonicalDomOrder()
+        }
+        expect(getLogicalLineAccess(scroll)!.trustedPlainText()).toBe('first\nmiddle\nlast')
+        expect(rows().map(lineText)).toEqual(['first\n', 'middle\n', 'last'])
+        if (movedLeaf) expect(movedLeaf.domNode.parentNode).toBe(rows()[2])
+      })
+    }
   })
 
   it('recognizes only registered direct line wrappers and releases them on teardown', () => {
