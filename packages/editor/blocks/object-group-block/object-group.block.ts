@@ -99,6 +99,20 @@ import {createWordArtResizePreview} from '../word-art-block/word-art-resize-prev
       outline-offset: var(--bc-object-group-padding);
     }
 
+    /* Center the 8px handles on the outset 2px outline, not the content edge. */
+    :host ::ng-deep > shape-resizer [data-handle*='north'] {
+      top: calc(-5px - var(--bc-object-group-padding));
+    }
+    :host ::ng-deep > shape-resizer [data-handle*='east'] {
+      right: calc(-5px - var(--bc-object-group-padding));
+    }
+    :host ::ng-deep > shape-resizer [data-handle*='south'] {
+      bottom: calc(-5px - var(--bc-object-group-padding));
+    }
+    :host ::ng-deep > shape-resizer [data-handle*='west'] {
+      left: calc(-5px - var(--bc-object-group-padding));
+    }
+
     /* Keep drag hit areas outside the content plane so member resize handles
        at its boundary remain reachable with the 4px frame outset. */
     .object-group-block__move-edge {

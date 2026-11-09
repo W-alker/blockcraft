@@ -873,6 +873,27 @@ for (const flow of [false, true]) {
       await expect(group.locator(':scope > shape-resizer .shape-resizer__frame')).toHaveCSS('outline-style', 'solid')
       await expect(group.locator(':scope > shape-resizer .shape-resizer__frame')).toHaveCSS('outline-offset', '4px')
       await expect(group.locator(':scope > shape-resizer .shape-resizer__rotate')).toHaveCount(0)
+      const expectAlignedHandles = async () => {
+        await expect(handles.first()).toBeVisible()
+        const errors = await group.evaluate(element => {
+          const frame = element.querySelector<HTMLElement>(':scope > shape-resizer .shape-resizer__frame')!
+          const bounds = frame.getBoundingClientRect()
+          const css = getComputedStyle(frame)
+          const scale = bounds.width / Number.parseFloat(css.width)
+          const outset = (Number.parseFloat(css.outlineOffset) + Number.parseFloat(css.outlineWidth) / 2) * scale
+          return [...element.querySelectorAll<HTMLElement>(':scope > shape-resizer .shape-resizer__handle')].map(handle => {
+            const rect = handle.getBoundingClientRect()
+            const direction = handle.dataset['handle']!
+            const x = direction.includes('west') ? bounds.left - outset
+              : direction.includes('east') ? bounds.right + outset : (bounds.left + bounds.right) / 2
+            const y = direction.includes('north') ? bounds.top - outset
+              : direction.includes('south') ? bounds.bottom + outset : (bounds.top + bounds.bottom) / 2
+            return Math.max(Math.abs(rect.x + rect.width / 2 - x), Math.abs(rect.y + rect.height / 2 - y))
+          })
+        })
+        expect(Math.max(...errors)).toBeLessThan(.6)
+      }
+      await expectAlignedHandles()
       const capture = () => page.evaluate(ids => {
         const doc = (window as any).__imageResizeDoc
         return [ids.groupId, ids.imageId, ids.siblingId].map(id => {
@@ -885,17 +906,19 @@ for (const flow of [false, true]) {
         const before = await capture()
         const handle = group.locator(`:scope > shape-resizer [data-handle="${direction}"]`)
         const rect = (await handle.boundingBox())!
+        const x = rect.x + rect.width / 2, y = rect.y + rect.height / 2
         const dx = direction.includes('west') ? -40 : direction.includes('east') ? 40 : 0
         const dy = direction.includes('north') ? -30 : direction.includes('south') ? 30 : 0
-        await page.mouse.move(rect.x + 5, rect.y + 5)
+        await page.mouse.move(x, y)
         await page.mouse.down()
-        await page.mouse.move(rect.x + 5 + dx * scale, rect.y + 5 + dy * scale, {steps: 6})
+        await page.mouse.move(x + dx * scale, y + dy * scale, {steps: 6})
         await page.waitForTimeout(50)
         const preview = await capture()
         expect(preview.map(value => value.props)).toEqual(before.map(value => value.props))
         await page.mouse.up()
         await expect.poll(async () => (await capture())[1].width).toBeCloseTo(preview[1].width, 0)
         const resized = await capture()
+        await expectAlignedHandles()
         expect(resized[0].props).not.toEqual(before[0].props)
         for (let i = 0; i < resized.length; i++) {
           for (const key of ['x', 'y', 'width', 'height'] as const) expect(resized[i][key]).toBeCloseTo(preview[i][key], 0)
