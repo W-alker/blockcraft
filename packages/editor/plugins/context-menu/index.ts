@@ -5,9 +5,8 @@ import {
   captureRelativeSelectionBookmark, RelativeSelectionBookmark, resolveRelativeSelectionBookmark,
 } from '../../framework/modules/selection/relative-bookmark';
 import {EditorContextMenuComponent} from './menu.component';
-import {CsModalService} from '@cses/ui';
-import {TypographySettingsController} from '../fixed-toolbar/widgets/typography-settings-controller';
 import type {ShapeBlockComponent} from '../../blocks/shape-block';
+import {ObjectContextMenuController, type ObjectContextMenuAction, type ObjectMenuContext} from './object-menu';
 
 /** Editor-owned context menu; native form controls retain their existing handling. */
 export class ContextMenuPlugin extends DocPlugin {
@@ -16,10 +15,10 @@ export class ContextMenuPlugin extends DocPlugin {
   private close$?: Subject<void>;
   private destroyed = false;
   private busy = false;
-  private settings?: TypographySettingsController;
+  private objects?: ObjectContextMenuController;
 
-  private get typographySettings() {
-    return this.settings ||= new TypographySettingsController(this.doc, this.doc.injector.get(CsModalService, null));
+  private get objectMenu() {
+    return this.objects ||= new ObjectContextMenuController(this.doc);
   }
 
   init() {
@@ -43,7 +42,6 @@ export class ContextMenuPlugin extends DocPlugin {
   destroy() {
     this.destroyed = true;
     this.close();
-    this.settings?.destroy();
     this.subscriptions.unsubscribe();
   }
 
@@ -58,13 +56,14 @@ export class ContextMenuPlugin extends DocPlugin {
     if (!id) return;
     const current = this.doc.selection.value;
     const block = this.doc.getBlockById(id);
-    // A shape owns its surface, including blank space in its text frame.
-    // Keep an existing text range within that shape and all cross-block ranges.
-    const shape = this.shapeForBlock(block);
-    if (shape && (!current || current.isInSameBlock)) {
-      if (!current || (current.firstBlock.id !== shape.id && current.firstBlock.id !== block.id) ||
-        (block.flavour === 'shape' && current.anchor.type !== 'selected')) {
-        this.doc.selection.selectBlock(shape);
+    // Object surfaces own their menu target; existing multi-object/text ranges
+    // keep their model scope, and a text range inside the object stays text.
+    if (current && (!current.isInSameBlock || (this.doc.placement.getAbsoluteObjectSelectionIds(current)?.length ?? 0) > 1)) return;
+    const object = this.objectMenu.target(block, current) ?? this.shapeForBlock(block);
+    if (object) {
+      if (!current || (current.firstBlock.id !== object.id && current.firstBlock.id !== block.id) ||
+        (block === object && !this.doc.isEditable(block) && current.anchor.type !== 'selected')) {
+        this.doc.selection.selectBlock(object);
       }
       return;
     }
@@ -112,14 +111,14 @@ export class ContextMenuPlugin extends DocPlugin {
     const pointShape = this.resolvePointShape(selection);
     componentRef.setInput('shapePointsEnabled', writable && !!pointShape?.canEditPoints);
     componentRef.setInput('shapePointsEditing', !!pointShape?.isEditingPoints);
-    const hasSettings = !!this.doc.injector.get(CsModalService, null);
-    componentRef.setInput('textSettingsEnabled', hasSettings && this.typographySettings.canSetFontScaleForSelection(selection));
-    componentRef.setInput('paragraphSettingsEnabled', hasSettings && this.typographySettings.canSetParagraphSpacingForSelection(selection));
+    const objectContext = this.objectMenu.resolve(selection);
+    componentRef.setInput('objectItems', this.objectMenu.items(objectContext));
+    componentRef.setInput('objectSelection', !!objectContext?.whole);
     const textTarget = selection.start.type === 'text' || selection.start.type === 'gap';
     componentRef.setInput('pasteEnabled', writable && (textTarget || this.doc.placement.isAbsoluteObjectSelection(selection)));
     componentRef.setInput('formatsEnabled', writable && textTarget);
     componentRef.setInput('shortcut', /Mac|iPhone|iPad/.test(owner.defaultView?.navigator.platform ?? '') ? '⌘' : 'Ctrl+');
-    componentRef.instance.action.subscribe(action => { void this.execute(action, bookmark); });
+    componentRef.instance.action.subscribe(action => { void this.execute(action, bookmark, objectContext); });
     componentRef.instance.dismiss.subscribe(() => {
       this.close();
       this.doc.selection.restoreBookmark(bookmark);
@@ -218,7 +217,7 @@ export class ContextMenuPlugin extends DocPlugin {
     return true;
   }
 
-  private async execute(action: 'copy' | 'cut' | 'paste' | 'plain-text' | 'markdown' | 'select-all' | 'text-settings' | 'paragraph-settings' | 'edit-shape-points' | 'finish-shape-points', bookmark: RelativeSelectionBookmark) {
+  private async execute(action: 'copy' | 'cut' | 'paste' | 'plain-text' | 'markdown' | 'select-all' | 'edit-shape-points' | 'finish-shape-points' | ObjectContextMenuAction, bookmark: RelativeSelectionBookmark, objectContext?: ObjectMenuContext | null) {
     if (this.busy || this.destroyed) return;
     this.close();
     if (action === 'select-all') {
@@ -226,8 +225,22 @@ export class ContextMenuPlugin extends DocPlugin {
       return;
     }
     const json = resolveRelativeSelectionBookmark(bookmark, this.doc);
-    if (!json) return;
+    if (!json) {
+      if (action.startsWith('object-')) this.doc.messageService.warn('对象已变化，请重新选择后操作');
+      return;
+    }
     this.doc.selection.replay(json);
+    if (action.startsWith('object-')) {
+      this.busy = true;
+      try {
+        const success = objectContext && await this.objectMenu.execute(action as ObjectContextMenuAction, objectContext);
+        if (!success && !this.destroyed) this.doc.messageService.warn('对象已变化、被锁定或不支持此操作，请重新选择');
+      } catch (error) {
+        this.doc.logger.warn('context-menu object command failed', error);
+        if (!this.destroyed) this.doc.messageService.warn('无法执行对象操作，请检查对象是否可编辑');
+      } finally { this.busy = false; }
+      return;
+    }
     if (action === 'edit-shape-points' || action === 'finish-shape-points') {
       const shape = this.resolvePointShape(this.doc.selection.value);
       if (!shape || this.doc.isReadonly || shape.isReadonly) return;
@@ -236,18 +249,13 @@ export class ContextMenuPlugin extends DocPlugin {
       shape.setPointEditing(action === 'edit-shape-points');
       return;
     }
-    if (action === 'text-settings' || action === 'paragraph-settings') {
-      if (action === 'text-settings') this.typographySettings.openFontSettings('font-size', json);
-      else this.typographySettings.openParagraphSettings('paragraph-align', json);
-      return;
-    }
     this.busy = true;
     try {
       const selection = this.doc.selection.createSelection(json);
       if (!selection) return;
       const success = action === 'copy' || action === 'cut'
         ? await this.doc.clipboard.copySelectionToClipboard(selection, action === 'cut')
-        : await this.doc.clipboard.pasteFromClipboard(selection, action === 'paste' ? 'auto' : action);
+        : await this.doc.clipboard.pasteFromClipboard(selection, action === 'plain-text' ? 'plain-text' : action === 'markdown' ? 'markdown' : 'auto');
       if (!success && !this.destroyed) this.doc.messageService.warn('当前位置或剪贴板内容不支持此操作');
     } catch (error) {
       this.doc.logger.warn('context-menu clipboard command failed', error);

@@ -4,6 +4,16 @@
 >
 > Last updated: 2026-11-10 | Tracks `@ccc/blockcraft` npm releases.
 
+## 0.12.2 — 对象右键直接操作菜单（2026-11-10）
+
+- Severity: patch（按本次发布要求；对象右键菜单体验调整）。
+- What changed / Why: 右键从剪贴板菜单扩展为按对象能力生成的直接操作菜单，复用既有对象定位、组合和文档事务能力。右键不再提供打开设置弹窗／浮动设置面板的入口。
+- New APIs: 内部 `EditorContextMenuComponent` 新增可选 `objectItems` / `objectSelection`，动作增加 `object-*`；移除内部 `textSettingsEnabled` / `paragraphSettingsEnabled` 以及相应弹窗动作。`ContextMenuPlugin` 构造与注册方式保持不变。
+- Behavior Changes: 右键未选中的对象表面选择该对象；已有跨块范围／对象多选保持。组合延续整组／成员编辑边界。菜单增加副本、文字环绕、层级、对齐与分布、组合／解除组合、删除；布局只使用二级菜单。普通文本／段落设置弹窗入口移除；整块对象隐藏文本粘贴格式；内文范围保留复制、剪切、粘贴和全选，不提供整块删除／副本。只读、锁定和不适用能力优先，执行时重验目标与权限，变更复用原事务与 Undo。原浮动和固定工具栏不变。
+- Migration Recipe: bundled 与手动注册 `new ContextMenuPlugin()` 的宿主无需修改，不依赖对象工具栏插件。依赖内部菜单组件的自定义宿主移除旧弹窗 Inputs／动作；文本和对象格式设置继续从各自工具栏进入。无需数据迁移。
+- 快捷键提示：浮动对象的“复制副本”沿用平台快捷键 `⌘D` / `Ctrl+D`；流式对象仅提供菜单命令，不显示未绑定的快捷键。
+- Affected ai-skills files: `blockcraft-plugins-util.md`。
+
 ## 0.12.0 — 可配置编辑交互（2026-11-10）
 
 - Severity: minor。
