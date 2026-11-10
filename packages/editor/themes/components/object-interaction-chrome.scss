@@ -79,7 +79,7 @@
         }
 
         // Empty/uploading images have no resize component to paint the hint.
-        &:not(.selected) > .image-block__container > .img-wrapper:not(:has(> shape-resizer)) {
+        &:not(.selected) > .image-block__container > .img-wrapper:not([data-bc-underlay-chrome-source]):not(:has(> shape-resizer)) {
           outline: 1px dashed color-mix(in srgb, var(--bc-active-color) 35%, transparent);
           outline-offset: 2px;
         }

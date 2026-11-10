@@ -5,13 +5,13 @@ test.use({viewport: {width: 1280, height: 1000}})
 const fixtureSelector = '#block-controller-click-fixture'
 const paragraphTexts = ['第一段完整正文', '第二段完整正文', '第三段完整正文', '范围外的完整正文', '']
 
-async function setup(page: Page) {
+async function setup(page: Page, floatingLayer?: 'under' | 'over') {
   await page.routeWebSocket('**', socket => socket.close())
   await page.goto('/')
   await page.getByRole('button', {name: '初始化', exact: true}).click()
   await page.waitForFunction(() => (window as any).ng
     ?.getComponent(document.querySelector('block-craft-editor'))?.doc?.isInitialized)
-  return page.evaluate(({fixtureSelector, paragraphTexts}) => {
+  return page.evaluate(({fixtureSelector, paragraphTexts, floatingLayer}) => {
     const source = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
     const viewport = document.createElement('div')
     viewport.id = fixtureSelector.slice(1)
@@ -28,20 +28,30 @@ async function setup(page: Page) {
     columns.children[1].children = [paragraph('右列选中完整正文'), paragraph('右列范围外段落')]
     const columnParagraphIds = columns.children.flatMap((column: any) => column.children.map((block: any) => block.id)) as string[]
     const columnIds = columns.children.map((column: any) => column.id) as string[]
-    const snapshot = source.schemas.createSnapshot('root', ['block-controller-click', [...paragraphs, callout, columns]])
+    const canvas = document.createElement('canvas')
+    canvas.width = 180; canvas.height = 80
+    const floating = floatingLayer ? [0, 1].map(() =>
+      source.schemas.createSnapshot('image', [{src: canvas.toDataURL(), wr: 25, ar: 2.25}]),
+    ) : []
+    const snapshot = source.schemas.createSnapshot('root', ['block-controller-click', [...paragraphs, callout, columns, ...floating]])
     const Controller = source.plugins.find((plugin: any) => plugin.name === 'block-controller').constructor
+    const Drag = source.plugins.find((plugin: any) => plugin.name === 'ObjectDrag').constructor
     const doc = new source.constructor({
       ...source.config, yDoc: new source.yDoc.constructor(), docId: snapshot.id,
-      plugins: [new Controller()], currentUserId: 'block-controller-click-test',
+      plugins: [new Controller(), ...(floatingLayer ? [new Drag()] : [])], currentUserId: 'block-controller-click-test',
       scrollContainer: viewport, readonly: false, virtualization: {enabled: false},
     })
     doc.initBySnapshot(snapshot, mount)
+    for (const [index, block] of floating.entries()) {
+      doc.placement.setObjectLayout(block.id, floatingLayer)
+      doc.placement.updateAbsolute(block.id, {x: 340 + index * 210, y: 400})
+    }
     source.destroy()
     doc.crud.undoManager.clearHistory()
     const ids = paragraphs.map((block: any) => block.id) as string[]
     ;(window as any).controllerClickFixture = {doc, ids, calloutId: callout.id, columnParagraphIds}
-    return {ids, calloutId: callout.id as string, columnParagraphIds, columnIds}
-  }, {fixtureSelector, paragraphTexts})
+    return {ids, calloutId: callout.id as string, columnParagraphIds, columnIds, floatingIds: floating.map((block: any) => block.id) as string[]}
+  }, {fixtureSelector, paragraphTexts, floatingLayer})
 }
 
 async function hoverBlock(page: Page, id: string, container = false) {
@@ -80,6 +90,54 @@ async function readHandleState(page: Page) {
 }
 
 const rootMenu = (page: Page) => page.locator('.cdk-overlay-pane[data-float-index="1"] > bc-float-toolbar')
+
+for (const layer of ['under', 'over'] as const) {
+  for (const multi of [false, true]) {
+    test(`选中${layer}浮动${multi ? '多个对象' : '对象'}隐藏正文抓手和固定菜单，离开选区后恢复`, async ({page}) => {
+      const {ids, floatingIds} = await setup(page, layer)
+      await (await hoverBlock(page, ids[0])).click()
+      await expect(rootMenu(page)).toBeVisible()
+      const controller = page.locator(`${fixtureSelector} bc-drag-handle`)
+      const selectFloating = async () => {
+        const surface = page.locator(`${fixtureSelector} [data-block-id="${floatingIds[0]}"] .img-wrapper`)
+        const rect = (await surface.boundingBox())!
+        await page.mouse.click(rect.x + 1, rect.y + rect.height / 3)
+        return page.evaluate(({floatingIds, multi}) => {
+          const {doc} = (window as any).controllerClickFixture
+          if (multi) {
+            const parentId = doc.model.getParentId(floatingIds[0])
+            const siblings = doc.model.getChildrenIds(parentId)
+            doc.selection.setSelection(
+              {type: 'boundary', blockId: parentId, index: siblings.indexOf(floatingIds[0])},
+              {type: 'boundary', blockId: parentId, index: siblings.indexOf(floatingIds[1]) + 1},
+            )
+          }
+          return doc.placement.getAbsoluteObjectSelectionIds()
+        }, {floatingIds, multi})
+      }
+      expect(await selectFloating()).toEqual(multi ? floatingIds : floatingIds.slice(0, 1))
+      await expect(controller).toHaveCSS('display', 'none')
+      await expect(rootMenu(page)).toHaveCount(0)
+      await page.locator(`${fixtureSelector} [data-block-id="${ids[3]}"]`).hover()
+      await expect(controller).toHaveCSS('display', 'none')
+      await expect.poll(() => readHandleState(page)).toMatchObject({pinned: false})
+      await page.evaluate(() => {
+        const {doc} = (window as any).controllerClickFixture
+        doc.toggleReadonly(true)
+        doc.toggleReadonly(false)
+      })
+      await expect(controller).toHaveCSS('display', 'none')
+
+      await page.evaluate(id => (window as any).controllerClickFixture.doc.selection.selectBlock(id), ids[1])
+      await hoverBlock(page, ids[1])
+      await selectFloating()
+      await expect(controller).toHaveCSS('display', 'none')
+      await page.evaluate(() => (window as any).controllerClickFixture.doc.selection.blur())
+      await hoverBlock(page, ids[2])
+      expect((await readSelection(page)).canUndo).toBe(false)
+    })
+  }
+}
 
 async function readNativeText(page: Page) {
   // Whole-block DOM ranges include the editor's zero-width inline guards.

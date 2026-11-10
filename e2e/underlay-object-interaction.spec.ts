@@ -79,6 +79,9 @@ for (const flavour of ['image', 'shape', 'text-box', 'word-art']) {
     await selectFromCoveredEdge(page, id)
     const handle = page.locator(`[data-bc-underlay-chrome="${id}"] [data-handle="south-east"]`)
     await expect(handle).toBeVisible()
+    if (flavour === 'image') {
+      await expect(page.locator(`[data-block-id="${id}"] .img-wrapper`)).toHaveCSS('outline-style', 'none')
+    }
     expect(await handle.evaluate(button => {
       const rect = button.getBoundingClientRect()
       return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2) === button
@@ -156,7 +159,17 @@ for (const scale of [0.75, 1.5]) {
       doc.placement.setLayer(id, 'over')
     }, id)
     await expect(chrome).toHaveCount(0)
-    await expect(page.locator(`[data-block-id="${id}"] shape-resizer`)).toHaveCount(1)
+    const surface = page.locator(`[data-block-id="${id}"] .img-wrapper`)
+    await expect(surface).not.toHaveAttribute('data-bc-underlay-chrome-source')
+    await expect(surface.locator('shape-resizer')).toHaveCount(1)
+    await expect(surface).toHaveCSS('outline-style', 'none')
+    await page.evaluate(id => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      doc.placement.setObjectLayout(id, 'top-bottom')
+      doc.selection.selectBlock(id)
+    }, id)
+    await expect(surface.locator('shape-resizer')).toHaveCount(1)
+    await expect(surface).toHaveCSS('outline-style', 'none')
   })
 }
 
@@ -170,6 +183,8 @@ test('underlay controls close on readonly and document destruction', async ({pag
     doc.toggleReadonly(true)
   })
   await expect(page.locator('[data-bc-underlay-chrome]')).toHaveCount(0)
+  const surface = page.locator(`[data-block-id="${id}"] .img-wrapper`)
+  await expect(surface).not.toHaveAttribute('data-bc-underlay-chrome-source')
   expect(await state(page, id)).toEqual(before)
   await page.evaluate(id => {
     const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
@@ -199,6 +214,7 @@ test('a selected image inside an underlay group keeps its original resize and gr
   }, id)
   const handle = page.locator(`[data-bc-underlay-chrome="${id}"] [data-handle="south-east"]`)
   await expect(handle).toBeVisible()
+  await expect(page.locator(`[data-block-id="${id}"] .img-wrapper`)).toHaveCSS('outline-style', 'none')
   const before = await state(page, id)
   const groupBefore = await state(page, groupId)
   const r = (await handle.boundingBox())!

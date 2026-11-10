@@ -145,7 +145,7 @@ export class BlockControllerPlugin extends DocPlugin {
           ) return
 
           this._timer = setTimeout(() => {
-            if (this._cpr.instance.menuPinned || !this.isBlockAlive(block) || !this.isControllerEligible(block)) {
+            if (this.isHidden || this._cpr.instance.menuPinned || !this.isBlockAlive(block) || !this.isControllerEligible(block)) {
               this.clearTimer()
               return
             }
@@ -159,7 +159,7 @@ export class BlockControllerPlugin extends DocPlugin {
       this.doc.selection.selectionChange$
         .pipe(takeUntil(this.doc.onDestroy$))
         .subscribe(v => {
-          if (this.doc.isReadonly) return
+          if (this.syncHidden(v)) return
           if (
             this._activeBlock &&
             (
@@ -177,16 +177,27 @@ export class BlockControllerPlugin extends DocPlugin {
           if (selectedBlock && this._activeBlock !== selectedBlock) {
             this._cpr.setInput('activeBlock', this._activeBlock = selectedBlock)
           }
-          this.isHidden && this._cpr.setInput('hidden', this.isHidden = false)
         })
     )
 
     this._sub.add(
-      this.doc.subscribeReadonlyChange(v => {
-        this._cpr.setInput('hidden', this.isHidden = v)
+      this.doc.subscribeReadonlyChange(() => {
+        this.syncHidden()
       })
     )
+    this.syncHidden()
     this.addDraggable()
+  }
+
+  private syncHidden(selection = this.doc.selection.value): boolean {
+    const objectSelected = !!this.doc.placement?.isAbsoluteObjectSelection?.(selection)
+    const hidden = this.doc.isReadonly || objectSelected
+    if (hidden !== this.isHidden) this._cpr.setInput('hidden', this.isHidden = hidden)
+    if (hidden) {
+      this.clearTimer()
+      this._handleClick?.unsubscribe()
+    }
+    return hidden
   }
 
   private resolveSelectedRangeIds(selection: BlockCraft.Selection): string[] {

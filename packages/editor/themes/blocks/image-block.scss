@@ -39,9 +39,9 @@
     &.selected {
       background: unset;
 
-      // The eight-handle resizer owns the selection frame when present.
+      // The resizer owns the frame locally and while lifted above underlay text.
       // Empty, peer-uploading and readonly images still need the fallback.
-      .img-wrapper:not(:has(> shape-resizer)) {
+      .img-wrapper:not([data-bc-underlay-chrome-source]):not(:has(> shape-resizer)) {
         outline: 2px solid var(--bc-active-color-light);
       }
 

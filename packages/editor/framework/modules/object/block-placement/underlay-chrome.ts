@@ -30,6 +30,9 @@ export class UnderlayObjectChrome {
     const display = chrome.style.display
     chrome.style.display = 'block'
     overlay.attach(new DomPortal(chrome))
+    // The original surface still owns this frame after CDK moves its DOM.
+    // Local fallback chrome must not mistake the portal for a missing resizer.
+    surface.setAttribute('data-bc-underlay-chrome-source', '')
     // CDK enables pane hit-testing on attach; only the controls may intercept
     // input. The transparent frame interior must still reach the prose below.
     pane.style.pointerEvents = 'none'
@@ -116,6 +119,7 @@ export class UnderlayObjectChrome {
       ownerWindow.removeEventListener('resize', schedule)
       // DomPortal restores the live component before its owning view detaches.
       overlay.dispose()
+      surface.removeAttribute('data-bc-underlay-chrome-source')
       chrome.style.display = display
       releaseLease()
     }
