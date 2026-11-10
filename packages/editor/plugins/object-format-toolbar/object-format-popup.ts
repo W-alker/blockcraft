@@ -42,6 +42,8 @@ export const OBJECT_FORMAT_POPUP_STYLES = `
   .object-layout-panel .object-layout-option .bc_icon,.object-layout-panel .object-layout-action .bc_icon{font-size:14px;line-height:1}
   .object-layout-panel .object-layout-option .object-layout-option__check{margin-left:auto;font-size:12px;color:var(--bc-active-color,#4857e2)}
   .object-layout-panel .object-layout-option.active,.object-layout-panel .object-layout-action.active{background:color-mix(in srgb,var(--bc-active-color,#4857e2) 6%,transparent);color:var(--bc-active-color,#4857e2)}
+  .object-layout-panel .object-layout-option:hover:not(:disabled),.object-layout-panel .object-layout-action:hover:not(:disabled){background:var(--bc-float-toolbar-item-hover-bg,var(--bc-bg-hover,#f1f5f9))}
+  .object-layout-panel .object-layout-option.active:hover:not(:disabled),.object-layout-panel .object-layout-action.active:hover:not(:disabled){background:color-mix(in srgb,var(--bc-active-color,#4857e2) 12%,transparent)}
   .object-layout-tools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px;margin-top:6px;padding-top:6px;border-top:1px solid var(--bc-float-toolbar-divider-color,#e2e8f0)}
   .object-layout-panel .object-layout-action{justify-content:center;gap:4px;padding:0 3px}
   .object-layout-panel .object-layout-action>span{min-width:0;overflow:hidden;font-size:11px;white-space:nowrap;text-overflow:ellipsis}
