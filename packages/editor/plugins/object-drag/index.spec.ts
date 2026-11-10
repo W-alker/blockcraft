@@ -7,13 +7,14 @@ import {TextBoxBlockSchema} from '../../blocks/text-box-block'
 import {WordArtBlockSchema} from '../../blocks/word-art-block'
 import {ObjectGroupBlockSchema} from '../../blocks/object-group-block'
 import {StickerBlockSchema} from '../../blocks/sticker-block'
+import {RenderUnitBlockSchema} from '../../blocks/render-unit-block'
 
 describe('ObjectDragPlugin', () => {
   const cleanups: Array<() => void> = []
   afterEach(() => cleanups.splice(0).forEach(cleanup => cleanup()))
 
   const builtinSchemas = [ImageBlockSchema, ShapeBlockSchema, TextBoxBlockSchema,
-    WordArtBlockSchema, ObjectGroupBlockSchema, StickerBlockSchema]
+    WordArtBlockSchema, ObjectGroupBlockSchema, StickerBlockSchema, RenderUnitBlockSchema]
 
   function harness(flavour = 'person-card', metadataOverride?: Partial<IBlockSchemaOptions['metadata']>) {
     const metadata = {...builtinSchemas.find(schema => schema.flavour === flavour)?.metadata, ...metadataOverride}
@@ -98,6 +99,32 @@ describe('ObjectDragPlugin', () => {
     expect(h.doc.dragController.startDrag).not.toHaveBeenCalled()
     expect(h.doc.placement.supports).not.toHaveBeenCalled()
   })
+  it('填写区抓手在没有定位能力时仍通过通用流式拖拽排序', () => {
+    const h = harness('render-unit')
+    h.doc.placement.getState = () => ({mode: 'relative'})
+    h.doc.placement.supports.and.returnValue(false)
+    h.target.setAttribute('data-bc-object-drag-handle', '')
+    h.down()
+    expect(h.doc.dragController.startDrag).toHaveBeenCalledOnceWith(
+      jasmine.any(PointerEvent), {kind: 'origin-block', blockId: h.block.id}, {ghostLabel: '内容区域'},
+    )
+    expect(h.doc.placement.startDrag).not.toHaveBeenCalled()
+  })
+  for (const guard of ['body', 'absolute', 'readonly', 'locked', 'gap', 'secondary', 'nested']) {
+    it(`填写区 ${guard} 不启动流式抓手拖拽`, () => {
+      const h = harness('render-unit')
+      h.doc.placement.getState = () => ({mode: guard === 'absolute' ? 'absolute' : 'relative'})
+      h.doc.placement.supports.and.returnValue(false)
+      if (guard !== 'body') h.target.setAttribute('data-bc-object-drag-handle', '')
+      if (guard === 'readonly') h.doc.isReadonly = true
+      if (guard === 'locked') h.doc.readonlyManager.isReadonly = () => true
+      if (guard === 'gap') h.target.setAttribute('data-block-zero-space', 'true')
+      if (guard === 'nested') h.target.setAttribute('data-block-id', 'inner')
+      h.down(h.target, guard === 'secondary' ? 2 : 0)
+      expect(h.doc.dragController.startDrag).not.toHaveBeenCalled()
+      expect(h.doc.placement.startDrag).not.toHaveBeenCalled()
+    })
+  }
   for (const mode of ['relative', 'absolute']) {
     it(`本体拖拽不能越过 ${mode} 定位能力限制`, () => {
       const h = harness('custom-object', {objectDrag: 'body'})

@@ -30,6 +30,92 @@ const pointsPath = (points: readonly Point[]): string => points
   .map(({x, y}, index) => `${index === 0 ? 'M' : 'L'}${x} ${y}`)
   .join('') + 'Z'
 
+// Keep each preset's original geometry at its default values. Normal editing
+// changes named, bounded dimensions rather than exposing every path vertex.
+const STAR_PRESETS: Partial<Record<ShapeKind, readonly [number, number, number]>> = {
+  'star-4': [4, 150, 490], star: [5, 210, 490], 'star-6': [6, 240, 490],
+  'star-7': [7, 245, 490], 'star-8': [8, 260, 490], 'star-10': [10, 290, 490],
+  'star-12': [12, 310, 490], 'star-16': [16, 330, 490], 'star-24': [24, 350, 490],
+  explosion: [12, 210, 500], sun: [16, 350, 490],
+}
+
+const presetAdjustmentProjection = (
+  shapeType: ShapeKind,
+  values: ShapeAdjustmentValues,
+): ShapeAdjustmentProjection | undefined => {
+  const star = STAR_PRESETS[shapeType]
+  if (star) {
+    const [count, fallback, outer] = star
+    const innerRadius = clamp(values['innerRadius'], 50, outer - 20, fallback)
+    const polar = (angle: number, radius: number) => point(
+      Math.round((500 + Math.cos(angle) * radius) * 100) / 100,
+      Math.round((500 + Math.sin(angle) * radius) * 100) / 100,
+    )
+    return {
+      path: pointsPath(Array.from({length: count * 2}, (_, i) =>
+        polar((-90 + i * 180 / count) * Math.PI / 180, i % 2 ? innerRadius : outer))),
+      adjustments: {innerRadius},
+      handles: [{...polar((-90 + 180 / count) * Math.PI / 180, innerRadius),
+        id: 'innerRadius', label: '调整星角深度'}],
+    }
+  }
+  if (shapeType === 'snipped-rectangle' || shapeType === 'snipped-and-rounded-rectangle') {
+    const snip = clamp(values['snip'], 0, 500, 140)
+    const rounded = shapeType === 'snipped-and-rounded-rectangle'
+    const radius = clamp(values['radius'], 0, 500, 120)
+    return {
+      path: rounded
+        ? `M${snip} 0H${1000 - radius}Q1000 0 1000 ${radius}V1000H0V${snip}Z`
+        : `M${snip} 0H1000V1000H0V${snip}Z`,
+      adjustments: rounded ? {snip, radius} : {snip},
+      handles: [{id: 'snip', x: snip / 2, y: snip / 2, label: '调整剪角'},
+        ...(rounded ? [{id: 'radius', x: 1000 - radius, y: 0, label: '调整圆角'}] : [])],
+    }
+  }
+  if (shapeType === 'frame' || shapeType === 'corner') {
+    const thickness = clamp(values['thickness'], 40, 450, shapeType === 'frame' ? 160 : 260)
+    return {
+      path: shapeType === 'frame'
+        ? `M0 0H1000V1000H0ZM${thickness} ${thickness}V${1000 - thickness}H${1000 - thickness}V${thickness}Z`
+        : `M0 0H${thickness}V${1000 - thickness}H1000V1000H0Z`,
+      adjustments: {thickness},
+      handles: [{id: 'thickness', x: thickness, y: 250, label: '调整边框厚度'}],
+    }
+  }
+  if (shapeType === 'donut') {
+    const innerRadius = clamp(values['innerRadius'], 60, 450, 240)
+    return {
+      path: `M500 0A500 500 0 1 1 499.9 0ZM500 ${500 - innerRadius}A${innerRadius} ${innerRadius} 0 1 0 500.1 ${500 - innerRadius}Z`,
+      adjustments: {innerRadius},
+      handles: [{id: 'innerRadius', x: 500 - innerRadius, y: 500, label: '调整圆环宽度'}],
+    }
+  }
+  if (shapeType === 'bookmark' || shapeType.startsWith('ribbon-notched')) {
+    const notch = clamp(values['notch'], 0, 450, shapeType === 'bookmark' ? 240 : 100)
+    let path = `M0 0H1000V1000L500 ${1000 - notch}L0 1000Z`
+    let handle = point(500, 1000 - notch)
+    if (shapeType !== 'bookmark') {
+      const left = shapeType !== 'ribbon-notched-right'
+      const right = shapeType !== 'ribbon-notched-left'
+      path = `M0 0H1000${right ? `L${1000 - notch} 500L1000 1000` : 'V1000'}H0${left ? `L${notch} 500` : ''}Z`
+      handle = left ? point(notch, 500) : point(1000 - notch, 500)
+    }
+    return {path, adjustments: {notch}, handles: [{...handle, id: 'notch', label: '调整凹口深度'}]}
+  }
+  if (shapeType === 'chevron' || shapeType === 'pentagon-arrow' || shapeType === 'notched-right-arrow') {
+    const headLength = clamp(values['headLength'], 100, 600, shapeType === 'notched-right-arrow' ? 320 : 380)
+    const notch = clamp(values['notch'], 0, Math.min(450, 900 - headLength), shapeType === 'notched-right-arrow' ? 220 : 380)
+    const notched = shapeType !== 'pentagon-arrow'
+    return {
+      path: `M0 0H${1000 - headLength}L1000 500L${1000 - headLength} 1000H0${notched ? `L${notch} 500` : ''}Z`,
+      adjustments: notched ? {headLength, notch} : {headLength},
+      handles: [{id: 'headLength', x: 1000 - headLength, y: 0, label: '调整箭头长度'},
+        ...(notched ? [{id: 'notch', x: notch, y: 500, label: '调整凹口深度'}] : [])],
+    }
+  }
+  return undefined
+}
+
 const calloutSide = (tailX: number, tailY: number): CalloutSide => {
   const distances: readonly [CalloutSide, number][] = [
     ['top', tailY],
@@ -211,10 +297,12 @@ export function resolveAdjustedShapeTextInsets(
     }
   }
   if (shapeType === 'snipped-rectangle') {
-    return {top: .07, right: 0, bottom: 0, left: .07}
+    const inset = clamp(adjustments['snip'], 0, 500, 140) / 2000
+    return {top: inset, right: 0, bottom: 0, left: inset}
   }
   if (shapeType === 'snipped-and-rounded-rectangle') {
-    return {top: .12 * .29289, right: .12 * .29289, bottom: 0, left: .07}
+    const round = clamp(adjustments['radius'], 0, 500, 120) * .29289 / 1000
+    return {top: round, right: round, bottom: 0, left: clamp(adjustments['snip'], 0, 500, 140) / 2000}
   }
   if (shapeType === 'ellipse') {
     const inset = (1 - Math.SQRT1_2) / 2
@@ -279,6 +367,8 @@ export function resolveShapeAdjustmentProjection(
   values: ShapeAdjustmentValues | undefined,
 ): ShapeAdjustmentProjection | undefined {
   const adjustmentValues = values ?? {}
+  const preset = presetAdjustmentProjection(shapeType, adjustmentValues)
+  if (preset) return preset
   if (
     shapeType === 'rounded-rectangle' ||
     shapeType === 'single-rounded-rectangle' ||
@@ -345,7 +435,16 @@ export function updateShapeAdjustment(
   const projection = resolveShapeAdjustmentProjection(shapeType, values)
   if (!projection) return undefined
   const next = {...projection.adjustments}
-  if (handleId === 'radius') next['radius'] = x
+  if (handleId === 'radius') next['radius'] = shapeType === 'snipped-and-rounded-rectangle' ? 1000 - x : x
+  if (handleId === 'snip') next['snip'] = x + y
+  if (handleId === 'thickness') next['thickness'] = x
+  if (handleId === 'innerRadius') {
+    const star = STAR_PRESETS[shapeType]
+    const angle = star ? (-90 + 180 / star[0]) * Math.PI / 180 : 0
+    next['innerRadius'] = star ? (x - 500) * Math.cos(angle) + (y - 500) * Math.sin(angle) : 500 - x
+  }
+  if (handleId === 'notch') next['notch'] = shapeType === 'bookmark' ? 1000 - y
+    : shapeType === 'ribbon-notched-right' ? 1000 - x : x
   if (handleId === 'apexX') next['apexX'] = x
   if (handleId === 'inset') next['inset'] = x
   if (handleId === 'tail') {

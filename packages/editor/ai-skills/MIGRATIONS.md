@@ -2,7 +2,58 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-11-09 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-11-10 | Tracks `@ccc/blockcraft` npm releases.
+
+## 未发布 — 2026-11-10：浮动抓手反馈与填写区流式排序
+
+- Severity: minor（新增可选抓手职责与呈现配置；版本号由用户决定，本次不修改）。
+- What changed / Why: 顶部抓手补充悬停/聚焦反馈及点击、拖拽 Tooltip；填写区顶部抓手复用流式块拖拽，正文和四边继续直接编辑。
+- New APIs: `metadata.objectDrag` 新增 `'flow-handles'`，只接入标记抓手的正文流排序，不依赖或新增对象定位能力；`ObjectCornerControlsComponent.edgeMovable`（默认 true）控制 `movable` 模式的四边拖拽命中带。
+- Behavior Changes: 填写区采用 `movable=true / edgeMovable=false`，顶部支持点击与 Enter/Space 选择、流式排序及原有缩放，`placement.supports(relative/absolute)` 保持 false。内部子树随整块移动；落点、锁定、只读、取消和 Undo/Redo 复用现有 dragController。抓手 hover/focus 提供淡色底与轻阴影、按下加深；CSES Tooltip 和 `aria-description` 描述实际操作，移除原生 title。
+- Migration Recipe: 既有 `movable` 用法不变。流式容器可声明 `objectDrag: 'flow-handles'`，并在视图中仅给专属抓手标记 `data-bc-object-drag-handle`；无需添加 placement 配置。填写区的旧“只选中、不移动”交互基线应更新为流式排序；不改变快照格式或版本号。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-block.md`、`blockcraft-theme.md`。
+
+## 未发布 — 2026-11-10：有限形状参数与显式顶点模式
+
+- Severity: minor（新增可选本地交互 API，调整默认形状控件；版本由用户决定，本次不改版本号）。
+- What changed / Why: 默认选中不再开放所有路径节点；补充 23 种目录形状的 1–2 个受限参数点，将自由节点编辑放到形状右键菜单的显式入口。
+- New APIs: `ShapeBlockComponent.canEditPoints`、`isEditingPoints`、`setPointEditing(boolean): boolean`；右键组件新增 `shapePointsEnabled` / `shapePointsEditing` 和 `edit-shape-points` / `finish-shape-points` 动作。视图类 `shape-block--editing-points` 仅反映本地模式。
+- Behavior Changes: 顶点模式临时隐藏聚焦边框、缩放、旋转及沿边拖动控件；退出后恢复。参数形状从当前调整轮廓进入自由编辑。模式不写文档/Undo，拖点仍按原子 `customGeometry` 提交；已有自定义几何保持渲染和适配。切换选区、锁定、只读、销毁或收起工具栏退出，拖点 Esc 先取消预览，再次 Esc 退出。形状表面（含内部文字区域空白）右键可切换单对象选区；形状内已有文字范围保留文本操作并增加所属形状入口，跨块范围保持。普通参数点、自由顶点和曲线控制点统一使用十字准星光标。浮动工具栏不提供顶点模式入口，右键项采用纯文字。
+- Migration Recipe: 无数据迁移。依赖“选中即出现自由顶点”的宿主或测试改为显式 `shape.setPointEditing(true)`；退出调用 `false`。默认编辑器已注册右键入口；手动 Doc 注册 `ContextMenuPlugin` 以启用该项。新增参数复用既有 `adjustments`，未设置时保持原默认轮廓。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-plugins-util.md`、`blockcraft-theme.md`。
+
+## 未发布 — 2026-11-10：对象虚实边框统一绘制几何
+
+- Severity: patch（修正编辑态提示切换时的线宽与位置跳变；版本由用户决定，本次不改版本号）。
+- What changed / Why: 文本框、形状、艺术字和图片的悬停/内部聚焦虚线与整体选中实线统一为 1px，以各类对象原有虚线位置为准：文本框/艺术字 `-1px`，形状 `0px`，图片 `2px`；实线复用同一边界，仅改变线型和颜色。
+- Behavior Changes: 整体组合也统一为 1px 虚实线，保留原 4px 外扩，文本框、艺术字、图片及组合的 8px 缩放抓手随之居中对齐细描边；形状尺寸抓手保持原边框位置，自由顶点模式与尺寸抓手互斥；旋转按钮改为活跃色实心圆点，并与 14px 连接线一起跟随北侧抓手偏移，保持两端连接，按钮尺寸和手柄长度不变。仅编辑态屏幕交互层生效；对象保存的轮廓、几何、数据与拖动命中带保持，填写区、贴纸、只读和打印样式不变。
+- Migration Recipe: 无 API 或数据迁移。依赖原 2px 实线或内侧悬停框的主题覆盖/截图基线需更新；活跃色仍使用原主题变量。旋转按钮悬停/拖动使用白描边黑色环形箭头光标，资源不可用时回退十字准星。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-theme.md`。
+
+## 未发布 — 2026-11-10：布局菜单统一为紧凑单列
+
+- Severity: patch（布局菜单呈现调整；版本由用户决定，本次不改版本号）。
+- What changed / Why: 图片、形状、文本框、艺术字和整体组合的布局选项统一改为单列，避免长名称折行与宫格留白。
+- Behavior Changes: 布局面板宽 176px、内距 6px；选项行高 28px（触摸主指针 34px），左图标和名称、右选中标记。流式图片对齐用底部分段图标按钮，页面对齐与层级操作也收纳在底部快捷组；既有动作、可用条件、展开收起和定位保持。外观、文本和内容区域设置面板不受该布局样式影响。
+- Migration Recipe: 无 API 或数据迁移。覆盖或测试旧布局宫格 `.object-format__icon-grid` / `.object-format__icon-action` 时，改用 `.object-layout-list` / `.object-layout-option`；面板使用 `.object-layout-panel`。保留原命令 aria-label。
+- Affected ai-skills files: `blockcraft-toolbar.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-theme.md`。
+
+## 未发布 — 2026-11-10：图片块复用迷你浮动菜单
+
+- Severity: minor（图片插件新增可选本地 UI API；版本由用户决定，本次不改版本号）。
+- What changed / Why: 图片块由平铺工具条改为 34px 迷你侧栏与 208px 二级布局面板，复用已有展开/收起外壳；浮动图片不再展示无效的左/中/右对齐入口。
+- New APIs: `ImgToolbarPluginOptions` 扩展 `FloatingToolbarOptions`，支持 `collapsed?: boolean`；`ImgToolbarPlugin` 提供 `toolbarState`、`collapsed` 和 `setCollapsed(boolean)`。
+- Behavior Changes: 流式图片的对齐放在布局面板中，浮动图片与组合内图片隐藏对齐，动作层重查定位状态。原布局、层级、图片标题、下载、复制链接和宿主自定义操作保留。菜单采用顶部侧边定位和左右避让，收起关闭二级面板，状态跨图片切换保留。整体组合的“解除组合”仅在可用时显示。行内图片 Embed 的菜单维持原交互。
+- Migration Recipe: 无数据迁移；`new ImgToolbarPlugin()` 和原自定义按钮配置继续可用。初始收起可传 `{collapsed: true}`，运行时调用 `plugin.setCollapsed(false)` 展开；UI 自动化应先点击“布局”再选择布局或流式对齐命令。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-toolbar.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-theme.md`。
+
+## 未发布 — 2026-11-10：组合块浮动菜单分为两级
+
+- Severity: patch（调整组合块菜单呈现；版本由用户决定，本次不改版本号）。
+- What changed / Why: 整组选中后的浮动工具栏改为与对象格式工具栏一致的迷你侧栏，仅保留“布局”和“解除组合”两个入口，避免平铺全部命令。
+- Behavior Changes: “布局”打开 208px 二级面板，保留原布局类型、层级操作与禁用条件；“解除组合”仅在可用时显示并直接执行原命令。沿用现有展开/收起状态、顶部定位和左右避让；收起会关闭二级面板。多对象混选时的对齐、分布和组合命令条保持原功能。
+- Migration Recipe: 无 API 或数据迁移；依赖原组合菜单按钮文案“取消组合”的 UI 测试需改用“解除组合”，布局与层级按钮需先打开“布局”。
+- Affected ai-skills files: `blockcraft-toolbar.md`、`blockcraft-plugins-toolbar.md`。
 
 ## 未发布 — 2026-11-09：可复用的迷你浮动工具栏与展开收起
 

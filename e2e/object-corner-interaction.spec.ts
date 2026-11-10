@@ -55,6 +55,16 @@ async function setup(page: Page, flavour: string, scale: number, nested = false,
   }, {flavour, scale, nested, rotation, dense})
 }
 
+async function blurObject(page: Page) {
+  // Leave the editor through a real focus transition so owned toolbar
+  // presentation is released before checking the unselected hover chrome.
+  await page.getByRole('button', {name: '初始化', exact: true}).focus()
+  await page.evaluate(async () => {
+    for (let i = 0; i < 2; i++) await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    ;(window as any).cornerInteraction.doc.selection.blur()
+  })
+}
+
 async function position(page: Page) {
   return page.evaluate(() => {
     const {doc, targetId} = (window as any).cornerInteraction
@@ -113,6 +123,7 @@ for (const flavour of ['text-box', 'word-art']) {
         doc.selection.blur()
       })
       await expect.poll(() => position(page)).toEqual(before)
+      await blurObject(page)
       await block.hover({position: {x: 150 * scale, y: 80 * scale}})
       await entry.click()
       await expect.poll(() => selectedObject(page)).toBe(id)
@@ -130,7 +141,7 @@ for (const flavour of ['text-box', 'word-art']) {
     await handle.click()
     await expect.poll(() => selectedObject(page)).toBe(id)
     await expect(handle).toBeHidden()
-    await page.evaluate(() => (window as any).cornerInteraction.doc.selection.blur())
+    await blurObject(page)
     await block.hover()
     const before = await position(page)
     const box = (await handle.boundingBox())!
@@ -151,7 +162,19 @@ for (const flavour of ['text-box', 'word-art']) {
     const editor = block.locator(flavour === 'text-box' ? '.text-box-block__content' : '.word-art-block__editor')
     const controls = block.locator('bc-object-corner-controls')
     const handle = controls.locator('[data-bc-object-floating-handle]')
-    await editor.click()
+    const textPoint = await editor.evaluate(element => {
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+      let node: Node | null
+      while ((node = walker.nextNode())) {
+        if (!node.textContent?.includes('Text selection')) continue
+        const range = document.createRange()
+        range.setStart(node, 2); range.setEnd(node, 3)
+        const r = range.getBoundingClientRect()
+        return {x: r.x + r.width / 2, y: r.y + r.height / 2}
+      }
+      throw new Error('Missing editable text')
+    })
+    await page.mouse.click(textPoint.x, textPoint.y)
     await page.mouse.move(20, 20)
     await expect(handle).toBeVisible()
     await expect(editor).toHaveAttribute('contenteditable', 'true')
@@ -165,7 +188,7 @@ for (const flavour of ['text-box', 'word-art']) {
     await controls.locator('[data-bc-object-floating-handle]').focus()
     await page.keyboard.press('Enter')
     await expect.poll(() => selectedObject(page)).toBe(id)
-    await page.evaluate(() => (window as any).cornerInteraction.doc.selection.blur())
+    await blurObject(page)
     await block.hover()
     await handle.focus()
     await expect(handle).toBeFocused()
@@ -196,17 +219,17 @@ for (const flavour of ['text-box', 'word-art']) {
   })
 }
 
-test('填写区顶部抓手只选中和缩放，不新增移动能力', async ({page}) => {
+test('填写区顶部抓手支持点击和键盘选择，保留缩放且不开放定位能力', async ({page}) => {
   const id = await setup(page, 'render-unit', 1)
   const block = page.locator(`[data-block-id="${id}"]`)
   await block.hover({position: {x: 150, y: 80}})
   const controls = block.locator(':scope > bc-object-corner-controls')
   await expect(controls.locator('[data-bc-object-corner]')).toHaveCount(0)
   await expect(controls.locator('[data-bc-object-entry-edge]')).toHaveCount(0)
-  await expect(controls.locator('[data-bc-object-floating-handle]')).not.toHaveAttribute('data-bc-object-drag-handle')
+  await expect(controls.locator('[data-bc-object-floating-handle]')).toHaveAttribute('data-bc-object-drag-handle', '')
   await controls.locator('[data-bc-object-floating-handle]').click()
   await expect(block).toHaveClass(/selected/)
-  await page.evaluate(() => (window as any).cornerInteraction.doc.selection.blur())
+  await blurObject(page)
   await block.hover({position: {x: 150, y: 80}})
   await controls.locator('[data-bc-object-floating-handle]').focus()
   await page.keyboard.press('Enter')
@@ -235,3 +258,99 @@ test('嵌套文本框悬停只显示最近对象的轻量入口，正文仍可�
   await page.keyboard.type('NESTED')
   await expect(block).toContainText('NESTED')
 })
+
+for (const flavour of ['text-box', 'word-art', 'render-unit']) {
+  test(`${flavour}: 浮动抓手 hover 和聚焦显示操作提示，点击后及时关闭`, async ({page}) => {
+    const id = await setup(page, flavour, 1, false, 0, false)
+    const block = page.locator(`[data-block-id="${id}"]`)
+    // TextBox/WordArt surfaces use flavour classes rather than the data marker.
+    const grip = block.locator('[data-bc-object-floating-handle]').first()
+    await block.hover({position: {x: 150, y: 80}})
+    await expect(grip).toBeVisible()
+    const idle = await grip.evaluate(el => getComputedStyle(el).backgroundColor)
+    const originalPosition = (await grip.boundingBox())!
+    await grip.hover()
+    await expect.poll(() => grip.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(idle)
+    await expect(grip).not.toHaveCSS('box-shadow', 'none')
+    const currentPosition = (await grip.boundingBox())!
+    expect(currentPosition).toEqual(originalPosition)
+    const label = flavour === 'text-box' ? '文本框' : flavour === 'word-art' ? '艺术字' : '内容区域'
+    const hint = page.getByRole('tooltip').filter({hasText: `点击选中${label}，拖拽移动`})
+    await expect(hint).toBeVisible()
+    if (flavour === 'render-unit' && test.info().project.name === 'chromium') {
+      const r = (await grip.boundingBox())!
+      await page.screenshot({path: '/tmp/blockcraft-floating-handle-hover.png', clip: {
+        x: Math.max(0, r.x - 150), y: Math.max(0, r.y - 60), width: 330, height: 120,
+      }})
+    }
+    await expect(grip).not.toHaveAttribute('title')
+    await grip.click()
+    await expect.poll(() => selectedObject(page)).toBe(id)
+    await expect(hint).toHaveCount(0)
+    await blurObject(page)
+    await block.hover({position: {x: 150, y: 80}})
+    await grip.focus()
+    await expect(hint).toBeVisible()
+    await page.keyboard.press('Enter')
+    await expect.poll(() => selectedObject(page)).toBe(id)
+    await expect(hint).toHaveCount(0)
+  })
+}
+
+for (const crossParent of [false, true]) {
+ test(`填写区顶部抓手走流式排序（${crossParent ? '跨容器' : '同容器'}），保留整个子树、支持撤销重做与 Esc 取消`, async ({page}) => {
+  const id = await setup(page, 'render-unit', 1, false, 0, false)
+  const {targetId, before, destinationId} = await page.evaluate(crossParent => {
+    const {doc, targetId: id} = (window as any).cornerInteraction
+    const child = doc.schemas.createSnapshot('paragraph', ['填写区正文保持可编辑'])
+    doc.crud.insertBlockSnapshots(id, 0, [child])
+    const target = doc.schemas.createSnapshot('paragraph', ['拖到这段正文后面'])
+    const container = crossParent ? doc.schemas.createSnapshot('columns', [2]) : null
+    if (container) container.children[0].children = [target]
+    doc.crud.insertBlockSnapshots(doc.rootId, doc.root.childrenLength, [container ?? target])
+    doc.crud.undoManager.clearHistory()
+    return {targetId: target.id as string, before: doc.model.toSnapshot(id), destinationId: container?.children[0].id ?? doc.rootId}
+  }, crossParent)
+  const source = page.locator(`[data-block-id="${id}"]`)
+  const target = page.locator(`[data-block-id="${targetId}"]`)
+  const grip = source.locator(':scope > bc-object-corner-controls [data-bc-object-floating-handle]')
+  const order = () => page.evaluate(({id, targetId}) => {
+    const {doc} = (window as any).cornerInteraction
+    return doc.model.getChildrenIds(doc.model.getParentId(id)).filter((v: string) => v === id || v === targetId)
+  }, {id, targetId})
+  const drag = async () => {
+    await blurObject(page)
+    await source.hover({position: {x: 150, y: 80}})
+    const a = (await grip.boundingBox())!, b = (await target.boundingBox())!
+    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height - 2, {steps: 8})
+    await expect.poll(() => page.evaluate(() => (window as any).cornerInteraction.doc.dragController.state)).toBe('dragging')
+    await expect(page.getByRole('tooltip').filter({hasText: '点击选中内容区域'})).toHaveCount(0)
+  }
+  await drag()
+  await page.mouse.up()
+  await expect.poll(order).toEqual([targetId, id])
+  await expect(source).toContainText('填写区正文保持可编辑')
+  expect(await page.evaluate(id => (window as any).cornerInteraction.doc.model.getParentId(id), id)).toBe(destinationId)
+  // Normal block sorting inherits the destination paragraph's zero depth.
+  expect(await page.evaluate(id => (window as any).cornerInteraction.doc.model.toSnapshot(id), id)).toEqual({...before, props: {...before.props, depth: 0}})
+  await page.evaluate(() => (window as any).cornerInteraction.doc.crud.undoManager.undo())
+  await expect.poll(order).toEqual(crossParent ? [id] : [id, targetId])
+  await page.evaluate(() => (window as any).cornerInteraction.doc.crud.undoManager.redo())
+  await expect.poll(order).toEqual([targetId, id])
+  await page.evaluate(() => (window as any).cornerInteraction.doc.crud.undoManager.undo())
+  await expect.poll(order).toEqual(crossParent ? [id] : [id, targetId])
+  await drag()
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+  await expect.poll(order).toEqual(crossParent ? [id] : [id, targetId])
+  await drag()
+  await page.evaluate(() => (window as any).cornerInteraction.doc.toggleReadonly(true))
+  await expect.poll(() => page.evaluate(() => (window as any).cornerInteraction.doc.dragController.state)).toBe('idle')
+  await page.mouse.up()
+  await expect.poll(order).toEqual(crossParent ? [id] : [id, targetId])
+  await expect(grip).toBeHidden()
+  expect(await page.evaluate(id => (window as any).cornerInteraction.doc.model.toSnapshot(id), id)).toEqual(before)
+})
+}

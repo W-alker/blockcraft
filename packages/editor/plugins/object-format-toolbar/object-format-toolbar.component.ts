@@ -189,7 +189,7 @@ export type ObjectFormatToolbarAction =
       @if (activePanel; as panel) {
         <aside
           class="object-format__panel"
-          [class.object-format__panel--compact]="panel === 'layout'"
+          [class.object-layout-panel]="panel === 'layout'"
           aria-label="设置对象格式"
         >
           @if (state.readonlyCount) {
@@ -206,19 +206,14 @@ export type ObjectFormatToolbarAction =
             }
             @if (panel === "layout") {
               <section aria-label="布局与排列">
-                <div
-                  class="object-format__icon-grid object-format__icon-grid--4"
-                  [style.grid-template-columns]="
-                    'repeat(' + layoutOptions.length + ', minmax(0, 1fr))'
-                  "
-                >
+                <div class="object-layout-list">
                   @for (item of layoutOptions; track item.value) {
                     <button
                       cs-button
                       csType="text"
                       csSize="sm"
                       type="button"
-                      class="object-format__icon-action"
+                      class="object-layout-option"
                       [class.active]="isLayoutActive(item.value)"
                       [attr.aria-pressed]="isLayoutActive(item.value)"
                       [attr.aria-label]="item.label"
@@ -230,6 +225,7 @@ export type ObjectFormatToolbarAction =
                         aria-hidden="true"
                       ></i>
                       <span>{{ item.label }}</span>
+                      @if (isLayoutActive(item.value)) {<i class="bc_icon bc_xuanzhong object-layout-option__check" aria-hidden="true"></i>}
                     </button>
                   }
                 </div>
@@ -237,7 +233,7 @@ export type ObjectFormatToolbarAction =
               @if (showsAbsoluteLayoutTools) {
                 <section aria-label="页面对齐">
                   <div
-                    class="object-format__icon-grid object-format__icon-grid--3"
+                    class="object-layout-tools object-layout-segmented"
                   >
                     @for (item of planeAlignOptions; track item.value) {
                       <button
@@ -245,7 +241,7 @@ export type ObjectFormatToolbarAction =
                         csType="text"
                         csSize="sm"
                         type="button"
-                        class="object-format__icon-action"
+                        class="object-layout-action"
                         [attr.aria-label]="item.label"
                         [csTooltip]="item.label"
                         (click)="layout(item.action)"
@@ -269,7 +265,7 @@ export type ObjectFormatToolbarAction =
                   aria-label="对象与排列"
                 >
                   <div
-                    class="object-format__icon-grid object-format__icon-grid--2"
+                    class="object-layout-tools"
                   >
                     @for (item of objectActions; track item.action) {
                       @if (isObjectActionVisible(item.action)) {
@@ -278,7 +274,8 @@ export type ObjectFormatToolbarAction =
                           csType="text"
                           csSize="sm"
                           type="button"
-                          class="object-format__icon-action"
+                          class="object-layout-action"
+                          [attr.aria-label]="item.label" [csTooltip]="item.label"
                           (click)="layout(item.action)"
                         >
                           <i
@@ -298,14 +295,14 @@ export type ObjectFormatToolbarAction =
                   aria-label="层级"
                 >
                   <div
-                    class="object-format__icon-grid object-format__icon-grid--2"
+                    class="object-layout-tools"
                   >
                     <button
                       cs-button
                       csType="text"
                       csSize="sm"
                       type="button"
-                      class="object-format__icon-action"
+                      class="object-layout-action"
                       aria-label="上移一层"
                       csTooltip="上移一层"
                       (click)="layout('forward')"
@@ -318,7 +315,7 @@ export type ObjectFormatToolbarAction =
                       csType="text"
                       csSize="sm"
                       type="button"
-                      class="object-format__icon-action"
+                      class="object-layout-action"
                       aria-label="下移一层"
                       csTooltip="下移一层"
                       (click)="layout('backward')"
@@ -1403,67 +1400,6 @@ export type ObjectFormatToolbarAction =
         justify-content: flex-start;
         width: 100%;
       }
-      .object-format__icon-grid {
-        display: grid;
-        gap: 6px;
-      }
-      .object-format__icon-grid--3 {
-        grid-template-columns: repeat(3, 1fr);
-      }
-      .object-format__icon-grid--2 {
-        grid-template-columns: repeat(2, 1fr);
-      }
-      .object-format__icon-grid--4 {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-      }
-      .object-format__icon-action {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 3px;
-        min-width: 0;
-        width: 100%;
-        min-height: 48px;
-        height: 48px;
-        padding: 3px 2px;
-        border-color: transparent;
-        background: transparent;
-      }
-      .object-format__icon-action .bc_icon {
-        font-size: 15px;
-        line-height: 1;
-      }
-      .object-format__icon-action span {
-        display: -webkit-box;
-        max-width: 100%;
-        max-height: 24px;
-        overflow: hidden;
-        color: currentColor;
-        font-size: 10px;
-        font-weight: 400;
-        line-height: 12px;
-        text-align: center;
-        word-break: break-all;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
-      }
-      .object-format__icon-action.active {
-        border-color: transparent;
-        background: color-mix(in srgb, var(--bc-active-color, #4857e2) 8%, transparent);
-        color: var(--bc-active-color, #4857e2);
-      }
-      .object-format__scroll--layout section {
-        gap: 6px;
-        padding-block: 6px;
-      }
-      .object-format__scroll--layout h3 {
-        font-size: 11px;
-        font-weight: 500;
-      }
-      .object-format__scroll--layout .object-format__icon-grid {
-        gap: 4px;
-      }
       .object-format__section-title {
         display: none;
       }
@@ -1516,10 +1452,6 @@ export type ObjectFormatToolbarAction =
         }
         section {
           padding-block: 6px;
-        }
-        .object-format__icon-action {
-          min-height: 48px;
-          height: 48px;
         }
       }
     `,

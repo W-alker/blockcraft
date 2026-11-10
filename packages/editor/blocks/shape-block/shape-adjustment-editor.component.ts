@@ -70,7 +70,7 @@ import type {ShapeAdjustmentValues, ShapeKind} from './shape.types'
       transform: translate(-50%, -50%);
       pointer-events: auto;
       touch-action: none;
-      cursor: move;
+      cursor: crosshair;
     }
   `],
 })

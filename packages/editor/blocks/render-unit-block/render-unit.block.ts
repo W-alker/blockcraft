@@ -37,7 +37,7 @@ import {applyRenderUnitTypography} from './typography'
       (mousedown)="selectEmptyRegion($event)">
     </div>
     @if (!isReadonly) {
-      <bc-object-corner-controls [block]="this" label="内容区域" />
+      <bc-object-corner-controls [block]="this" label="内容区域" [movable]="true" [edgeMovable]="false" />
       <shape-resizer
         data-bc-print-exclude="true"
         data-bc-selection-interaction-ignore

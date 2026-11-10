@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-11-05
+> Last updated: 2026-11-10
 
 ## 标题命令的字号与行高清理
 
@@ -61,14 +61,16 @@ const plugins = [
 | 省略 / `'placement'` | 默认拾取支持 absolute 的对象，只移动当前 absolute 对象；正文排序使用原有手柄 |
 | `'body'` | 仅拾取标记的可视表面或移动手柄，按当前位置启动正文排序或浮动移动 |
 | `'handles'` | 仅拾取标记的移动手柄，保留本体的文字编辑 |
+| `'flow-handles'` | 仅从标记手柄启动正文流排序，无需对象定位能力，不响应 absolute 平面 |
 | `'custom'` | 通用插件完全避让，供宿主自定义交互使用 |
 
-图片、贴纸、形状使用 `'body'`；文本框、艺术字、组合块使用 `'handles'`。
+图片、贴纸、形状使用 `'body'`；文本框、艺术字、组合块使用 `'handles'`；填写区使用 `'flow-handles'`，只标记顶部抓手。
 `ImgToolbarPlugin` 不再监听块态图片的本体拖拽；`ObjectFormatToolbarPlugin` 保留
 文字编辑、Shift 多选和首次选组/再次选成员的层级判断，移动由本插件统一执行。
 组/成员拾取插件必须先注册，消费的事件不会继续进入公共拖拽入口。
 
-每种移动仍须通过 `doc.placement.supports(block, mode)`，不会突破容器的定位限制。
+对象移动须通过 `doc.placement.supports(block, mode)`，不会突破容器的定位限制；
+`flow-handles` 单独复用 `dragController` 的正文结构排序与落点校验，不授予 `placement` 权限。
 文档只读时不拾取；块锁定时可选择但不可拖拽。正文与绝对定位继续使用既有
 `dragController` / `placement`，组合成员保留局部 absolute 坐标及原事务语义。
 

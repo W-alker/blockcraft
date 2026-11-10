@@ -308,7 +308,7 @@ export function calculateShapeResize(
 
       .shape-resizer__rotation-stem {
         position: absolute;
-        top: -22px;
+        top: -20px;
         left: 50%;
         width: 1px;
         height: 14px;
@@ -320,22 +320,18 @@ export function calculateShapeResize(
       .shape-resizer__rotate {
         position: absolute;
         z-index: 2;
-        top: -30px;
+        top: -28px;
         left: 50%;
         width: 8px;
         height: 8px;
         padding: 0;
         border: 1px solid var(--bc-active-color, #4857e2);
         border-radius: 50%;
-        background: var(--bc-bg-primary, #fff);
+        background: var(--bc-active-color, #4857e2);
         transform: translateX(-50%);
         pointer-events: auto;
         touch-action: none;
-        cursor: grab;
-      }
-
-      .shape-resizer__rotate:active {
-        cursor: grabbing;
+        cursor: url('../../assets/cursors/rotate.svg') 20 10, crosshair;
       }
 
       .shape-resizer__handle:disabled {

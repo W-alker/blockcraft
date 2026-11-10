@@ -91,16 +91,20 @@ for (const mode of ['relative', 'absolute'] as const) {
       }
     })
     const assertAligned = async () => {
+      await page.evaluate(id => (window as any).__shapeBoundsDoc.getBlockById(id).setPointEditing(true), id)
+      await expect(block.locator('shape-geometry-editor')).toBeVisible()
       await expect.poll(async () => (await read()).contourError).toBeLessThan(0.5)
       expect((await read()).frameError).toBeLessThan(0.5)
       expect((await read()).nodesInside).toBe(true)
       expect((await read()).text).toContain('形状内容')
+      await page.evaluate(id => (window as any).__shapeBoundsDoc.getBlockById(id).setPointEditing(false), id)
+      await expect(block.locator('shape-geometry-editor')).toHaveCount(0)
     }
     await expect(block.locator('shape-resizer')).toBeVisible()
     await assertAligned()
     expect((await read()).width).toBeCloseTo(300, 0)
     await page.locator('#shape-bounds-fixture').screenshot({path: testInfo.outputPath('shape.png')})
-    // Mid-edge curve nodes intentionally share the edge; use the corner resizer.
+    // Leaving point editing restores ordinary resizing on the same frame.
     const handle = (await block.locator('[data-handle="south-east"]').boundingBox())!
     await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
     await page.mouse.down()

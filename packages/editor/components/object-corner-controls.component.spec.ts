@@ -34,6 +34,8 @@ describe('ObjectCornerControlsComponent', () => {
     expect(host.querySelectorAll('[data-bc-object-corner]').length).toBe(0)
     expect(host.querySelectorAll('button').length).toBe(1)
     expect(floatingHandle().getAttribute('aria-label')).toBe('选中文本框')
+    expect(floatingHandle().getAttribute('aria-description')).toBe('点击选中文本框')
+    expect(floatingHandle().hasAttribute('title')).toBeFalse()
     for (const button of Array.from(host.querySelectorAll('button'))) {
       expect(button.hasAttribute('data-bc-object-select-handle')).toBeTrue()
       expect(button.hasAttribute('data-bc-nodrag')).toBeTrue()
@@ -46,6 +48,11 @@ describe('ObjectCornerControlsComponent', () => {
     expect(floatingHandle().hasAttribute('data-bc-object-drag-handle')).toBeTrue()
     expect(floatingHandle().hasAttribute('data-bc-nodrag')).toBeFalse()
     expect(floatingHandle().getAttribute('aria-label')).toBe('选中文本框并拖动')
+    expect(floatingHandle().getAttribute('aria-description')).toBe('点击选中文本框，拖拽移动')
+    fixture.componentRef.setInput('edgeMovable', false)
+    fixture.detectChanges()
+    expect(host.querySelectorAll('[data-bc-object-entry-edge]').length).toBe(0)
+    expect(floatingHandle().hasAttribute('data-bc-object-drag-handle')).toBeTrue()
   })
 
   it('delegates floating-handle pointer gestures to ObjectDrag without reselecting after a drag', () => {

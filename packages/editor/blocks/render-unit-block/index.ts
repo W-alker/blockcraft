@@ -122,6 +122,7 @@ export const RenderUnitBlockSchema: IBlockSchemaOptions<RenderUnitBlockModel> = 
       'mermaid-textarea',
     ],
     selectionScope: 'container',
+    objectDrag: 'flow-handles',
     objectSizing: RENDER_UNIT_OBJECT_SIZING,
     virtualization: {
       estimateHeight: context => {

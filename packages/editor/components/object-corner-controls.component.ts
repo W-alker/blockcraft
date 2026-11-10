@@ -1,9 +1,11 @@
 import {ChangeDetectionStrategy, Component, Input} from '@angular/core'
+import {CsTooltipDirective} from '@cses/ui'
 
 /** 对象的轻量选择入口；边缘移动仍交给 ObjectDragPlugin。 */
 @Component({
   selector: 'bc-object-corner-controls',
   standalone: true,
+  imports: [CsTooltipDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     'contenteditable': 'false',
@@ -11,7 +13,7 @@ import {ChangeDetectionStrategy, Component, Input} from '@angular/core'
     'data-bc-selection-interaction-ignore': '',
   },
   template: `
-    @if (movable) {
+    @if (movable && edgeMovable) {
       @for (edge of edges; track edge) {
         <span [attr.data-bc-object-entry-edge]="edge"
           data-bc-object-drag-handle aria-hidden="true"></span>
@@ -21,10 +23,12 @@ import {ChangeDetectionStrategy, Component, Input} from '@angular/core'
       [attr.data-bc-object-drag-handle]="movable ? '' : null"
       [attr.data-bc-nodrag]="movable ? null : ''"
       [attr.aria-label]="'选中' + label + (movable ? '并拖动' : '')"
-      [title]="movable ? '选中整块并拖动' : '选中整块'"
-      (pointerdown)="pressFloatingHandle($event)"
-      (keydown)="$event.stopPropagation()"
-      (click)="activateFloatingHandle($event)">
+      [attr.aria-description]="interactionHint"
+      [csTooltip]="interactionHint" csTooltipPlacement="top" #tooltip="csTooltip"
+      (pointerdown)="tooltip.hide(); pressFloatingHandle($event)"
+      (pointerleave)="tooltip.hide()" (blur)="tooltip.hide()"
+      (keydown)="tooltip.hide(); $event.stopPropagation()"
+      (click)="tooltip.hide(); activateFloatingHandle($event)">
       <i class="bc_icon bc_yidong" aria-hidden="true"></i>
     </button>
   `,
@@ -53,6 +57,15 @@ import {ChangeDetectionStrategy, Component, Input} from '@angular/core'
       border: 1px solid var(--bc-active-color); border-radius: 7px;
       background: var(--bc-bg-primary); color: var(--bc-active-color);
       cursor: pointer; touch-action: manipulation;
+      transition: background-color 120ms ease, box-shadow 120ms ease;
+    }
+    [data-bc-object-floating-handle]:is(:hover, :focus-visible) {
+      background: color-mix(in srgb, var(--bc-active-color) 12%, var(--bc-bg-primary));
+      box-shadow: var(--bc-shadow-sm);
+    }
+    [data-bc-object-floating-handle]:active {
+      background: color-mix(in srgb, var(--bc-active-color) 20%, var(--bc-bg-primary));
+      box-shadow: none;
     }
     [data-bc-object-floating-handle][data-bc-object-drag-handle] { cursor: move; touch-action: none; }
     [data-bc-object-floating-handle]:focus-visible { outline: 2px solid var(--bc-active-color); outline-offset: 2px; }
@@ -61,6 +74,9 @@ import {ChangeDetectionStrategy, Component, Input} from '@angular/core'
       letter-spacing: 0; text-indent: 0; text-align: center;
     }
     [data-bc-object-floating-handle] > i::before { display: block; }
+    @media (prefers-reduced-motion: reduce) {
+      [data-bc-object-floating-handle] { transition: none; }
+    }
     @media print { :host { display: none !important; } }
   `],
 })
@@ -68,8 +84,13 @@ export class ObjectCornerControlsComponent {
   @Input({required: true}) block!: BlockCraft.BlockComponent
   @Input() label = '整个对象'
   @Input() movable = false
+  /** Floating-handle movement can be enabled without turning the four edges into drag surfaces. */
+  @Input() edgeMovable = true
 
   protected readonly edges = ['north', 'east', 'south', 'west']
+  protected get interactionHint(): string {
+    return `点击选中${this.label}${this.movable ? '，拖拽移动' : ''}`
+  }
   protected preserveEditingSelection(event: PointerEvent): void {
     if (event.button !== 0 || !event.isPrimary) return
     event.preventDefault()
@@ -82,7 +103,7 @@ export class ObjectCornerControlsComponent {
 
   protected activateFloatingHandle(event: MouseEvent): void {
     // 可移动对象的指针手势由 ObjectDragPlugin 完整处理，拖动后不能再重选旧落点。
-    // 键盘激活不经过 pointerdown；填写区也只需要选择。
+    // 键盘激活不经过 pointerdown，仍由按钮直接完成选择。
     if (!this.movable || event.detail === 0) {
       this.selectObject(event)
     } else {

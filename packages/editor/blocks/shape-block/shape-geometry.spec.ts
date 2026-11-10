@@ -68,7 +68,7 @@ describe('Shape custom geometry', () => {
       doc.transact(() => patch.customGeometry === null ? props.delete('customGeometry') : props.set('customGeometry', patch.customGeometry))
       return true
     })
-    const context = {isReadonly: false, doc: {placement: {updateObjectGeometry}},
+    const context = {isReadonly: false, isEditingPoints: true, doc: {placement: {updateObjectGeometry}},
       get props() { return props.toJSON() }, get shapeProps() { return normalizeShapeProps(props.toJSON()) },
     } as unknown as ShapeBlockComponent
     const preset = createDefaultEditableShapeGeometry('curved-connector')!

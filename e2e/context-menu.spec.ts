@@ -114,7 +114,7 @@ for (const backwards of [false, true]) {
     await clickCharacter(ids.last, 2);
     await menu(page).getByRole('menuitem', {name: /^复制/}).click();
     await expect.poll(() => page.evaluate(() => (window as any).copiedRangeText)).toBe(
-      '选中正文\n提示块内部正文\n提示块内部列表\n提示块内部编号\n末尾选中');
+      '选中正文\n提示块内部正文\n提示块内部列表\n1. 提示块内部编号\n末尾选中');
     // Right-click is a menu gesture even outside the highlighted characters.
     await clickCharacter(ids.first, 1);
     await expect.poll(state).toEqual(before);

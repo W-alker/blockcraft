@@ -1,3 +1,4 @@
+import {NgZone} from "@angular/core";
 import {fakeAsync, tick} from "@angular/core/testing";
 import {Subject} from "rxjs";
 import {BlockNodeType} from "../../framework";
@@ -160,7 +161,7 @@ describe("ImgToolbarPlugin lifecycle", () => {
       },
       chain: jasmine.createSpy("chain").and.returnValue(chain),
       injector: {
-        get: jasmine.createSpy("get").and.returnValue(fileService),
+        get: jasmine.createSpy("get").and.callFake((token: unknown) => token === NgZone ? {runOutsideAngular: (callback: () => void) => callback()} : fileService),
       },
       selection: {
         selectionChange$: selection$,
@@ -241,9 +242,12 @@ describe("ImgToolbarPlugin lifecycle", () => {
                 markForCheck: jasmine.createSpy("markForCheck"),
               },
               onItemClicked: toolbarClicks,
+              panelChange: new Subject<void>(),
             },
           },
           overlayRef: {
+            overlayElement: document.createElement("div"),
+            getConfig: () => ({}),
             dispose: jasmine.createSpy("dispose"),
             updatePosition: jasmine.createSpy("updatePosition"),
           },
@@ -310,6 +314,22 @@ describe("ImgToolbarPlugin lifecycle", () => {
     expect(fileService.previewImg).toHaveBeenCalled();
     rootHost.remove();
   });
+
+  it("rejects stale flow alignment after an image becomes floating", fakeAsync(() => {
+    const h = makeHarness();
+    h.plugin.init();
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    h.placementMode.current = 'absolute';
+    h.toolbarClicks.next({name: 'align', value: 'center'});
+    expect(h.imageBlock.updateProps).not.toHaveBeenCalled();
+    h.placementMode.current = 'relative';
+    h.toolbarClicks.next({name: 'align', value: 'right'});
+    expect(h.imageBlock.updateProps).toHaveBeenCalledOnceWith({align: 'right'});
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
 
   it("rechecks placement before caption changes and keeps flow captions working", fakeAsync(() => {
     const h = makeHarness();
@@ -638,6 +658,32 @@ describe("ImgToolbarPlugin lifecycle", () => {
     expect(options.target).toBe(h.wrapper.querySelector("img"));
     h.plugin.destroy();
     h.rootHost.remove();
+  }));
+
+  it("positions beside visible controls while aligning to the frame rather than the paint reserve", fakeAsync(() => {
+    const h = makeHarness();
+    const chrome = document.createElement('shape-resizer');
+    const frame = document.createElement('div');
+    frame.className = 'shape-resizer__frame';
+    const handle = document.createElement('button');
+    handle.className = 'shape-resizer__handle';
+    frame.append(handle); chrome.append(frame); h.wrapper.append(chrome);
+    spyOn(chrome, 'getBoundingClientRect').and.returnValue(new DOMRect(88, 152, 184, 140));
+    spyOn(frame, 'getBoundingClientRect').and.returnValue(new DOMRect(100, 200, 160, 80));
+    const controlRect = spyOn(handle, 'getBoundingClientRect').and.returnValue(new DOMRect(256, 236, 8, 8));
+    h.plugin.init(); h.selectionValue.current = h.imageSelection; h.selection$.next(h.imageSelection); tick(250);
+    const options = h.doc.overlayService.createConnectedOverlay.calls.mostRecent().args[0];
+    const initial = options.getOriginRect();
+    expect([initial.left, initial.top, initial.right, initial.bottom]).toEqual([100, 200, 264, 280]);
+    // A rotated knob can extend past the image; remeasurement clears its real edge.
+    controlRect.and.returnValue(new DOMRect(286, 236, 8, 8));
+    expect(options.getOriginRect().right).toBe(294);
+    expect(options.getOriginRect().top).toBe(200);
+    frame.remove();
+    const image = h.wrapper.querySelector('img')!;
+    spyOn(image, 'getBoundingClientRect').and.returnValue(new DOMRect(120, 220, 160, 80));
+    expect(options.getOriginRect().top).toBe(220);
+    h.plugin.destroy(); h.rootHost.remove();
   }));
 
   it("rebinds the toolbar and actions when another image is selected", fakeAsync(() => {

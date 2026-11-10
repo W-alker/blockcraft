@@ -162,3 +162,35 @@ describe('Shape catalogue adjustments', () => {
     expect(resolved.paths[0]?.d).toBe('M240 0L1000 1000H0Z')
   })
 })
+
+describe('Additional finite preset controls', () => {
+  const kinds: ShapeKind[] = ['snipped-rectangle', 'snipped-and-rounded-rectangle',
+    'frame', 'corner', 'donut', 'bookmark', 'ribbon-notched', 'ribbon-notched-left', 'ribbon-notched-right',
+    'chevron', 'notched-right-arrow', 'pentagon-arrow', 'star-4', 'star', 'star-6', 'star-7',
+    'star-8', 'star-10', 'star-12', 'star-16', 'star-24', 'explosion', 'sun']
+  for (const kind of kinds) {
+    it(`${kind} preserves the original contour without adjustments and bounds every exposed parameter`, () => {
+      const original = getShapeDefinition(kind)
+      const projection = resolveShapeAdjustmentProjection(kind, undefined)!
+      expect(projection.path).toBe(original.path)
+      expect(projection.handles.length).toBeGreaterThan(0)
+      expect(projection.handles.length).toBeLessThanOrEqual(2)
+      for (const handle of projection.handles) {
+        for (const point of [{x: -10000, y: -10000}, {x: 10000, y: 10000}]) {
+          const updated = updateShapeAdjustment(kind, undefined, handle.id, point.x, point.y)!
+          expect(Object.values(updated.adjustments).every(v => Number.isFinite(v) && v >= 0 && v <= 1000)).toBeTrue()
+          expect(updated.path).not.toContain('NaN')
+          expect(updated.path).not.toContain('Infinity')
+        }
+      }
+      expect(resolveShapeRenderGeometry(kind, original).fillRule).toBe(original.fillRule)
+    })
+  }
+
+  it('keeps chevron head and notch from crossing and maps the right corner radius backwards', () => {
+    const chevron = resolveShapeAdjustmentProjection('chevron', {headLength: 600, notch: 900})!
+    expect(chevron.adjustments).toEqual({headLength: 600, notch: 300})
+    expect(updateShapeAdjustment('snipped-and-rounded-rectangle', {}, 'radius', 700, 0)!.adjustments['radius']).toBe(300)
+    expect(updateShapeAdjustment('donut', {}, 'innerRadius', 200, 1000)!.adjustments['innerRadius']).toBe(300)
+  })
+})

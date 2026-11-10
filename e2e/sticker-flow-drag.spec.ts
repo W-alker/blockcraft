@@ -339,11 +339,15 @@ for (const container of ['root', 'column', 'render-unit']) {
     await source.locator('[data-bc-object-drag-surface]').click()
     const toolbar = page.locator('bc-image-toolbar')
     await expect(toolbar).toBeVisible()
-    const expected = container === 'root'
-      ? ['嵌入型', '上下型', '衬于文字下方', '浮于文字上方']
-      : ['嵌入型', '上下型']
+    await toolbar.getByRole('button', {name: '布局', exact: true}).click()
+    const expected = await source.evaluate(element => {
+      const block = (window as any).ng.getComponent(element)
+      return [['inline', '嵌入型'], ['top-bottom', '上下型'], ['under', '衬于文字下方'], ['over', '浮于文字上方']]
+        .filter(([value]) => block.doc.placement.supportsObjectLayout(block, value))
+        .map(([, label]) => label)
+    })
     await expect.poll(() => toolbar.locator('[name="object-layout"]').evaluateAll(items =>
-      items.map(item => item.getAttribute('aria-label')))).toEqual(expected)
+      items.map(item => item.closest('button')?.getAttribute('aria-label')))).toEqual(expected)
   })
 }
 
@@ -423,8 +427,9 @@ for (const flavour of ['image', 'sticker']) {
       await expect(toolbar).toBeVisible()
       const clearOfChrome = async () => {
         const a = (await toolbar.boundingBox())!
-        const b = (await chrome.boundingBox())!
-        return a.y + a.height <= b.y - 6 || a.y >= b.y + b.height + 6
+        const b = (await (flavour === 'image' ? source.locator('.shape-resizer__frame') : chrome).boundingBox())!
+        return a.y + a.height <= b.y - 6 || a.y >= b.y + b.height + 6 ||
+          (flavour === 'image' && (a.x + a.width <= b.x - 6 || a.x >= b.x + b.width + 6))
       }
       await expect.poll(clearOfChrome).toBe(true)
       await knob.hover()
@@ -440,7 +445,7 @@ for (const flavour of ['image', 'sticker']) {
         })
         expect(hit).toBe(true)
       }
-      // 顶部空间不足时，下方回退同样以抓手外框为边界。
+      // 顶部空间不足时，图片侧栏继续避开抓手，贴纸保留下方回退。
       await source.evaluate(element => {
         const block = (window as any).ng.getComponent(element)
         block.updateProps({rotation: 0})
@@ -456,8 +461,10 @@ for (const flavour of ['image', 'sticker']) {
       await expect.poll(clearOfChrome).toBe(true)
       await expect.poll(async () => {
         const a = (await toolbar.boundingBox())!
-        const b = (await chrome.boundingBox())!
-        return a.y >= b.y + b.height + 6
+        const b = (await (flavour === 'image' ? source.locator('.shape-resizer__frame') : chrome).boundingBox())!
+        return flavour === 'image'
+          ? a.x + a.width <= b.x - 6 || a.x >= b.x + b.width + 6
+          : a.y >= b.y + b.height + 6
       }).toBe(true)
     })
   }
@@ -477,6 +484,11 @@ for (const flavour of ['image', 'sticker']) {
         const bar = (await toolbar.boundingBox())!
         const top = (await source.locator('[data-handle="north"]').boundingBox())!
         const bottom = (await source.locator('[data-handle="south"]').boundingBox())!
+        if (flavour === 'image') {
+          const west = (await source.locator('[data-handle="west"]').boundingBox())!
+          const east = (await source.locator('[data-handle="east"]').boundingBox())!
+          return bar.x >= east.x + east.width ? bar.x - east.x - east.width : west.x - bar.x - bar.width
+        }
         const gap = bar.y + bar.height <= top.y
           ? top.y - bar.y - bar.height : bar.y - bottom.y - bottom.height
         return gap

@@ -1179,6 +1179,7 @@ describe('Shape block domain', () => {
     const updateObjectGeometry = jasmine.createSpy('updateObjectGeometry')
     const context = {
       isReadonly: false,
+      isEditingPoints: true,
       doc: {placement: {updateObjectGeometry}},
       _shapeGeometry: {nativeElement: svg},
     } as unknown as ShapeBlockComponent

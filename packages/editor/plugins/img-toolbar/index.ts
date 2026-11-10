@@ -1,3 +1,4 @@
+import {FloatingToolbarState, type FloatingToolbarOptions} from '../../components/floating-toolbar';
 import {storeBlockPosition} from '../../framework/modules/object/block-placement/state'
 import {
   BindHotKey,
@@ -21,7 +22,7 @@ import {
   INLINE_IMAGE_INTRINSIC_SIZE_EVENT,
 } from '../../embeds';
 import { UIEventStateContext } from "../../framework";
-import { fromEvent, merge, Subject, Subscription, takeUntil } from "rxjs";
+import { fromEvent, merge, Subject, Subscription, take, takeUntil } from "rxjs";
 import { IImageToolbarItem, ImageToolbar } from "./widgets/image.toolbar";
 import {
   BlockCraftError,
@@ -29,7 +30,7 @@ import {
   getImageExt,
   nextTick,
 } from "../../global";
-import { OverlayRef } from "@angular/cdk/overlay";
+import { FlexibleConnectedPositionStrategy, OverlayRef } from "@angular/cdk/overlay";
 import {isSelectionAlive} from "../../framework/modules/selection/liveness";
 import {imageBlockSnapshotToInlineParagraph} from "./inline-image-conversion";
 import {
@@ -81,7 +82,7 @@ interface InlineImageIntrinsicSizeEventDetail {
   height: number
 }
 
-export interface ImgToolbarPluginOptions {
+export interface ImgToolbarPluginOptions extends FloatingToolbarOptions {
   /**
    * 追加到工具栏的自定义按钮
    */
@@ -104,7 +105,12 @@ export class ImgToolbarPlugin extends DocPlugin {
 
   constructor(private options?: ImgToolbarPluginOptions) {
     super();
+    this.toolbarState = new FloatingToolbarState(options);
   }
+
+  readonly toolbarState: FloatingToolbarState;
+  get collapsed(): boolean { return this.toolbarState.collapsed(); }
+  setCollapsed(collapsed: boolean): void { this.toolbarState.setCollapsed(collapsed); }
 
   private _sub = new Subscription();
   private _toolbarRef?: OverlayRef;
@@ -334,14 +340,13 @@ export class ImgToolbarPlugin extends DocPlugin {
             {
               target: imgEle,
               origin: imgBlock.hostElement.querySelector<HTMLElement>("shape-resizer") ?? imgEle,
+              getOriginRect: () => this.imageToolbarOriginRect(imgBlock, imgEle),
               positions: [
-                getPositionWithOffset("top-center", 0, 8),
-                getPositionWithOffset("top-left", 0, 8),
-                getPositionWithOffset("top-right", 0, 8),
-                getPositionWithOffset("bottom-center", 0, 8),
-                getPositionWithOffset("bottom-left", 0, 8),
-                getPositionWithOffset("bottom-right", 0, 8),
+                getPositionWithOffset("right-top", 6, 0),
+                getPositionWithOffset("left-top", 6, 0),
               ],
+              fitToAvailableSpace: true,
+              clampTo: this.doc.scrollContainer ?? undefined,
               component: ImageToolbar,
             },
             this._closeToolbar$,
@@ -352,6 +357,30 @@ export class ImgToolbarPlugin extends DocPlugin {
         this._activeImageBlock = imgBlock as
           BlockCraft.IBlockComponents["image"];
         componentRef.setInput("imgBlock", imgBlock);
+        componentRef.setInput("toolbarState", this.toolbarState);
+        const view = imgEle.ownerDocument.defaultView!;
+        let positionFrame: number | null = null;
+        const schedulePosition = () => {
+          if (positionFrame !== null) return;
+          positionFrame = view.requestAnimationFrame(() => {
+            positionFrame = null;
+            if (this._toolbarRef === overlayRef) updatePosition();
+          });
+        };
+        componentRef.instance.panelChange.pipe(takeUntil(this._closeToolbar$)).subscribe(schedulePosition);
+        const strategy = overlayRef.getConfig().positionStrategy;
+        if (strategy instanceof FlexibleConnectedPositionStrategy) {
+          strategy.positionChanges.pipe(takeUntil(this._closeToolbar$)).subscribe(change => {
+            componentRef.setInput("side", change.connectionPair.originX === "start" ? "left" : "right");
+          });
+        }
+        const resizeObserver = new ResizeObserver(schedulePosition);
+        this.doc.injector.get(NgZone).runOutsideAngular(() => resizeObserver.observe(overlayRef.overlayElement));
+        this._closeToolbar$.pipe(take(1)).subscribe(() => {
+          resizeObserver.disconnect();
+          if (positionFrame !== null) view.cancelAnimationFrame(positionFrame);
+          positionFrame = null;
+        });
 
         if (this.options?.extraItems?.length) {
           componentRef.setInput("extraItems", this.options.extraItems);
@@ -388,6 +417,7 @@ export class ImgToolbarPlugin extends DocPlugin {
             }
             switch (v.name) {
               case "align":
+                if (this.doc.placement.getState(imgBlock).mode === 'absolute') break;
                 imgBlock.updateProps({
                   align: v.value,
                 });
@@ -483,6 +513,26 @@ export class ImgToolbarPlugin extends DocPlugin {
           });
       }, 200);
     }));
+  }
+
+  private imageToolbarOriginRect(
+    block: BlockCraft.BlockComponent,
+    image: HTMLImageElement,
+  ): DOMRect {
+    const frame = block.hostElement.querySelector<HTMLElement>('.shape-resizer__frame');
+    const rect = frame?.getBoundingClientRect();
+    if (!frame || !rect?.width || !rect.height) return image.getBoundingClientRect();
+    let left = rect.left;
+    let right = rect.right;
+    // The resizer host is a paint-invalidation box, including invisible reserve.
+    // Side toolbars follow the visible frame top and clear only real controls.
+    for (const control of Array.from(frame.querySelectorAll<HTMLElement>('.shape-resizer__handle, .shape-resizer__rotate'))) {
+      const bounds = control.getBoundingClientRect();
+      if (!bounds.width || !bounds.height) continue;
+      left = Math.min(left, bounds.left);
+      right = Math.max(right, bounds.right);
+    }
+    return new DOMRect(left, rect.top, right - left, rect.height);
   }
 
   closeToolbar = () => {

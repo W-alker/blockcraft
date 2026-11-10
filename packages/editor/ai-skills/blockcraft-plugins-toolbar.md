@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-11-09
+> Last updated: 2026-11-10
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -144,8 +144,17 @@ new AttachmentExtensionPlugin({
 `supportsObjectLayout()`；分栏、填写区等不允许浮动定位的容器内不显示衬于文字下方/浮于文字上方。
 
 Handles Enter key behavior, double-click preview (readonly mode),
-and shows a connected toolbar with align/object-layout/caption/download/
-copy-url actions. The shared object layouts are **嵌入型 / 上下型 /
+and shows a mini side rail with a compact 176px secondary layout list. Each row
+keeps the icon and name on one line with a right-side selected indicator. The rail keeps
+caption (flow only), download, copy-url and configured custom quick actions;
+**布局** opens existing object-layout and hierarchy commands. Left/center/right
+alignment appears only for flow images inside that card. Absolute and grouped
+images omit alignment, and the Plugin repeats the live-placement guard for
+stale align events. The rail aligns its top entry with the visible image frame and clears the
+measured horizontal bounds of real resize/rotation controls by 6px. The resizer
+host remains the tracking origin, while `getOriginRect` excludes its invisible
+paint reserve. It flips left/right within the document viewport. It reuses the common circular
+collapse control and clears its secondary card on collapse. The shared object layouts are **嵌入型 / 上下型 /
 衬于文字下方 / 浮于文字上方** with the same iconfont glyphs used by
 BlockController and future shapes. Top-bottom images use the shared Pointer
 Events block reorder controller; floating images live below the root placement
@@ -192,14 +201,19 @@ new ImgToolbarPlugin(options?: ImgToolbarPluginOptions)
 
 | Option             | Type                                | Default | Description                      |
 | ------------------ | ----------------------------------- | ------- | -------------------------------- |
+| `collapsed`        | `boolean`                         | `false` | Initial block-image toolbar collapse state |
 | `extraItems`       | `IImageToolbarItem[]`               | `[]`    | Extra toolbar buttons            |
 | `onExtraItemClick` | `(itemName, block, doc) => boolean` | —       | Handler for custom button clicks |
+
+`ImgToolbarPlugin` 提供 `toolbarState`、`collapsed` 和 `setCollapsed(boolean)`；
+状态只属于本地 UI，跨块级图片菜单重建保留，不写 Yjs/Undo。`extraItems` 与
+`onExtraItemClick` 保持原契约；本配置不改变行内图片 Embed 的工具栏。
 
 ### Built-in Toolbar Actions
 
 | Action                      | Behavior                                                                                                          |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `align`                     | Set image alignment (left/center/right)                                                                           |
+| `align`                     | Set flow-image alignment (left/center/right); absent and rejected while floating                                                                           |
 | `object-layout: inline`     | Convert to **嵌入型** near the current visual flow anchor                                                         |
 | `object-layout: wrap`       | On an absolute image, insert **四周型环绕** into covered text; otherwise create it near the visual flow anchor    |
 | `object-layout: top-bottom` | Use **上下型** and automatically return to relative flow                                                          |
@@ -312,10 +326,10 @@ const plugins = [new ObjectFormatToolbarPlugin(), new ObjectDragPlugin()];
 
 The connected quick rail reuses the established TextBox/WordArt two-level
 shell: a side-aware 34px rail opens a responsive 240px format card or compact
-208px layout card, both viewport-clamped and without redundant panel-title
+176px layout card, both viewport-clamped and without redundant panel-title
 descriptions. It uses top-aligned right/left positioning, flips the rail
 when the Overlay changes side, and preserves toolbar/CSES sub-overlay focus
-ownership during pointer-to-focus handoff. Expanded panels use the available space below the anchor, keeping the top entry stable while collapsing or switching tabs. The horizontal group toolbar uses the same top-aligned side anchors. The panel keeps one scroll owner and switches
+ownership during pointer-to-focus handoff. Expanded panels use the available space below the anchor, keeping the top entry stable while collapsing or switching tabs. The mixed-selection command strip and selected-group rail use the same top-aligned side anchors. The panel keeps one scroll owner and switches
 among layout, Shape and text sections without disposing its Overlay. The size
 and rotation fields remain in the object-format domain but currently have no
 rail entry. It reads
@@ -346,8 +360,11 @@ Single-object layout, page alignment and hierarchy remain in the compact layout
 card. Mixed absolute-object selection is resolved by the placement domain rather
 than by `objectFormat`; it switches to the restored horizontal group toolbar for
 alignment, distribution and grouping instead of opening the object-format rail.
-A selected group uses the same historical surface for group layout, hierarchy
-and ungrouping. Group interaction keeps its established two-step contract: the
+A selected group instead uses a 34px mini rail with **布局** and **解除组合**
+entries. **布局** opens the 176px secondary card containing existing group layout
+modes and hierarchy actions; **解除组合** directly executes the guarded ungroup
+command and is hidden when that command is unavailable. Collapse clears the secondary card and re-expansion shows only the
+rail, using the same plugin-local state as other object toolbars. Group interaction keeps its established two-step contract: the
 first click anywhere in an inactive group selects the whole group, while a
 second click may enter the direct member; the ancestor group frame stays visible
 while a nested member owns Selection.
@@ -358,7 +375,9 @@ while a nested member owns Selection.
 多选外框和同步拖拽保持可用。Visible single-object layout modes are the capability
 intersection from `doc.placement.supportsObjectLayout()`: an object without an
 inline adapter, including TextBox, does not show or accept the inline layout
-action. The remaining layout choices use equal-width columns and fill the row.
+action. The remaining layout choices form a single column of 28px icon/text rows, with
+the active choice marked on the right. Alignment and hierarchy stay in footer
+shortcut groups rather than sharing the layout-option list.
 While the active mode is inline or top-bottom, the card hides page alignment,
 multi-object arrangement and hierarchy because those commands have no flow-layout
 semantics; they return only for under/over absolute layout. The action layer
@@ -571,9 +590,9 @@ resize handles and the top-center drag-rotation handle share one gesture
 coordinator. Rotation previews per animation frame, Shift snaps to 15°, and
 pointerup commits one `updateProps()` transaction. The toolbar's top placement
 keeps clearance for the rotation handle; pointerdown inside `shape-resizer` or
-`shape-geometry-editor` never starts object movement. Selected line, connector
-and scribble shapes additionally expose endpoint/node handles; cubic shapes
-expose their two control handles and guide lines. The gesture updates only the
+`shape-geometry-editor` never starts object movement. Line, connector and scribble
+shapes expose endpoint/node handles only in explicit point-editing mode; cubic
+shapes then expose their two control handles and guide lines. The gesture updates only the
 SVG preview until pointerup, then writes one validated atomic `customGeometry`
 compact path string so collaboration and Undo never observe partial curves.
 No-motion clicks and gestures returning to their start do not commit; restoring
@@ -584,10 +603,18 @@ cardinal/bidirectional block arrows and rectangular/rounded callouts persist
 only a flat `adjustments` record; blue square handles remain reserved for cubic
 curve controls.
 All other catalogue shapes project their trusted static path into yellow
-editable nodes on selection. Quadratic/smooth segments expose equivalent blue
+editable nodes only after choosing **编辑顶点** from the shape context menu. Quadratic/smooth segments expose equivalent blue
 cubic controls; catalogue arcs are split into cubic segments so their nodes and
 controls remain usable. The projection becomes atomic `customGeometry` only
 after the first gesture that changes geometry.
+
+普通选中只显示缩放、旋转及有限参数调整点。星形、圆环、框架、剪角矩形、书签、
+内凹缎带和 V 形/燕尾/五边形箭头也提供 1–2 个命名参数点；范围见 `blockcraft-block.md`。
+顶点模式临时隐藏聚焦框与缩放/旋转抓手；参数形状从当前调整后的轮廓进入。
+**完成顶点编辑**或 Esc 退出；拖点中的第一次 Esc 只取消当前预览，第二次退出模式。
+收起工具栏、切换对象/文字选区、锁定、只读或销毁会退出，模式本身不产生撤销记录。
+浮动工具栏不显示顶点编辑入口；只在形状右键菜单提供纯文字操作项。手动 Doc 需注册 `ContextMenuPlugin`。
+普通参数点与自由顶点/曲线控制点都使用十字准星光标；形状本地 API 见 `blockcraft-block.md`。
 
 Register `PlacementLayoutBlockSchema`, `ShapeBlockSchema`,
 `ShapeTextBlockSchema`, `ShapeToolbarPlugin`, and a fresh

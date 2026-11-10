@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-21
+> Last updated: 2026-11-10
 
 ## ContextMenuPlugin
 
@@ -15,10 +15,15 @@ new ContextMenuPlugin() // name: context-menu；bundled 已包含，不要重复
 提供复制、剪切、粘贴、粘贴为（保留格式、纯文本、按 Markdown 解析）、文本设置、段落设置和全选。
 “粘贴为”悬停后展开二级菜单，右侧空间不足向左回退。鼠标操作不抢编辑器焦点；
 键盘导航时使用共享选区呈现，Escape 恢复原范围。右键及菜单的 `mousedown` 阻止默认行为与传播，
-保留已有光标或选区；仅在没有选区时定位右键目标。全选直接建立整篇范围，不排队恢复旧选区。菜单支持方向键、Enter、Escape，
+保留已有光标或选区；没有选区时定位右键目标。形状表面的右键会选择该形状并显示对象菜单，
+跨块范围和多选保持原选区；形状内文字范围继续支持原文本菜单操作，同时提供该形状的顶点编辑入口。全选直接建立整篇范围，不排队恢复旧选区。菜单支持方向键、Enter、Escape，
 点击外部、外部滚动、窗口失焦、只读切换或文档销毁时关闭。原生输入框、按钮、链接不接管。
 文本/段落设置复用固定工具栏的弹窗、协同选区会话与格式事务，不依赖固定工具栏组件存在；
 取消保持内容，确认只应用到保存的有效选区，切换只读或销毁文档时关闭。宿主需要 `CsModalService`。
+单个可编辑形状菜单提供 **编辑顶点**／**完成顶点编辑**；进入后隐藏聚焦框与缩放旋转抓手，
+参数形状保留当前轮廓直到实际拖动顶点。执行时通过保存的相对选区重新解析形状并检查锁定；
+形状外的普通文字、混选、锁定与只读不显示此项。`EditorContextMenuComponent` 新增可选
+`shapePointsEnabled` / `shapePointsEditing` Inputs，动作新增 `edit-shape-points` / `finish-shape-points`。
 手动创建 `BlockCraftDoc` 的宿主必须显式注册 `new ContextMenuPlugin()`；仅升级依赖不会自动注入插件。
 只读可复制/全选，剪切/粘贴/设置禁用；执行前再次检查块锁和写入权限。
 

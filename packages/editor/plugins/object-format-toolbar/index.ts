@@ -45,6 +45,7 @@ import {
   isObjectToolbarOwnedTarget,
 } from "../object-layout/object-toolbar-interaction";
 import { InlineObjectInteractionController } from "../object-layout/inline-object-interaction";
+import type { ShapeBlockComponent } from "../../blocks/shape-block";
 
 export * from "./object-format-toolbar.component";
 
@@ -113,6 +114,9 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   private textBoxResizerGesture?: { blockId: string; pointerId: number };
 
   init(): void {
+    this.subscription.add(this.toolbarState.changes$.subscribe(collapsed => {
+      if (collapsed) this.finishPointEditing();
+    }));
     this.inlineObjects = [
       new InlineObjectInteractionController(this.doc, "shape", this.close),
       new InlineObjectInteractionController(this.doc, "word-art", this.close),
@@ -186,6 +190,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   }
 
   close = (): void => {
+    this.finishPointEditing();
     this.panelResizeObserver?.disconnect();
     this.panelResizeObserver = undefined;
     this.activeWordArtHost?.classList.remove("word-art-block--object-selected");
@@ -386,6 +391,18 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       return;
     }
     this.deleteTargets();
+  }
+
+  private resolvePointEditingShape(ids: readonly string[]): ShapeBlockComponent | null {
+    if (ids.length !== 1) return null;
+    const block = this.doc.vm.get(ids[0]!)?.instance;
+    return block?.flavour === "shape"
+      ? block as ShapeBlockComponent : null;
+  }
+
+  private finishPointEditing(): void {
+    const shape = this.resolvePointEditingShape(this.activeIds);
+    if (shape?.isEditingPoints) shape.setPointEditing(false);
   }
 
   private applyPatch(patch: ObjectFormatPatch): void {

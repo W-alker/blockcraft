@@ -38,16 +38,18 @@ export class ObjectDragPlugin extends DocPlugin {
     const metadata = this.doc.schemas.get(block.flavour, false)?.metadata
     if (!metadata) return
     if (metadata.objectDrag === 'custom') return
-    const usesMarkedTarget = metadata.objectDrag === 'body' || metadata.objectDrag === 'handles'
+    const flowHandlesOnly = metadata.objectDrag === 'flow-handles'
+    const usesMarkedTarget = metadata.objectDrag === 'body' || metadata.objectDrag === 'handles' || flowHandlesOnly
     if (usesMarkedTarget) {
       const surface = isHandle ? interaction : target.closest('[data-bc-object-drag-surface]')
       // 内层文本块和嵌套对象不得借用外层对象的命中区。
       if (!surface || closetBlockId(surface) !== block.id) return
-      if (metadata.objectDrag === 'handles' && !isHandle) return
+      if ((metadata.objectDrag === 'handles' || flowHandlesOnly) && !isHandle) return
     }
-    const supportsAbsolute = this.doc.placement.supports(block, 'absolute')
-    // 正文本体排序由 Schema 显式启用，仍受当前位置的 placement 能力约束。
-    const supportsBodySort = usesMarkedTarget && this.doc.placement.supports(block, 'relative')
+    if (flowHandlesOnly && this.doc.placement.getState(block).mode !== 'relative') return
+    const supportsAbsolute = !flowHandlesOnly && this.doc.placement.supports(block, 'absolute')
+    // 显式流式抓手无需对象定位能力；其他对象仍受 relative 能力约束。
+    const supportsBodySort = flowHandlesOnly || (usesMarkedTarget && this.doc.placement.supports(block, 'relative'))
     if (!supportsAbsolute && !supportsBodySort) return
 
     // 原生选区会把自绘 void 块的点击落到旁边的 gap，必须显式选择本体。

@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-11-09
+> Last updated: 2026-11-10
 
 ## 表格：持续自动列宽（未发布）
 
@@ -960,6 +960,7 @@ metadata: {
 
 本体拖拽通过可选的 `metadata.objectDrag` 声明职责：省略或 `'placement'` 保留默认
 浮动拾取/移动；`'body'` 接入标记表面和手柄的移动；`'handles'` 仅接入标记手柄；
+`'flow-handles'` 仅从标记抓手进行正文流排序，无需 `placement` 能力，绝对定位平面内不响应；
 `'custom'` 交给宿主专属交互。`'body'` / `'handles'` 均支持按当前位置进行正文排序或浮动移动。
 它独立于 `placement`，不授予任何定位权限，也不写入快照。自定义对象可按需要声明，
 需要在视图中标记 `data-bc-object-drag-surface` / `data-bc-object-drag-handle`，
@@ -1136,9 +1137,10 @@ through the content above it.
 ### 形状边缘选择入口
 
 形状的 `bc-object-edge-controls` 提供四条 8px 边缘命中带：外侧 6px、内侧 2px。
-整块悬停、内部文字聚焦或键盘聚焦边缘按钮时显示 1px 淡虚线；整体选中后使用原有实线缩放框。
+整块悬停、内部文字聚焦或键盘聚焦边缘按钮时显示 1px 淡虚线；整体选中后使用同位置的 1px 实线缩放框；形状的虚实线均为 `outline-offset: 0px`。
 边缘带使用 `data-bc-object-entry-edge` 与 `data-bc-object-drag-handle`，由既有 ObjectDragPlugin 处理点击选择和拖动。
 Enter/Space 激活仅选择。整块选中/拖动时隐藏入口，沿用原有缩放、旋转、路径编辑和调整点。
+普通选中只显示缩放、旋转与有范围限制的参数调整点；自由端点与曲线控制点由显式“编辑顶点”模式提供。尺寸抓手保持原边框位置；顶点模式临时隐藏聚焦框和尺寸/旋转/沿边拖动控件，退出后恢复。
 文字点击、划选、输入及空形状双击创建文字保持原有语义；只读不创建入口，打印排除入口。
 不修改文字边距、对象层级或持久化数据；嵌套形状优先于外层容器的悬停入口。
 
@@ -1146,7 +1148,10 @@ Enter/Space 激活仅选择。整块选中/拖动时隐藏入口，沿用原有�
 
 文本框、艺术字和填写区共享 `bc-object-corner-controls`：整块悬停或内部聚焦时同步显示
 低对比细边框与顶部 24×14px 浮动抓手；不再渲染四个轻量 L 角及角按钮命中区。
-文本框和艺术字的悬停/内部编辑边框为 1px、35% 活跃色的淡虚线；填写区保留原有轻量细实线。
+抓手悬停/键盘聚焦显示活跃色淡底和轻阴影，按下加深；遵循 reduced-motion。
+CSES Tooltip 按 `movable` 提示“点击选中…，拖拽移动”或仅“点击选中…”，同步 `aria-description`；离开、按键和点击后关闭。
+`edgeMovable`（默认 true）只控制 `movable` 模式是否渲染四边移动命中带；填写区设 false，仅顶部可拖。
+文本框和艺术字的悬停/内部编辑边框为 1px、35% 活跃色的淡虚线，整体选中为 1px 实线，两态沿用原虚线位置（`outline-offset: -1px`）；填写区保留原有轻量细实线。
 默认 DOM 不再创建 `[data-bc-object-corner]`。通过顶部抓手点击或 Enter/Space 激活选择整个对象，
 正文点击、划选和输入仍走原有编辑路径。组件名 `bc-object-corner-controls` 保留，便于宿主兼容现有装配。
 整块选中后隐藏轻量入口，显示既有缩放、旋转和对象工具栏；只读状态不提供该入口。
@@ -1155,10 +1160,10 @@ Enter/Space 激活仅选择。整块选中/拖动时隐藏入口，沿用原有�
 复用 `data-bc-object-drag-handle` 及既有对象拖动路径，支持流式排序和浮动移动。
 顶部抓手以 `data-bc-object-floating-handle` 标记，文本框和艺术字复用同一对象拖动路径，点击选择、拖动移动；Enter/Space 只选择。
 抓手沿用顶边位置，不改变对象层叠顺序；紧邻或重叠排布时，文本框和艺术字仍可通过既有边缘入口选择。
-填写区的顶部抓手仅选择，再沿用既有八向缩放，不新增移动能力。
+填写区声明 `objectDrag: 'flow-handles'`，仅顶部抓手启动正文流排序，沿用既有八向缩放；不开放对象定位或四边/正文移动面。
 入口层和顶部抓手不进入正文数据；快照、HTML/Markdown、撤销、权限与 Schema 选区契约不变。
 
-图片的悬停和说明文字聚焦采用同样的 1px 淡虚线，整图选中恢复原有实线缩放框；空图片/同步中没有抓手时由图片容器提供提示。
+图片的悬停和说明文字聚焦采用同样的 1px 淡虚线，整图选中使用同位置的 1px 实线缩放框；空图片/同步中没有抓手时由图片容器提供提示。
 四类对象均只调整选择提示，保留已有抓手显隐、命中带、拖拽、正文编辑及只读/打印行为；设计模式内部编辑时已显示的缩放框同样使用淡虚线。
 
 ### Render-unit 响应式尺寸
@@ -1751,8 +1756,8 @@ validates these optional values and returns a finite rotation normalized into
 `ShapeDefinition` stores the trusted main `path`, optional stroke-only
 `detailPath`, `textInsets`, and optional `fillable` / `supportsText` /
 `fillRule` rendering capabilities. The eight built-in line and connector
-appearances are non-filled and do not expose a shape-text editor. When selected,
-their nodes and cubic control points are editable through a dedicated overlay;
+appearances are non-filled and do not expose a shape-text editor. Only in explicit
+point-editing mode are their nodes and cubic control points exposed through an overlay;
 pointer movement previews outside Angular and pointerup stores one complete
 `customGeometry` value through the ordinary placement/Undo transaction. They
 remain visual objects rather than auto-snapping semantic connectors.
@@ -1814,12 +1819,28 @@ handles and persist only their named finite numbers (`radius`, `apexX`, `inset`,
 path preview; pointerup writes the complete flat record once. Explicit
 `customGeometry` has precedence and suppresses catalogue adjustment handles.
 Every remaining built-in Shape definition receives an edit-only projection
-from its trusted catalogue path. The internal converter accepts only the
+from its trusted catalogue path after explicitly entering point-editing mode. The internal converter accepts only the
 catalogue's absolute `M/L/H/V/C/S/Q/T/A/Z` subset, converts quadratic and
 smooth commands and catalogue arcs to explicit cubic controls, and retains
 `evenodd` compound-path fill. The projection is not persisted until the first
 changed yellow-node gesture, so untouched snapshots remain path-free. Across
-the parameter and path modes, all 111 built-in Shape kinds are editable.
+the parameter and explicit path modes, all built-in Shape kinds remain editable.
+
+### 显式顶点编辑与有限参数（未发布）
+
+`ShapeBlockComponent.canEditPoints` 判断当前形状是否可进入顶点模式，
+`isEditingPoints` 读取本地模式，`setPointEditing(boolean): boolean` 开关模式并返回是否接受。
+只读/锁定形状拒绝进入；退出、切换对象或文字选区、形状类型变化、锁定、销毁均清理活动订阅与未完成预览。
+模式不写 Yjs、快照或 Undo；已有 `customGeometry` 始终照常渲染。普通参数点、顶点及曲线控制点在悬停、拖动时使用 `crosshair` 十字准星光标。
+参数形状以当前调整后的路径进入顶点编辑，只有实际改变路径后才写原有原子 `customGeometry`。
+普通选中不再自动把所有 SVG 节点变为抓点；基础矩形/椭圆没有参数点，复杂形状保留命名参数。
+
+新增有限参数保持目录原始默认轮廓：星形/爆炸形/太阳 `innerRadius`（50 至外半径减 20）；
+剪角矩形 `snip`（0–500），剪角加圆角另有 `radius`（0–500）；框架/L 形 `thickness`（40–450）；
+圆环 `innerRadius`（60–450）；书签与三种内凹缎带 `notch`（0–450）；
+V 形/燕尾/五边形箭头 `headLength`（100–600），前两者另有 `notch`（0 至 min(450, 900-headLength)）。
+这些形状一次显示 1–2 个受限调整点，通过原有 `adjustments` 属性、适配器与撤销事务保存。
+圆角、三角形、梯形、平行四边形、方向箭头和标注的原参数范围保持。
 
 `ShapeRotateCommit`, `calculateShapeRotation()`, `rotateShapeVector()` and
 `normalizeShapeRotation()` are exported for custom shape UI and testing.

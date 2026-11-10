@@ -29,6 +29,13 @@ import {generateId} from '../../framework/utils';
         <cs-icon csType="paste-two" aria-hidden="true" /><span>粘贴为</span>
         <cs-icon csType="arrow-right" aria-hidden="true" /></button>
       <div class="separator" role="separator"></div>
+      @if (shapePointsEnabled()) {
+        <button cdkMenuItem class="shape-point-action" (mouseenter)="showFormats(false)"
+          (cdkMenuItemTriggered)="action.emit(shapePointsEditing() ? 'finish-shape-points' : 'edit-shape-points')">
+          <span>{{ shapePointsEditing() ? '完成顶点编辑' : '编辑顶点' }}</span>
+        </button>
+        <div class="separator" role="separator"></div>
+      }
       <button cdkMenuItem [cdkMenuItemDisabled]="!textSettingsEnabled()" [disabled]="!textSettingsEnabled()"
         (mouseenter)="showFormats(false)" (cdkMenuItemTriggered)="action.emit('text-settings')">
         <cs-icon csType="font-settings" aria-hidden="true" /><span>文本设置</span></button>
@@ -66,6 +73,7 @@ import {generateId} from '../../framework/utils';
       border: 0; border-radius: 4px; padding: 6px 8px; background: transparent;
       color: inherit; font: inherit; text-align: left; cursor: pointer; outline: none; }
     button:hover:not(:disabled), button:focus-visible, button[aria-expanded="true"] { background: var(--bc-bg-hover); }
+    button.shape-point-action { padding-inline-start: 32px; }
     button:disabled { color: var(--bc-color-lighter); cursor: default; }
     button > cs-icon { flex: 0 0 16px; width: 16px; font-size: var(--bc-fs); line-height: 1; text-align: center; }
     button[aria-haspopup] > cs-icon:last-child { font-size: var(--bc-fs-sm); }
@@ -83,8 +91,10 @@ export class EditorContextMenuComponent {
   readonly formatsEnabled = input(false);
   readonly textSettingsEnabled = input(false);
   readonly paragraphSettingsEnabled = input(false);
+  readonly shapePointsEnabled = input(false);
+  readonly shapePointsEditing = input(false);
   readonly shortcut = input('Ctrl+');
-  readonly action = output<'copy' | 'cut' | 'paste' | 'plain-text' | 'markdown' | 'select-all' | 'text-settings' | 'paragraph-settings'>();
+  readonly action = output<'copy' | 'cut' | 'paste' | 'plain-text' | 'markdown' | 'select-all' | 'text-settings' | 'paragraph-settings' | 'edit-shape-points' | 'finish-shape-points'>();
   readonly dismiss = output<void>();
   readonly menuId = generateId();
   readonly positions: ConnectedPosition[] = [

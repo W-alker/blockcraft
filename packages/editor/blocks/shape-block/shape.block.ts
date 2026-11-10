@@ -10,8 +10,10 @@ import {
   ElementRef,
   inject,
   NgZone,
+  signal,
   ViewChild,
 } from '@angular/core'
+import {Subscription} from 'rxjs'
 import {
   BaseBlockComponent,
   colorWithOpacity,
@@ -78,6 +80,7 @@ const shapeRotationTransform = (rotation: unknown): string => {
     // Pointer capture during absolute-object drag preparation retargets click
     // and dblclick to the block host, outside the inner visual shell.
     '(dblclick)': 'onEditText($event)',
+    '[class.shape-block--editing-points]': 'isEditingPoints',
   },
   template: `
     <div
@@ -206,7 +209,8 @@ const shapeRotationTransform = (rotation: unknown): string => {
           [maxWidthResolver]="objectMaxWidthResolver"
           [resizeCalculator]="resizeCalculator"
           [rotation]="shapeProps.rotation"
-          [borderDraggable]="true"
+          [borderDraggable]="!isEditingPoints"
+          [rotatable]="!isEditingPoints"
           (resizeCommit)="onResizeCommit($event)"
           (rotateCommit)="onRotateCommit($event)">
         </shape-resizer>
@@ -317,6 +321,8 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
   protected readonly resizeCalculator = calculateFormattedObjectResize
   protected readonly resolveObjectTextFontFamily = resolveObjectTextFontFamily
   private readonly _ngZone = inject(NgZone)
+  private readonly _pointEditing = signal(false)
+  private _pointEditingSubscriptions?: Subscription
 
   @ViewChild('shapeShell', {read: ElementRef})
   private readonly _shapeShell?: ElementRef<HTMLElement>
@@ -406,18 +412,56 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
   }
 
   get editableGeometry(): CustomShapeGeometry | undefined {
+    return this.isEditingPoints ? this.pointGeometry : undefined
+  }
+
+  /** 顶点模式只影响本地交互；已有 customGeometry 始终参与正常渲染。 */
+  get isEditingPoints(): boolean { return this._pointEditing() }
+
+  get canEditPoints(): boolean { return !!this.pointGeometry }
+
+  setPointEditing(editing: boolean): boolean {
+    if (editing && !this.canEditPoints) return false
+    if (editing === this.isEditingPoints) return true
+    this._pointEditing.set(editing)
+    this._pointEditingSubscriptions?.unsubscribe()
+    this._pointEditingSubscriptions = undefined
+    if (!editing) return true
+
+    // Only the active editor observes lifecycle/selection changes. A toolbar
+    // focus gap can temporarily clear selection; the toolbar owner closes it.
+    const subscriptions = this._pointEditingSubscriptions = new Subscription()
+    const shapeType = this.shapeProps.shapeType
+    const validate = () => {
+      if (this.isReadonly || this.shapeProps.shapeType !== shapeType || !this.canEditPoints) {
+        this.setPointEditing(false)
+      }
+    }
+    subscriptions.add(this.doc.selection.selectionChange$.subscribe(selection => {
+      if (selection && (!selection.isInSameBlock || selection.firstBlock.id !== this.id ||
+        selection.anchor.type !== 'selected')) this.setPointEditing(false)
+    }))
+    subscriptions.add(this.doc.readonlySwitch$.subscribe(validate))
+    subscriptions.add(this.doc.readonlyManager.stateChange$.subscribe(validate))
+    subscriptions.add(this.onPropsChange.subscribe(validate))
+    subscriptions.add(this.onDestroy$.subscribe(() => this.setPointEditing(false)))
+    return true
+  }
+
+  private get pointGeometry(): CustomShapeGeometry | undefined {
     if (this.isReadonly) return undefined
     if (this.customGeometry) return this.customGeometry
-    if (resolveShapeAdjustmentProjection(
+    const adjustment = resolveShapeAdjustmentProjection(
       this.shapeProps.shapeType,
       this.shapeProps.adjustments,
-    )) return undefined
+    )
+    if (adjustment) return createEditableShapeGeometryFromDefinition({...this.definition, path: adjustment.path})
     return createDefaultEditableShapeGeometry(this.shapeProps.shapeType) ??
       createEditableShapeGeometryFromDefinition(this.definition)
   }
 
   get hasAdjustmentEditor(): boolean {
-    return !this.isReadonly && !this.customGeometry &&
+    return !this.isReadonly && !this.isEditingPoints && !this.customGeometry &&
       !!resolveShapeAdjustmentProjection(
       this.shapeProps.shapeType,
       this.shapeProps.adjustments,
@@ -707,7 +751,7 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
   }
 
   onGeometryCommit(geometry: CustomShapeGeometry): void {
-    if (this.isReadonly) return
+    if (this.isReadonly || !this.isEditingPoints) return
     const serialized = serializeCustomShapeGeometry(geometry)
     if (!serialized) return
     const props = this.shapeProps

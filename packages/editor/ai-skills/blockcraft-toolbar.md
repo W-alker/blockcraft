@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-11-09
+> Last updated: 2026-11-10
 
 ## 通用浮动工具栏外观
 
@@ -14,7 +14,7 @@
 
 ## 可收起的迷你对象工具栏（未发布）
 
-对象格式、组合与内容区域工具栏复用主入口导出的 `FloatingToolbarComponent`（`bc-floating-toolbar`）
+对象格式、整组、块级图片与内容区域工具栏复用主入口导出的 `FloatingToolbarComponent`（`bc-floating-toolbar`）
 和 `FloatingToolbarState`。职责划分：插件持有会话状态并跨浮层重建复用；外壳负责圆形加/减按钮、
 键盘与焦点回收、内容显隐；业务组件负责在收起时提交待提交输入、取消临时效果并关闭二级面板；快捷条和设置内容仅在展开时渲染，收起时移出 DOM。
 状态只影响本地 UI，不进入 Yjs、快照、Undo 或跨文档全局设置。默认展开；切换目标、只读退出后
@@ -49,7 +49,7 @@ subscription.unsubscribe();
 高度预算监听只随浮层存活，不增加全局滚轮拦截；设置面板保留唯一的正文滚动容器。
 桌面侧条宽 34px、快捷按钮 26px、图标 14px；圆形收起按钮 20px，命中范围 24px，与快捷条间距 3px。
 浮层以对象顶部为锚点，快捷条与设置面板顶部对齐；面板使用锚点下方可用空间，展开、收起与切换页签保留顶部入口位置。触摸主指针下侧条与快捷按钮放大至 42px/34px。
-常规设置卡宽 240px、布局/内容区域设置卡宽 208px，桌面输入控件高 24px；触摸环境保留较大操作尺寸。
+常规设置卡宽 240px、布局菜单宽 176px、内容区域设置卡宽 208px，桌面输入控件高 24px；触摸环境保留较大操作尺寸。
 
 ## 可滚动弹窗避让锚点
 
@@ -505,14 +505,23 @@ connected Overlay for the rail and secondary card, then click-switch local
 panel state without recreating the overlay or writing document data.
 `ObjectFormatToolbarComponent` is the bundled reference for this two-level
 pattern: it preserves the established side-aware 34px iconfont rail, 240px
-format card, compact 208px layout card, top-aligned connected positions and
+format card, compact 176px layout card, top-aligned connected positions and
 RAF panel repositioning. Secondary cards omit redundant title/description
-headers. Layout modes use compact CSES buttons with the icon above a visible
-one- or two-line label, plus tooltips and an active state. Their equal-width
-columns fill the available row after capability filtering. Mixed absolute-object
+headers. Layout modes use one vertical list: each 28px row has an icon, a single-line
+label and the existing iconfont selected check on the right. The 176px layout
+card keeps alignment/stack commands in compact footer groups separated by a thin
+rule. Three-way alignment uses icon segments with tooltips and accessible names.
+Only the layout card opts into the shared `object-layout-*` styles; appearance,
+text and region settings retain their geometry. Mixed absolute-object
 selection bypasses this format rail and uses the restored compact horizontal
-group toolbar, anchored at the object top on the available side, for alignment, distribution and grouping; a selected group reuses
-that surface for layout, hierarchy and ungrouping. Preserve the historical group
+group toolbar, anchored at the object top on the available side, for alignment, distribution and grouping; a selected group uses the mini two-entry rail: **布局** opens the compact
+secondary card for existing layout and hierarchy commands; **解除组合** executes
+the existing ungroup command directly and is omitted when unavailable. It reuses `FloatingToolbarState` and
+`ObjectFormatPopupState`, closes the card on collapse, and preserves top-side
+anchoring and left/right flipping. Block images use the same mini rail and
+secondary layout card, retaining caption/download/copy/custom quick actions.
+Flow-only alignment lives in that layout card; floating and grouped images
+omit it. Inline-image Embed controls keep their existing interaction. Preserve the historical group
 focus handoff: first click selects the group, second click may enter a member,
 and member Selection retains the ancestor group frame. Resolve those commands from
 the absolute placement selection even when some targets have no `objectFormat`

@@ -298,10 +298,11 @@ for (const flow of [true, false]) {
     await expect(group).toHaveClass(/selected/)
     const toolbar = page.locator('bc-object-group-toolbar')
     await expect(toolbar).toBeVisible()
+    await toolbar.getByRole('button', {name: '布局', exact: true}).click()
     await expect(toolbar.getByRole('button', {name: '上下型', exact: true}))
       .toHaveAttribute('aria-pressed', `${flow}`)
-    const ungroup = toolbar.getByRole('button', {name: '取消组合', exact: true})
-    if (flow) await expect(ungroup).toBeDisabled()
+    const ungroup = toolbar.getByRole('button', {name: '解除组合', exact: true})
+    if (flow) await expect(ungroup).toHaveCount(0)
     else await expect(ungroup).toBeEnabled()
     if (flow) {
       await expect(toolbar.getByRole('button', {name: '上移一层', exact: true})).toBeDisabled()
@@ -311,6 +312,7 @@ for (const flow of [true, false]) {
     await expect(toolbar).toHaveCount(0)
     await group.locator(':scope > .object-group-block__children').click({position: {x: 60, y: 225}})
     await expect(toolbar).toBeVisible()
+    await toolbar.getByRole('button', {name: '布局', exact: true}).click()
     await toolbar.getByRole('button', {name: flow ? '浮于文字上方' : '上下型', exact: true}).click()
     await expect.poll(() => page.evaluate(id =>
       (window as any).__imageResizeDoc.placement.getObjectLayout(id), ids.groupId,
@@ -318,6 +320,7 @@ for (const flow of [true, false]) {
     // Layout commands close the current toolbar; another blank click reopens it.
     await group.locator(':scope > .object-group-block__children').click({position: {x: 60, y: 225}})
     await expect(toolbar).toBeVisible()
+    await toolbar.getByRole('button', {name: '布局', exact: true}).click()
     await expect(toolbar.getByRole('button', {name: '上下型', exact: true}))
       .toHaveAttribute('aria-pressed', `${!flow}`)
   })
@@ -1742,5 +1745,32 @@ for (const axis of ['width', 'height'] as const) {
     }, {id, axis})
     await mountFixture(page, saved, true)
     await expect.poll(async () => (await surface.boundingBox())![axis]).toBeCloseTo(20000, 0)
+  })
+}
+
+
+for (const flow of [false, true]) {
+  test(`group dashed and solid frames share the same bounds (${flow ? 'flow' : 'absolute'})`, async ({page}) => {
+    const ids = (await mountFixture(page, undefined, true))!
+    await page.evaluate(({ids, flow}) => {
+      const doc = (window as any).__imageResizeDoc
+      if (flow) doc.placement.setMode(ids.groupId, 'relative')
+      doc.selection.selectBlock(ids.imageId)
+    }, {ids, flow})
+    const group = page.locator(`#image-resize-fixture [data-block-id="${ids.groupId}"]`)
+    await expect(group).toHaveCSS('outline-style', 'dashed')
+    await expect(group).toHaveCSS('outline-width', '1px')
+    const paint = (element: Element) => {
+      const rect = element.getBoundingClientRect(), css = getComputedStyle(element)
+      const extra = parseFloat(css.outlineWidth) + parseFloat(css.outlineOffset)
+      return [rect.left - extra, rect.top - extra, rect.right + extra, rect.bottom + extra]
+    }
+    const dashed = await group.evaluate(paint)
+    await page.evaluate(id => (window as any).__imageResizeDoc.selection.selectBlock(id), ids.groupId)
+    const frame = group.locator(':scope > shape-resizer > .shape-resizer__frame')
+    await expect(frame).toHaveCSS('outline-style', 'solid')
+    await expect(frame).toHaveCSS('outline-width', '1px')
+    const solid = await frame.evaluate(paint)
+    solid.forEach((value, i) => expect(value).toBeCloseTo(dashed[i], 1))
   })
 }

@@ -1,5 +1,5 @@
 import {Subject, Subscription, takeUntil, skip} from 'rxjs';
-import {DocPlugin, isNativeInputTarget, closetBlockId} from '../../framework';
+import {DocPlugin, isNativeInputTarget, closetBlockId, BindHotKey, type UIEventStateContext} from '../../framework';
 import {caretRangeFromPoint} from '../../framework/utils/caret-from-point';
 import {
   captureRelativeSelectionBookmark, RelativeSelectionBookmark, resolveRelativeSelectionBookmark,
@@ -7,6 +7,7 @@ import {
 import {EditorContextMenuComponent} from './menu.component';
 import {CsModalService} from '@cses/ui';
 import {TypographySettingsController} from '../fixed-toolbar/widgets/typography-settings-controller';
+import type {ShapeBlockComponent} from '../../blocks/shape-block';
 
 /** Editor-owned context menu; native form controls retain their existing handling. */
 export class ContextMenuPlugin extends DocPlugin {
@@ -56,11 +57,21 @@ export class ContextMenuPlugin extends DocPlugin {
     const id = closetBlockId(target);
     if (!id) return;
     const current = this.doc.selection.value;
+    const block = this.doc.getBlockById(id);
+    // A shape owns its surface, including blank space in its text frame.
+    // Keep an existing text range within that shape and all cross-block ranges.
+    const shape = this.shapeForBlock(block);
+    if (shape && (!current || current.isInSameBlock)) {
+      if (!current || (current.firstBlock.id !== shape.id && current.firstBlock.id !== block.id) ||
+        (block.flavour === 'shape' && current.anchor.type !== 'selected')) {
+        this.doc.selection.selectBlock(shape);
+      }
+      return;
+    }
     // Opening a context menu does not constitute a new selection gesture.
     // Only resolve a target when the editor has no existing caret or range.
     if (current) return;
     const native = target.ownerDocument.getSelection();
-    const block = this.doc.getBlockById(id);
     if (block === this.doc.root) return;
     if (!this.doc.isEditable(block)) {
       this.doc.selection.selectBlock(block);
@@ -98,6 +109,9 @@ export class ContextMenuPlugin extends DocPlugin {
     overlayRef.hostElement.style.zIndex = '1001';
     componentRef.setInput('hasSelection', !selection.collapsed);
     componentRef.setInput('writable', writable);
+    const pointShape = this.resolvePointShape(selection);
+    componentRef.setInput('shapePointsEnabled', writable && !!pointShape?.canEditPoints);
+    componentRef.setInput('shapePointsEditing', !!pointShape?.isEditingPoints);
     const hasSettings = !!this.doc.injector.get(CsModalService, null);
     componentRef.setInput('textSettingsEnabled', hasSettings && this.typographySettings.canSetFontScaleForSelection(selection));
     componentRef.setInput('paragraphSettingsEnabled', hasSettings && this.typographySettings.canSetParagraphSpacingForSelection(selection));
@@ -181,7 +195,30 @@ export class ContextMenuPlugin extends DocPlugin {
     close$?.complete();
   }
 
-  private async execute(action: 'copy' | 'cut' | 'paste' | 'plain-text' | 'markdown' | 'select-all' | 'text-settings' | 'paragraph-settings', bookmark: RelativeSelectionBookmark) {
+  private resolvePointShape(selection: BlockCraft.Selection | null): ShapeBlockComponent | null {
+    if (!selection?.isInSameBlock) return null;
+    const block = this.doc.vm.get(selection.firstBlock.id)?.instance;
+    return block ? this.shapeForBlock(block) : null;
+  }
+
+  private shapeForBlock(block: BlockCraft.BlockComponent): ShapeBlockComponent | null {
+    if (block.flavour === 'shape') return block as ShapeBlockComponent;
+    if (block.flavour !== 'shape-text') return null;
+    const parentId = this.doc.model.getParentId(block.id);
+    const parent = parentId ? this.doc.vm.get(parentId)?.instance : null;
+    return parent?.flavour === 'shape' ? parent as ShapeBlockComponent : null;
+  }
+
+  @BindHotKey({key: 'Escape'}, {flavour: 'shape'})
+  onShapePointsEscape(ctx: UIEventStateContext): true | void {
+    const shape = this.resolvePointShape(ctx.get('keyboardState').selection);
+    if (!shape?.isEditingPoints) return;
+    ctx.preventDefault();
+    shape.setPointEditing(false);
+    return true;
+  }
+
+  private async execute(action: 'copy' | 'cut' | 'paste' | 'plain-text' | 'markdown' | 'select-all' | 'text-settings' | 'paragraph-settings' | 'edit-shape-points' | 'finish-shape-points', bookmark: RelativeSelectionBookmark) {
     if (this.busy || this.destroyed) return;
     this.close();
     if (action === 'select-all') {
@@ -191,6 +228,14 @@ export class ContextMenuPlugin extends DocPlugin {
     const json = resolveRelativeSelectionBookmark(bookmark, this.doc);
     if (!json) return;
     this.doc.selection.replay(json);
+    if (action === 'edit-shape-points' || action === 'finish-shape-points') {
+      const shape = this.resolvePointShape(this.doc.selection.value);
+      if (!shape || this.doc.isReadonly || shape.isReadonly) return;
+      this.doc.root.hostElement.focus({preventScroll: true});
+      this.doc.selection.selectBlock(shape.id);
+      shape.setPointEditing(action === 'edit-shape-points');
+      return;
+    }
     if (action === 'text-settings' || action === 'paragraph-settings') {
       if (action === 'text-settings') this.typographySettings.openFontSettings('font-size', json);
       else this.typographySettings.openParagraphSettings('paragraph-align', json);

@@ -255,9 +255,10 @@ export interface IBlockSchemaOptions<T extends NativeBlockModel = NativeBlockMod
      * Omitted / 'placement': select placement objects and move absolute objects only.
      * 'body': pick marked surfaces/handles and allow relative flow sorting.
      * 'handles': only pick marked drag handles, leaving body editing untouched.
+     * 'flow-handles': marked handles sort normal-flow blocks without placement support.
      * 'custom': leave picking and dragging to the block's dedicated interaction plugin.
      */
-    objectDrag?: 'placement' | 'body' | 'handles' | 'custom'
+    objectDrag?: 'placement' | 'body' | 'handles' | 'flow-handles' | 'custom'
     /**
      * Opts this flavour into root-relative object sizing.
      *

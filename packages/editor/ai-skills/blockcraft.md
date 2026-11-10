@@ -2,11 +2,11 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-11-09 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-11-10 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 
 ## 迷你对象工具栏（未发布）
 
-对象格式、组合和内容区域浮动工具栏采用紧凑快捷条与圆形展开/收起按钮。
+对象格式、整组、块级图片和内容区域浮动工具栏采用紧凑快捷条与圆形展开/收起按钮。
 主入口新增 `FloatingToolbarComponent`、`FloatingToolbarState`、`FloatingToolbarOptions`；
 插件创建时可配置 `collapsed`，运行时调用 `setCollapsed()`，同一实例跨选区保留状态。
 复用与职责边界见 `blockcraft-toolbar.md`，插件 API 见 `blockcraft-plugins-toolbar.md`。
@@ -43,12 +43,13 @@
 ## 对象轻量选择入口（未发布）
 
 形状保留外框 8px 命中带（外侧 6px、内侧 2px）；整块悬停、内部文字聚焦或键盘聚焦边缘按钮时显示 1px 淡虚线；
-点击选择、沿边拖动，整块选中后显示既有缩放/旋转/几何控件。正文和空形状双击创建文字沿用原行为。
+点击选择、沿边拖动，整块选中后显示缩放/旋转与有限参数调整点。自由节点通过右键菜单的“编辑顶点”显式进入；
+进入后暂时隐藏聚焦框和缩放/旋转控件，Esc 或“完成顶点编辑”退出，已有形状数据保持兼容。正文和空形状双击创建文字沿用原行为。
 
 文本框、艺术字及填写区整块悬停或内部聚焦时，同时显示细边框和顶部浮动抓手，不再显示四个轻量 L 角。
-文本框、艺术字和图片的悬停/内部编辑边框统一为 1px 淡虚线，整体选中后恢复原有实线；填写区轻量提示不变。
+文本框、艺术字和图片的悬停/内部编辑边框统一为 1px 淡虚线，整体选中后使用同位置的 1px 实线，沿用各类对象原有虚线偏移；填写区轻量提示不变。
 点击顶部抓手或用 Enter/Space 激活可整块选中，随后显示既有缩放与旋转控件；正文继续直接编辑和划选。
-顶部抓手可选中整块；文本框、艺术字还可通过抓手或细边直接拖动，填写区仍只选择和缩放。详见 `blockcraft-block.md` 的“对象轻量选择入口”。
+顶部抓手可选中整块；文本框、艺术字还可通过抓手或细边直接拖动，填写区仅由顶部抓手启动正文流排序，保留既有缩放与内部文字编辑。详见 `blockcraft-block.md` 的“对象轻量选择入口”。
 
 ## 独立区域内容与组合文档（未发布）
 

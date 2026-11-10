@@ -1,3 +1,16 @@
+// Keep the resizing buttons centered on the same thin line in both states.
+@mixin object-selection-frame($offset) {
+  outline-width: 1px;
+  outline-offset: $offset;
+  > [data-handle*='north'] { top: calc(-4.5px - $offset); }
+  > [data-handle*='east'] { right: calc(-4.5px - $offset); }
+  > [data-handle*='south'] { bottom: calc(-4.5px - $offset); }
+  > [data-handle*='west'] { left: calc(-4.5px - $offset); }
+  // The 14px connector starts at the rotation knob and ends at the north knob.
+  > .shape-resizer__rotation-stem { top: calc(-4.5px - $offset - 14px); }
+  > .shape-resizer__rotate { top: calc(-4.5px - $offset - 14px - 8px); }
+}
+
 // Hover and text editing identify an object without implying whole-object selection.
 @media screen {
   [data-blockcraft-root='true']:not(.readonly):not(.bc-print-content):not([data-bc-interaction-mode='immersive']) {
@@ -5,6 +18,32 @@
     .word-art-block > .word-art-block__surface > bc-object-corner-controls,
     .shape-block > .shape-block__shell > bc-object-edge-controls {
       outline: 1px dashed color-mix(in srgb, var(--bc-active-color) 35%, transparent);
+    }
+
+    // Each object's existing dashed hint is authoritative; selection only
+    // changes line style/color, without moving that boundary.
+    .text-box-block > .text-box-block__surface > shape-resizer > .shape-resizer__frame,
+    .word-art-block > .word-art-block__surface > shape-resizer > .shape-resizer__frame {
+      @include object-selection-frame(-1px);
+    }
+    .shape-block > .shape-block__shell > shape-resizer > .shape-resizer__frame {
+      @include object-selection-frame(0px);
+    }
+    .image-block > .image-block__container > .img-wrapper > shape-resizer > .shape-resizer__frame {
+      @include object-selection-frame(2px);
+    }
+
+    .object-group-block:is(.selected, .bc-object-group--selection-within) {
+      outline-width: 1px;
+    }
+    .object-group-block > shape-resizer > .shape-resizer__frame {
+      @include object-selection-frame(var(--bc-object-group-padding));
+    }
+
+    // Point editing temporarily replaces the selection frame and resize knobs.
+    .shape-block--editing-points > .shape-block__shell > shape-resizer > .shape-resizer__frame {
+      outline: none;
+      > .shape-resizer__handle { display: none; }
     }
 
     // Design mode can expose resize controls while a text caret is inside an object.

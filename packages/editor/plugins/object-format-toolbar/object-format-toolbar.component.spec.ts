@@ -633,11 +633,11 @@ describe("ObjectFormatToolbarComponent", () => {
     fixture.componentRef.setInput("activeLayout", "under");
     fixture.detectChanges();
     const compactPanel = fixture.nativeElement.querySelector(
-      ".object-format__panel--compact",
+      ".object-layout-panel",
     );
     expect(compactPanel).not.toBeNull();
     const activeLayout = fixture.nativeElement.querySelector(
-      '.object-format__icon-action[aria-label="衬于文字下方"]',
+      '.object-layout-option[aria-label="衬于文字下方"]',
     );
     expect(activeLayout.classList.contains("active")).toBeTrue();
     expect(activeLayout.getAttribute("aria-pressed")).toBe("true");
@@ -645,7 +645,7 @@ describe("ObjectFormatToolbarComponent", () => {
       activeLayout as HTMLElement
     ).querySelector<HTMLElement>("span")!;
     expect(activeLayoutLabel.textContent?.trim()).toBe("衬于文字下方");
-    expect(getComputedStyle(activeLayout).flexDirection).toBe("column");
+    expect(getComputedStyle(activeLayout).flexDirection).toBe("row");
     expect(activeLayoutLabel.clientHeight).toBeGreaterThan(0);
     expect(
       fixture.nativeElement.querySelector(
@@ -660,7 +660,7 @@ describe("ObjectFormatToolbarComponent", () => {
     expect(
       Array.from(
         (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>(
-          ".object-format__icon-action span",
+          ".object-layout-option span",
         ),
       ).every((label) => label.clientHeight > 0),
     ).toBeTrue();
@@ -712,7 +712,7 @@ describe("ObjectFormatToolbarComponent", () => {
     ).not.toBeNull();
   });
 
-  it("fills the layout row while hiding unsupported inline layout", async () => {
+  it("lists supported layouts in one column with a single selected indicator", async () => {
     await TestBed.configureTestingModule({
       imports: [ObjectFormatToolbarComponent],
     }).compileComponents();
@@ -727,6 +727,7 @@ describe("ObjectFormatToolbarComponent", () => {
       "over",
     ]);
     fixture.componentInstance.activePanel = "layout";
+    fixture.componentRef.setInput("activeLayout", "top-bottom");
     fixture.detectChanges();
 
     expect(
@@ -736,11 +737,13 @@ describe("ObjectFormatToolbarComponent", () => {
       fixture.nativeElement.querySelector('[aria-label="上下型"]'),
     ).not.toBeNull();
     const layoutGrid = fixture.nativeElement.querySelector(
-      ".object-format__icon-grid--4",
+      ".object-layout-list",
     );
     expect(
-      getComputedStyle(layoutGrid).gridTemplateColumns.split(" ").length,
-    ).toBe(3);
+      getComputedStyle(layoutGrid).flexDirection,
+    ).toBe("column");
+    expect(layoutGrid.querySelectorAll(".object-layout-option__check").length).toBe(1);
+    expect(layoutGrid.querySelector('[aria-label="上下型"] .object-layout-option__check')).not.toBeNull();
   });
 
   it("emits preview while a CSES slider moves and one model patch on commit", async () => {

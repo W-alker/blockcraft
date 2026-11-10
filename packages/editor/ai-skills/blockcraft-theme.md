@@ -2,12 +2,21 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-11-09
+> Last updated: 2026-11-10
+
+## 浮动抓手反馈（未发布）
+
+顶部浮动抓手保持 24×14px；悬停和键盘聚焦使用活跃色 12% 混合背景及 `--bc-shadow-sm`，按下为 20% 混合背景。
+颜色来自 `--bc-active-color` / `--bc-bg-primary`，键盘轮廓沿用现有活跃色；reduced-motion 关闭过渡。
+Tooltip 使用 CSES CDK 浮层，提供点击选择和拖拽移动说明，不写正文 DOM 或文档状态。
 
 ## 对象悬停与内部编辑提示
 
 `components/object-interaction-chrome.scss` 统一文本框、形状、艺术字、图片的选择提示：
-悬停或内部编辑时使用 `1px dashed color-mix(in srgb, var(--bc-active-color) 35%, transparent)`，整体选中时沿用原实线缩放框。
+悬停或内部编辑时使用 `1px dashed color-mix(in srgb, var(--bc-active-color) 35%, transparent)`，整体选中时使用 1px 实线缩放框。
+虚实边框以原虚线位置为准：文本框/艺术字 `outline-offset: -1px`，形状 `0px`，图片 `2px`；整体组合保留 4px 外扩。两态均为 1px，仅改变线型与颜色。
+缩放抓手保持 8px，回到各自的边框位置。旋转按钮采用 `--bc-active-color` 实心圆；按钮和 14px 连接线跟随北侧抓手的同一偏移定位，两端分别贴合旋转按钮和北侧抓手；媒体控件的连续悬停命中区域保持。形状默认仅显示有限参数调整点；显式顶点模式使用 `shape-block--editing-points` 本地视图类，临时隐藏聚焦框及缩放、旋转、沿边拖动控件，只显示真实路径顶点与曲线控制点。退出后恢复原框线和抓手。
+旋转按钮悬停与拖动统一使用 24px 环形箭头光标（白色描边、黑色箭头），热点位于箭头尖端；资源不可用时回退 `crosshair`。抓手尺寸、命中区和旋转事务保持。
 设计模式内部编辑时已显示的抓手框也采用淡虚线；不改变抓手显隐、命中带或拖动事务。
 只作用于编辑态屏幕提示，不改变对象保存的轮廓、快照、只读锁定装饰及打印；填写区和贴纸保持原有样式。
 
@@ -654,10 +663,11 @@ For the current variable definitions and theme patterns, read:
 
 ## 迷你对象浮动工具栏（未发布）
 
-对象格式和内容区域共用的侧条由 42px 缩为 34px，按钮 26px、图标 14px、内距 3px、间距 2px。
+对象格式、整组、块级图片和内容区域共用的侧条由 42px 缩为 34px，按钮 26px、图标 14px、内距 3px、间距 2px。
 共享 `bc-floating-toolbar` 在快捷条上方显示 20px 圆形加/减按钮（24px 命中范围、3px 间距）；收起仅保留该按钮。
-组合工具条沿用横向排列并复用同一外壳。触摸主指针保留较大操作面积。
-常规设置卡宽 240px，布局和内容区域设置卡宽 208px；内距 8px、设置行间距 6px，桌面输入控件统一 24px 高。
+整组和图片块使用侧栏加二级布局面板；多对象混选保留横向命令条。触摸主指针保留较大操作面积。
+常规设置卡宽 240px，内容区域设置卡宽 208px；内距 8px、设置行间距 6px，桌面输入控件统一 24px 高。
+布局卡独立使用 `object-layout-panel`：宽 176px、内距 6px，选项为 28px 单列行（触摸主指针 34px），左侧图标和名称、右侧选中标记；底部对齐与层级命令分组紧凑排列。
 颜色、背景、分隔线与投影复用既有 `--bc-float-toolbar-*` 和 `--bc-fixed-toolbar-shadow`，
 不新增文档样式或持久化属性。收起状态的创建与运行时切换见 `blockcraft-toolbar.md`。
 
