@@ -147,7 +147,7 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
     </ng-template>
 
     <ng-template #contextMenuTpl>
-      <bc-float-toolbar style="display: block; width: 224px; padding-top: 4px;"
+      <bc-float-toolbar style="display: block; width: 200px; padding-top: 4px;"
                         styles="max-height: 60vh; overflow-y: auto;"
                         direction="column">
         @if (!isMultiSelection && !activeBlockProtected && activeBlock?.nodeType === BlockNodeType.editable) {
@@ -217,7 +217,7 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
     </ng-template>
 
     <ng-template #blockAddList>
-      <bc-float-toolbar direction="column" styles="width: 224px; max-height: 70vh; overflow-y: auto;">
+      <bc-float-toolbar direction="column" styles="width: 200px; max-height: 70vh; overflow-y: auto;">
         @if (activeBlock?.nodeType !== BlockNodeType.editable) {
           <h4 class="title">基础</h4>
           @for (item of HEADING_LIST; track item.value) {

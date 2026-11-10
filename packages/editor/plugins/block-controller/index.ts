@@ -529,16 +529,22 @@ export class BlockControllerPlugin extends DocPlugin {
             label: '修复表格'
           },
           {
-            type: 'simple',
+            type: 'dropdown',
             icon: 'bc_zidongliekuan',
-            name: TABLE_MENU_NAMES.equalWidth,
-            label: '均分列宽'
-          },
-          {
-            type: 'simple',
-            icon: 'bc_zidongliekuan1',
-            name: TABLE_MENU_NAMES.smartWidth,
-            label: '智能调整列宽'
+            name: 'table-column-width',
+            label: '列宽调整',
+            items: [
+              {
+                type: 'simple',
+                name: TABLE_MENU_NAMES.equalWidth,
+                label: '均分列宽',
+              },
+              {
+                type: 'simple',
+                name: TABLE_MENU_NAMES.smartWidth,
+                label: '智能调整列宽',
+              },
+            ],
           },
           {
             type: 'switch',

@@ -212,7 +212,7 @@ export class BlockMenuComponent {
   direction: "row" | "column" = "column"
 
   @Input()
-  menuWidth = 224
+  menuWidth = 200
 
   @Input()
   styles = ""
@@ -246,7 +246,8 @@ export class BlockMenuComponent {
 
   protected getSubMenuStyles(item: BlockMenuDropdownItem) {
     const width = item.menuWidth ?? this.menuWidth
-    return `display: block; box-sizing: border-box; width: ${width}px; max-height: 70vh; padding: 0; overflow-x: hidden; overflow-y: auto;`
+    const padding = item.items.every(child => child.type === 'custom') ? '0' : 'var(--bc-padding-sm)'
+    return `display: block; box-sizing: border-box; width: ${width}px; max-height: 70vh; padding: ${padding}; overflow-x: hidden; overflow-y: auto;`
   }
 
   protected appendPath(path: BlockMenuDropdownItem[], item: BlockMenuDropdownItem) {
