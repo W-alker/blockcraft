@@ -98,7 +98,7 @@ const ALIGNMENT_ITEMS: readonly {
                   <button cs-button csType="text" csSize="sm" type="button"
                     class="object-layout-option" [class.active]="objectLayout === item.value"
                     [attr.aria-pressed]="objectLayout === item.value" [attr.aria-label]="item.label"
-                    [csTooltip]="item.label" (click)="action.emit({ name: 'object-layout', value: item.value })">
+                    (click)="action.emit({ name: 'object-layout', value: item.value })">
                     <i [attr.class]="'bc_icon ' + item.icon" aria-hidden="true"></i>
                     <span>{{ item.label }}</span>
                     @if (objectLayout === item.value) {<i class="bc_icon bc_xuanzhong object-layout-option__check" aria-hidden="true"></i>}
@@ -107,11 +107,11 @@ const ALIGNMENT_ITEMS: readonly {
               </div>
               <div class="object-layout-tools">
                 <button type="button" class="object-layout-action"
-                  aria-label="上移一层" csTooltip="上移一层" [disabled]="!canMoveForward" (click)="action.emit('move-forward')">
+                  aria-label="上移一层" [disabled]="!canMoveForward" (click)="action.emit('move-forward')">
                   <i class="bc_icon bc_cengji-shangyi" aria-hidden="true"></i><span>上移一层</span>
                 </button>
                 <button type="button" class="object-layout-action"
-                  aria-label="下移一层" csTooltip="下移一层" [disabled]="!canMoveBackward" (click)="action.emit('move-backward')">
+                  aria-label="下移一层" [disabled]="!canMoveBackward" (click)="action.emit('move-backward')">
                   <i class="bc_icon bc_cengji-xiayi" aria-hidden="true"></i><span>下移一层</span>
                 </button>
               </div>
@@ -128,7 +128,7 @@ const ALIGNMENT_ITEMS: readonly {
           </button>
         }
         <span class="object-group-toolbar__divider"></span>
-        <button type="button" csTooltip="组合" aria-label="组合" [disabled]="!canGroup" (click)="action.emit('group')">
+        <button type="button" aria-label="组合" [disabled]="!canGroup" (click)="action.emit('group')">
           <i class="bc_icon bc_combination" aria-hidden="true"></i><span>组合</span>
         </button>
       </div>

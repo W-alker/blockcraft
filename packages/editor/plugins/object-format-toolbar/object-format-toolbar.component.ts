@@ -217,7 +217,6 @@ export type ObjectFormatToolbarAction =
                       [class.active]="isLayoutActive(item.value)"
                       [attr.aria-pressed]="isLayoutActive(item.value)"
                       [attr.aria-label]="item.label"
-                      [csTooltip]="item.label"
                       (click)="layout(item.action)"
                     >
                       <i
@@ -275,7 +274,7 @@ export type ObjectFormatToolbarAction =
                           csSize="sm"
                           type="button"
                           class="object-layout-action"
-                          [attr.aria-label]="item.label" [csTooltip]="item.label"
+                          [attr.aria-label]="item.label"
                           (click)="layout(item.action)"
                         >
                           <i
@@ -304,7 +303,6 @@ export type ObjectFormatToolbarAction =
                       type="button"
                       class="object-layout-action"
                       aria-label="上移一层"
-                      csTooltip="上移一层"
                       (click)="layout('forward')"
                     >
                       <i class="bc_icon bc_cengji-shangyi"></i>
@@ -317,7 +315,6 @@ export type ObjectFormatToolbarAction =
                       type="button"
                       class="object-layout-action"
                       aria-label="下移一层"
-                      csTooltip="下移一层"
                       (click)="layout('backward')"
                     >
                       <i class="bc_icon bc_cengji-xiayi"></i>

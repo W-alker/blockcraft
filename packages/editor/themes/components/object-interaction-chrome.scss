@@ -87,3 +87,26 @@
     }
   }
 }
+
+// Drag sessions release Selection, but keep the same frame geometry and theme.
+// This is a visual projection only: none of the frame's controls can be used.
+@media screen {
+  [data-blockcraft-root='true']:not(.readonly):not(.bc-print-content) {
+    [data-block-id].bc-drag-source:not([data-bc-readonly]) {
+      > shape-resizer,
+      > :is([data-bc-object-surface], [data-bc-print-visual-surface]) > shape-resizer,
+      > .image-block__container > .img-wrapper > shape-resizer {
+        // Even when layout controls are hidden, the drag boundary remains a
+        // presentation-only cue. Its buttons and move hit areas stay hidden.
+        display: block !important;
+        pointer-events: none;
+
+        > .shape-resizer__frame {
+          outline-style: solid;
+          outline-color: var(--bc-active-color);
+          > * { display: none; }
+        }
+      }
+    }
+  }
+}

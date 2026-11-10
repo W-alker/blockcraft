@@ -47,9 +47,13 @@
       opacity: 1;
     }
 
-    // 拖动会释放模型/原生选区；临时轮廓跟随实际表面的旋转与尺寸，
-    // 不重新唤起缩放控件，也不把组合内部成员一并描边。
-    [data-bc-object].bc-drag-source:not(.selected):not([data-bc-readonly]) {
+    // 带缩放框的对象复用原框线；其余对象仍在自身表面绘制兜底轮廓。
+    // 只检查对象自己的缩放框，不能借用组合/容器内部成员的控件。
+    [data-bc-object].bc-drag-source:not(.selected):not([data-bc-readonly]):not(:has(
+      > shape-resizer,
+      > :is([data-bc-object-surface], [data-bc-print-visual-surface]) > shape-resizer,
+      > .image-block__container > .img-wrapper > shape-resizer
+    )) {
       > :is([data-bc-object-surface], [data-bc-print-visual-surface]),
       &:not(:has(> :is([data-bc-object-surface], [data-bc-print-visual-surface]))) {
         outline: 2px solid var(--bc-active-color);

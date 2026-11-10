@@ -77,7 +77,7 @@ const ALIGN_LIST = [
                 <div class="object-layout-list">
                   @for (item of layoutOptions; track item.value) {
                     <button type="button" class="object-layout-option" [class.active]="objectLayout === item.value"
-                      [attr.aria-pressed]="objectLayout === item.value" [attr.aria-label]="item.label" [csTooltip]="item.label" (click)="activate(layoutItem)">
+                      [attr.aria-pressed]="objectLayout === item.value" [attr.aria-label]="item.label" (click)="activate(layoutItem)">
                       <bc-float-toolbar-item #layoutItem name="object-layout" [value]="item.value" [icon]="item.icon" aria-hidden="true" />
                       <span>{{ item.label }}</span>
                       @if (objectLayout === item.value) {<i class="bc_icon bc_xuanzhong object-layout-option__check" aria-hidden="true"></i>}
@@ -97,10 +97,10 @@ const ALIGN_LIST = [
                 }
                 @if (isAbsolute) {
                   <div class="object-layout-tools">
-                    <button type="button" class="object-layout-action" aria-label="上移一层" csTooltip="上移一层" [disabled]="!canMoveForward" (click)="activate(forwardItem)">
+                    <button type="button" class="object-layout-action" aria-label="上移一层" [disabled]="!canMoveForward" (click)="activate(forwardItem)">
                       <bc-float-toolbar-item #forwardItem name="move-forward" icon="bc_cengji-shangyi" [disabled]="!canMoveForward" aria-hidden="true" /><span>上移一层</span>
                     </button>
-                    <button type="button" class="object-layout-action" aria-label="下移一层" csTooltip="下移一层" [disabled]="!canMoveBackward" (click)="activate(backwardItem)">
+                    <button type="button" class="object-layout-action" aria-label="下移一层" [disabled]="!canMoveBackward" (click)="activate(backwardItem)">
                       <bc-float-toolbar-item #backwardItem name="move-backward" icon="bc_cengji-xiayi" [disabled]="!canMoveBackward" aria-hidden="true" /><span>下移一层</span>
                     </button>
                   </div>

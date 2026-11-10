@@ -10,6 +10,7 @@ async function setup(page: Page, flavour: string, absolute: boolean, rotation = 
     ?.getComponent(document.querySelector('block-craft-editor'))?.doc?.isInitialized)
   return page.evaluate(async ({flavour, absolute, rotation}) => {
     const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    doc.interactionMode?.set('design')
     const snapshot = doc.schemas.createSnapshot(flavour, flavour === 'shape'
       ? ['rectangle'] : ['拖动时显示实际范围', {width: 280, height: 160}])
     snapshot.props = {...snapshot.props, width: 280, height: 160, rotation,
@@ -42,6 +43,7 @@ for (const flavour of ['text-box', 'word-art', 'shape']) {
       const id = await setup(page, flavour, absolute, absolute ? 15 : 0)
       const block = page.locator(`[data-block-id="${id}"]`)
       const surface = block.locator(':scope > [data-bc-object-surface]')
+      const frame = block.locator('shape-resizer > .shape-resizer__frame')
       await block.hover()
       const handle = flavour === 'shape' ? surface : block.locator('[data-bc-object-entry-edge="north"]')
       const box = (await handle.boundingBox())!
@@ -52,8 +54,12 @@ for (const flavour of ['text-box', 'word-art', 'shape']) {
       await page.mouse.down()
       await page.mouse.move(x + 40, y + 30, {steps: 5})
       await expect.poll(async () => (await state(page, id)).dragging).toBe(true)
-      await expect(surface).toHaveCSS('outline-style', 'solid')
-      await expect(surface).toHaveCSS('outline-width', '2px')
+      await expect(frame).toBeVisible()
+      await expect(frame).toHaveCSS('outline-style', 'solid')
+      await expect(frame).toHaveCSS('outline-width', '1px')
+      await expect(surface).toHaveCSS('outline-style', 'none')
+      expect(await frame.locator('button, .shape-resizer__move-edge, .shape-resizer__rotation-stem').evaluateAll(elements =>
+        elements.every(element => getComputedStyle(element).display === 'none'))).toBe(true)
       // The outline belongs to the transformed surface, not an unrotated host.
       const during = (await surface.boundingBox())!
       expect(during.width).toBeCloseTo(before.width, 0)
@@ -87,7 +93,7 @@ test('侧边抓手排序透明文本框时显示轮廓', async ({page}) => {
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await page.mouse.down()
   await page.mouse.move(box.x + 100, box.y + 50, {steps: 5})
-  await expect(block.locator(':scope > [data-bc-object-surface]')).toHaveCSS('outline-width', '2px')
+  await expect(block.locator('shape-resizer > .shape-resizer__frame')).toHaveCSS('outline-width', '1px')
   await page.keyboard.press('Escape')
   await page.mouse.up()
   await expect(block).not.toHaveClass(/bc-drag-source/)
@@ -102,21 +108,24 @@ test('缩放下拖动轮廓跟随文本框，打印隐藏，释放后可撤销�
   }, id)
   const block = page.locator(`[data-block-id="${id}"]`)
   const surface = block.locator(':scope > [data-bc-object-surface]')
+  const frame = block.locator('shape-resizer > .shape-resizer__frame')
   await block.hover()
   const handle = (await block.locator('[data-bc-object-entry-edge="north"]').boundingBox())!
   const before = (await surface.boundingBox())!
   await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
   await page.mouse.down()
   await page.mouse.move(handle.x + handle.width / 2 + 45, handle.y + handle.height / 2 + 30, {steps: 5})
-  await expect(surface).toHaveCSS('outline-style', 'solid')
+  await expect(frame).toBeVisible()
+  await expect(frame).toHaveCSS('outline-style', 'solid')
   // CSS zoom can quantize the computed width differently between engines.
-  await expect.poll(() => surface.evaluate(element => parseFloat(getComputedStyle(element).outlineWidth))).toBeGreaterThan(0)
+  await expect.poll(() => frame.evaluate(element => parseFloat(getComputedStyle(element).outlineWidth))).toBeGreaterThan(0)
   await expect(block).toHaveCSS('opacity', '1')
   await expect.poll(async () => (await surface.boundingBox())!.x).toBeCloseTo(before.x + 45, 0)
   await page.emulateMedia({media: 'print'})
-  await expect(surface).toHaveCSS('outline-style', 'none')
+  await expect(frame).toBeHidden()
   await page.emulateMedia({media: 'screen'})
-  await expect(surface).toHaveCSS('outline-style', 'solid')
+  await expect(frame).toBeVisible()
+  await expect(frame).toHaveCSS('outline-style', 'solid')
   await page.mouse.up()
   await expect(block).not.toHaveClass(/bc-drag-source/)
   await expect(surface).toHaveCSS('outline-style', 'none')
@@ -126,4 +135,27 @@ test('缩放下拖动轮廓跟随文本框，打印隐藏，释放后可撤销�
       .doc.crud.undoManager[action](), action)
     await expect.poll(async () => (await surface.boundingBox())!.x).toBeCloseTo(before.x + (action === 'undo' ? 0 : 45), 0)
   }
+})
+
+test('拖拽中切换只读会清理临时框，恢复编辑后抓手可用', async ({page}) => {
+  const id = await setup(page, 'text-box', true)
+  const block = page.locator(`[data-block-id="${id}"]`)
+  await block.hover()
+  const handle = (await block.locator('[data-bc-object-entry-edge="north"]').boundingBox())!
+  const before = await state(page, id)
+  await page.mouse.move(handle.x + handle.width * .24, handle.y + handle.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(handle.x + handle.width * .24 + 40, handle.y + handle.height / 2 + 30, {steps: 6})
+  await expect(block).toHaveClass(/bc-drag-source/)
+  await page.evaluate(() => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.toggleReadonly(true))
+  await expect(block).not.toHaveClass(/bc-drag-source/)
+  await expect(block.locator('shape-resizer')).toHaveCount(0)
+  await page.mouse.up()
+  expect((await state(page, id)).props).toEqual(before.props)
+  await page.evaluate(id => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    doc.toggleReadonly(false)
+    doc.selection.selectBlock(id)
+  }, id)
+  await expect(block.locator('shape-resizer .shape-resizer__handle:visible')).toHaveCount(8)
 })
