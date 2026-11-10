@@ -2630,6 +2630,12 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
   ngOnInit() {
     this._destroyed = false;
     this.syncToolbarState(this.doc.selection.value);
+    if (this.doc.interaction) {
+      this._sub.add(this.doc.interaction.policyChanges$.subscribe(() => {
+        this._objectDrawInsert?.cancel();
+        this.cdr.markForCheck();
+      }));
+    }
 
     this._sub.add(
       this.doc.selection.changeObserve().subscribe(

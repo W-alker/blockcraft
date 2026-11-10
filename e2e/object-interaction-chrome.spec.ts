@@ -14,7 +14,7 @@ async function outlineBounds(locator: Locator) {
 for (const flavour of ['text-box', 'shape', 'word-art', 'image']) {
   for (const absolute of [false, true]) {
    for (const scale of (['text-box', 'image'].includes(flavour) ? [0.75, 1, 1.5] : [1])) {
-    test(`${flavour} ${absolute ? 'absolute' : 'flow'} scale ${scale}: hover and inner focus use the same light dashed frame; object selection is solid`, async ({page}) => {
+    test(`${flavour} ${absolute ? 'absolute' : 'flow'} scale ${scale}: mixed hover stays quiet; design hover and editing retain chrome`, async ({page}) => {
       await page.routeWebSocket('**', socket => socket.close())
       await page.goto('/')
       await page.getByRole('button', {name: '初始化', exact: true}).click()
@@ -54,6 +54,15 @@ for (const flavour of ['text-box', 'shape', 'word-art', 'image']) {
       const surface = block.locator(flavour === 'image' ? '.img-wrapper'
         : flavour === 'shape' ? '.shape-block__shell' : `.${flavour}-block__surface`)
       await surface.hover({position: {x: 80, y: 60}})
+      if (flavour === 'image') await expect(hint).toBeHidden()
+      else await expect(hint).toHaveCSS('opacity', '0')
+      // Shape's edge component must not bypass the document mode on edge hover.
+      if (flavour === 'shape') {
+        await block.locator('[data-bc-object-entry-edge="north"]').hover()
+        await expect(hint).toHaveCSS('opacity', '0')
+      }
+      await page.evaluate(() => (window as any).__objectChromeDoc.interactionMode.set('design'))
+      await surface.hover({position: {x: 80, y: 60}})
       await expect(hint).toHaveCSS('outline-style', 'dashed')
       const dashedStyle = await hint.evaluate(element => {
         const css = getComputedStyle(element)
@@ -65,6 +74,9 @@ for (const flavour of ['text-box', 'shape', 'word-art', 'image']) {
       if (scale === 1) await expect(hint).toHaveCSS('outline-offset', offset)
       const hoverBounds = await outlineBounds(hint)
       expect(await hint.evaluate(el => getComputedStyle(el).outlineColor)).toMatch(/0?\.35|35%/)
+      await page.evaluate(() => (window as any).__objectChromeDoc.interactionMode.set('mixed'))
+      if (flavour === 'image') await expect(hint).toBeHidden()
+      else await expect(hint).toHaveCSS('opacity', '0')
       await page.evaluate(leafId => {
         const doc = (window as any).__objectChromeDoc
         doc.root.hostElement.focus()

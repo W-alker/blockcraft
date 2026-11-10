@@ -130,6 +130,7 @@ export class DocInternalDragController {
 
   startDrag(evt: PointerEvent, data: InternalDragData, options: InternalDragOptions = {}): void {
     if (this._state$.value !== 'idle') return
+    if (this.doc.interaction?.policy.native.moveExistingBlocks === false && data.kind !== 'new-block') return
     if (this.doc.isReadonly) return
     if (!evt.target) return
 

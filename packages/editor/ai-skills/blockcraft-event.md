@@ -2,7 +2,15 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying event dispatch or handling.
 >
-> Last updated: 2026-07-08
+> Last updated: 2026-11-10
+
+## 编辑模式前置协调（未发布）
+
+Doc 自动装配 `DocumentInteraction`，在 ownerDocument 捕获阶段跟踪所属文档的指针会话，
+当 `policy.native.layoutControls` 为 false 时消费对象控制点的 pointerdown/click；始终保留文字输入路径。
+监听在 Angular zone 外注册，Doc 销毁时移除。模式 UI 由根级属性和已有选区投影驱动。
+InputTransformer/CompositionSession、事件名、payload 和原三级分发契约不变；
+输入、按住指针或拖动期间拒绝切换预设或覆盖。`policyChanges$` 用于有效配置变化，`changes$` 仅表示预设标签。
 
 ## Architecture Overview
 

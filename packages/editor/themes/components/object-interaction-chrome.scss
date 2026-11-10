@@ -13,7 +13,7 @@
 
 // Hover and text editing identify an object without implying whole-object selection.
 @media screen {
-  [data-blockcraft-root='true']:not(.readonly):not(.bc-print-content):not([data-bc-interaction-mode='immersive']) {
+  [data-blockcraft-root='true']:not(.readonly):not(.bc-print-content):not([data-bc-interaction-layout-controls='false']) {
     .text-box-block > .text-box-block__surface > bc-object-corner-controls,
     .word-art-block > .word-art-block__surface > bc-object-corner-controls,
     .shape-block > .shape-block__shell > bc-object-edge-controls {
@@ -56,7 +56,7 @@
     }
 
     .shape-block:not(.selected):not(.bc-drag-source) {
-      &:hover > .shape-block__shell > bc-object-edge-controls,
+      &:where([data-blockcraft-root]:not([data-bc-interaction-hover-controls='false']) *):hover > .shape-block__shell > bc-object-edge-controls,
       &:focus-within > .shape-block__shell > bc-object-edge-controls,
       &:where([data-blockcraft-root='true']:focus-within *):has(> .shape-block__shell > .shape-block__text-frame > .focused)
         > .shape-block__shell > bc-object-edge-controls {
@@ -71,7 +71,7 @@
     }
 
     .image-block:not(.bc-snapshot-block):not([data-bc-readonly]) {
-      &:hover,
+      &:where([data-blockcraft-root]:not([data-bc-interaction-hover-controls='false']) *):hover,
       &:focus-within,
       &:where([data-blockcraft-root='true']:focus-within *):is(.focused, :has(> .image-block__container > .children-render-container .focused)) {
         > .image-block__container > .img-wrapper > shape-resizer {

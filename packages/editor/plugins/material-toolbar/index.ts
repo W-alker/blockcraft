@@ -1,3 +1,5 @@
+import {MATERIAL_TOOLBAR_INTERACTION} from './interaction-config'
+export {MATERIAL_TOOLBAR_INTERACTION} from './interaction-config'
 import {FlexibleConnectedPositionStrategy, OverlayRef} from '@angular/cdk/overlay'
 import {fromEvent, Subject, Subscription, takeUntil} from 'rxjs'
 import {DocPlugin, getPositionWithOffset} from '../../framework'
@@ -8,6 +10,7 @@ import {isObjectToolbarOwnedTarget} from '../object-layout/object-toolbar-intera
 
 /** 日期、天气、人员共用的块外工具栏；单选、浮层与生命周期只有一个 owner。 */
 export class MaterialToolbarPlugin extends DocPlugin {
+  override readonly interactionConfigs = [MATERIAL_TOOLBAR_INTERACTION]
   override name = 'material-toolbar'
   private readonly subscriptions = new Subscription()
   private readonly close$ = new Subject<void>()
@@ -23,7 +26,8 @@ export class MaterialToolbarPlugin extends DocPlugin {
   protected acceptsFlavour(flavour: string): boolean { return ['date-card', 'weather', 'person-card'].includes(flavour) }
 
   init(): void {
-    this.subscriptions.add(this.doc.selection.selectionChange$.subscribe(selection => {
+    const syncToolbar = (selection: BlockCraft.Selection | null) => {
+      if (!this.toolbarEnabled) { this.close(); return }
       this.clearTimer()
       if (!selection && this.active && this.isWritable(this.active) && this.ownsFocus()) return
       const block = selection && isSelectionAlive(selection as any, this.doc)
@@ -40,7 +44,9 @@ export class MaterialToolbarPlugin extends DocPlugin {
           && current.anchor.type === 'selected' && current.head.type === 'selected'
           && current.firstBlock === block && this.isWritable(block)) this.open(block)
       }, 120)
-    }))
+    }
+    this.subscriptions.add(this.doc.selection.selectionChange$.subscribe(syncToolbar))
+    this.subscriptions.add(this.doc.interaction?.policyChanges$.subscribe(() => syncToolbar(this.doc.selection.value)))
     this.subscriptions.add(this.doc.subscribeReadonlyChange(readonly => { if (readonly) this.close() }))
     this.subscriptions.add(this.doc.readonlyManager.stateChange$.subscribe(() => {
       if (this.active && !this.isWritable(this.active)) this.close()
@@ -50,7 +56,7 @@ export class MaterialToolbarPlugin extends DocPlugin {
       if (!(target instanceof Element) || target.closest('[data-block-gap-side], mtl-scale-resizer, shape-resizer')) return
       const id = closetBlockId(target)
       const block = id ? this.doc.vm.get(id)?.instance : undefined
-      if (!block || block.flavour !== 'date-card' || !this.acceptsFlavour(block.flavour) || !this.isWritable(block)) return
+      if (!this.toolbarEnabled || !block || block.flavour !== 'date-card' || !this.acceptsFlavour(block.flavour) || !this.isWritable(block)) return
       event.preventDefault(); event.stopPropagation()
       this.clearTimer()
       if (this.active !== block) { this.close(); this.open(block) }
@@ -104,7 +110,12 @@ export class MaterialToolbarPlugin extends DocPlugin {
   private ownsFocus(): boolean {
     return this.ownedInteraction || isObjectToolbarOwnedTarget(this.overlay?.overlayElement,this.overlay?.overlayElement.ownerDocument.activeElement ?? null)
   }
+  private get toolbarEnabled(): boolean {
+    return this.doc.interaction?.get(MATERIAL_TOOLBAR_INTERACTION).enabled !== false
+  }
+
   private open(block: BlockCraft.BlockComponent): void {
+    if (!this.toolbarEnabled) return
     this.active = block
     const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<MaterialToolbarComponent>({
       target:block, component:MaterialToolbarComponent,

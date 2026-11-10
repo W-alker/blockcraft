@@ -2,7 +2,17 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-11-06 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-11-10 | Source of truth: `framework/modules/selection/`
+
+## 编辑模式与选区（未发布）
+
+`DocumentInteraction` 不改变 anchor/head 或相对位置协议。预设和个性化覆盖只决定界面入口与手势意图，读取 `policy`，不按模式名推导行为。
+混合与设计均沿用正文、表格、对象文字的直接编辑路径，不拦截点击、双击、Enter 或 Esc 来强制整块选择。
+设计模式在文本框、艺术字、带文字形状聚焦时显示其八向缩放抓手；文字光标和选文保持原样。
+主题读取 `SelectionSelectedManager` 的 `.focused` 投影，不自行修改 `.selected` / `.focused`。
+边框移动、缩放、旋转与取消继续使用原对象手势和 Undo；普通正文不会增加对象控制框。
+沉浸模式收起布局控制点并关闭已有对象移动，文字和表格编辑保持原路径。
+只读与块锁沿用原权限规则；模式切换本身不改选区、内容或历史。
 
 ## 代码块逻辑行 DOM
 

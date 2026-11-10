@@ -4,12 +4,30 @@
 >
 > Last updated: 2026-11-10 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 
+对象顶部浮动抓手可通过 `overrides.native.objectFloatingHandles` 独立收起（默认 `true`），不影响正文块菜单与整体选中缩放；配置与投影见 `blockcraft-app.md`、`blockcraft-theme.md`。
+
+专注（immersive）默认停用已安装的文字、代码标记、对象、图片、内容区域、贴纸、物料及组合浮动工具栏；独立开关由插件声明，保留输入和格式快捷键，详见 `blockcraft-plugins-formatting.md` 与 `blockcraft-plugins-toolbar.md`。
+
 ## 迷你对象工具栏（未发布）
 
 对象格式、整组、块级图片和内容区域浮动工具栏采用紧凑快捷条与圆形展开/收起按钮。
 主入口新增 `FloatingToolbarComponent`、`FloatingToolbarState`、`FloatingToolbarOptions`；
 插件创建时可配置 `collapsed`，运行时调用 `setCollapsed()`，同一实例跨选区保留状态。
 复用与职责边界见 `blockcraft-toolbar.md`，插件 API 见 `blockcraft-plugins-toolbar.md`。
+
+## 编辑交互模式（未发布）
+
+`DocConfig.interaction` / `doc.interaction` 提供统一策略配置、按原生功能和插件分组的覆盖，以及 `mixed`（默认）、`immersive`、`design`。
+混合保留直接编辑和选中操作，悬停不显示对象边框/抓手；沉浸保留文字编辑、收起对象控制点并禁止已有对象拖动；
+设计保留直接文字编辑，在文本框、艺术字和带文字形状聚焦时显示八向缩放抓手。
+设计模式的内部选区同时显示最近对象的浮动工具栏；组合不继承成员选区，跨对象选区不推定归属。
+以上为未覆盖的预设行为。`configure()` 原子替换配置，`setOverrides()` 替换覆盖，`set()` 选择预设并清空覆盖。
+`policyChanges$` 通知完整配置，插件与主题消费有效策略；旧 `interactionMode` 保留为兼容别名。
+插件通过 `defineInteractionConfig()` + `DocPlugin.interactionConfigs` 注册字段、默认值和校验；
+`doc.interaction.get(声明)` 类型化读取，`definitions` 驱动调试表单，`presets` 提供实例完整预设。
+框架不维护插件字段名单；接入与生命周期见 `blockcraft-plugin.md`。
+配置为本地 UI 状态，不写快照、Yjs 或 Undo，不改变文档布局类型与锁定权限。
+宿主接入见 `blockcraft-app.md`，命中/输入边界见 `blockcraft-selection.md`。
 
 ## 应用标题的字号与行高（未发布）
 

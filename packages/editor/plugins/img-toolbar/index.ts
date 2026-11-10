@@ -1,5 +1,8 @@
+import {IMAGE_TOOLBAR_INTERACTION} from './interaction-config'
+export {IMAGE_TOOLBAR_INTERACTION} from './interaction-config'
 import {FloatingToolbarState, type FloatingToolbarOptions} from '../../components/floating-toolbar';
 import {storeBlockPosition} from '../../framework/modules/object/block-placement/state'
+import {resolveObjectToolbarContentTarget} from '../object-layout/object-toolbar-content-target'
 import {
   BindHotKey,
   BlockObjectLayout,
@@ -99,6 +102,7 @@ export interface ImgToolbarPluginOptions extends FloatingToolbarOptions {
 }
 
 export class ImgToolbarPlugin extends DocPlugin {
+  override readonly interactionConfigs = [IMAGE_TOOLBAR_INTERACTION]
   override name = "img-toolbar";
 
   fileService!: DocFileService;
@@ -259,7 +263,8 @@ export class ImgToolbarPlugin extends DocPlugin {
           return;
         }
         const firstBlock = selection.firstBlock;
-        if (firstBlock.flavour === "image" && this.doc.readonlyManager.isReadonly(firstBlock)) {
+        if ((firstBlock.flavour === "image" && this.doc.readonlyManager.isReadonly(firstBlock)) ||
+            (this._activeImageBlock && this.doc.readonlyManager.isReadonly(this._activeImageBlock))) {
           this.clearOpenToolbarTimer();
           this.closeToolbar();
         }
@@ -287,21 +292,19 @@ export class ImgToolbarPlugin extends DocPlugin {
         .subscribe(event => this._backfillInlineImageSize(event)),
     );
 
-    this._sub.add(this.doc.selection.selectionChange$.subscribe((selection) => {
-      if (
-        this.doc.isReadonly ||
-        !selection ||
-        !isSelectionAlive(selection as any, this.doc) ||
-        !selection.isInSameBlock ||
-        selection.firstBlock.flavour !== "image" ||
-        selection.anchor.type !== "selected" ||
-        selection.head.type !== "selected"
-      ) {
+    const syncToolbar = (selection: BlockCraft.Selection | null) => {
+      if (!this.toolbarEnabled) {
+        this.closeToolbar();
+        this.closeInlineToolbar();
+        return;
+      }
+      const imgBlock = this.resolveImageToolbarBlock(selection);
+      if (!imgBlock) {
+        this.clearOpenToolbarTimer();
         this._toolbarRef && this.closeToolbar();
         return;
       }
 
-      const imgBlock = selection.firstBlock;
       if (this.doc.readonlyManager.isReadonly(imgBlock)) {
         this._toolbarRef && this.closeToolbar();
         return;
@@ -314,22 +317,14 @@ export class ImgToolbarPlugin extends DocPlugin {
       this.clearOpenToolbarTimer();
       this._openToolbarTimer = setTimeout(() => {
         this._openToolbarTimer = undefined;
-        if (this.doc.isReadonly || this.doc.readonlyManager.isReadonly(imgBlock)) {
+        if (!this.toolbarEnabled || this.doc.isReadonly || this.doc.readonlyManager.isReadonly(imgBlock)) {
           this.closeToolbar();
           return;
         }
 
         if (this._toolbarRef) return;
         if (!this._isBlockAlive(imgBlock)) return;
-        const currentSelection = this.doc.selection.value;
-        if (
-          !currentSelection ||
-          !isSelectionAlive(currentSelection as any, this.doc) ||
-          !currentSelection.isInSameBlock ||
-          currentSelection.firstBlock.id !== imgBlock.id ||
-          currentSelection.anchor.type !== "selected" ||
-          currentSelection.head.type !== "selected"
-        ) {
+        if (this.resolveImageToolbarBlock(this.doc.selection.value)?.id !== imgBlock.id) {
           return;
         }
 
@@ -503,7 +498,9 @@ export class ImgToolbarPlugin extends DocPlugin {
         this.doc.selection.nextChangeObserve()
           .pipe(takeUntil(this._closeToolbar$))
           .subscribe(() => {
-            this._closeToolbar$.next();
+            if (resolveObjectToolbarContentTarget(this.doc, this.doc.selection.value, this.doc.interaction?.get(IMAGE_TOOLBAR_INTERACTION).contentSelection ?? false) !== imgBlock.id) {
+              this._closeToolbar$.next();
+            }
           });
 
         imgBlock.onDestroy$
@@ -512,7 +509,26 @@ export class ImgToolbarPlugin extends DocPlugin {
             this._closeToolbar$.next();
           });
       }, 200);
-    }));
+    };
+    this._sub.add(this.doc.selection.selectionChange$.subscribe(syncToolbar));
+    if (this.doc.interaction) {
+      this._sub.add(this.doc.interaction.policyChanges$.subscribe(() => syncToolbar(this.doc.selection.value)));
+    }
+  }
+
+  private get toolbarEnabled(): boolean {
+    return this.doc.interaction?.get(IMAGE_TOOLBAR_INTERACTION).enabled !== false;
+  }
+
+  private resolveImageToolbarBlock(selection: BlockCraft.Selection | null): BlockCraft.IBlockComponents['image'] | null {
+    if (this.doc.isReadonly || !selection || !isSelectionAlive(selection as any, this.doc)) return null;
+    if (selection.isInSameBlock && selection.firstBlock.flavour === 'image' &&
+        selection.anchor.type === 'selected' && selection.head.type === 'selected') {
+      return selection.firstBlock as BlockCraft.IBlockComponents['image'];
+    }
+    const id = resolveObjectToolbarContentTarget(this.doc, selection, this.doc.interaction?.get(IMAGE_TOOLBAR_INTERACTION).contentSelection ?? false);
+    const block = id ? this._getLiveBlockById(id) : null;
+    return block?.flavour === 'image' ? block as BlockCraft.IBlockComponents['image'] : null;
   }
 
   private imageToolbarOriginRect(
@@ -620,7 +636,7 @@ export class ImgToolbarPlugin extends DocPlugin {
       return;
     }
     if (
-      this.doc.isReadonly ||
+      !this.toolbarEnabled || this.doc.isReadonly ||
       this.doc.readonlyManager.isReadonly(block)
     ) {
       this.closeInlineToolbar();
@@ -772,6 +788,7 @@ export class ImgToolbarPlugin extends DocPlugin {
 
   private _onInlineWrapPointerDown(event: PointerEvent): void {
     if (
+      this.doc.interaction?.policy.native.moveExistingBlocks === false ||
       event.button !== 0 ||
       event.isPrimary === false ||
       this.doc.isReadonly ||

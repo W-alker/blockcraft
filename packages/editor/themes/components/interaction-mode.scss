@@ -1,0 +1,42 @@
+// Interaction chrome is local to this editor and never changes printed document layout.
+@media screen {
+  [data-blockcraft-root='true'][data-bc-interaction-object-floating-handles='false'] {
+    // Only the floating button: object borders, edge hit areas and resize handles retain their own policies.
+    [data-bc-object-floating-handle] { display: none !important; }
+  }
+
+  [data-blockcraft-root='true'][data-bc-interaction-layout-controls='false']:not(.readonly) {
+    bc-drag-handle,
+    bc-object-corner-controls,
+    bc-object-edge-controls,
+    block-resizer,
+    shape-resizer,
+    shape-geometry-editor,
+    shape-adjustment-editor,
+    .object-group-block__move-edge {
+      display: none !important;
+    }
+  }
+  [data-blockcraft-root='true'][data-bc-interaction-group-outline='false']:not(.readonly) {
+    .object-group-block:is(.selected, .bc-object-group--selection-within),
+    .object-group-block > shape-resizer > .shape-resizer__frame {
+      outline: none !important;
+    }
+  }
+}
+
+// Reuse Selection's focused class: focus is often on the editing root rather
+// than the object's DOM node. Restrict chrome to the nearest text-bearing
+// object; ordinary paragraphs/tables never gain object selection semantics.
+@media screen {
+  [data-blockcraft-root='true'][data-bc-interaction-content-resize-handles='true']:not(.readonly):not(.bc-print-content):focus-within {
+    .text-box-block:has(> .text-box-block__surface > [data-bc-text-box-viewport] > .text-box-block__content > .focused)
+      > .text-box-block__surface,
+    .word-art-block.focused > .word-art-block__surface,
+    .shape-block:has(> .shape-block__shell > .shape-block__text-frame > .focused) > .shape-block__shell {
+      > shape-resizer { display: block; }
+      > bc-object-corner-controls,
+      > bc-object-edge-controls { display: none; }
+    }
+  }
+}

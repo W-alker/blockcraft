@@ -4,6 +4,12 @@
 >
 > Last updated: 2026-11-10
 
+## 编辑模式下的块抓手（未发布）
+
+`BlockControllerPlugin` 读取 `doc.interaction.policy.native.layoutControls`，关闭时不通过悬停唤起块抓手，原抓手由策略投影样式收起。已有块排序另由 `moveExistingBlocks` 控制，显隐不是移动授权。
+mixed/design 保持原正文拾取与块抓手行为；design 仅增强聚焦对象的几何控制点显示。
+模式不改变块菜单的数据命令、锁定权限或自定义扩展配置。
+
 ## 标题命令的字号与行高清理
 
 `Cmd/Ctrl+1–4`、Markdown 标题转换和块菜单应用标题时，复用

@@ -53,9 +53,13 @@ export class InlineObjectInteractionController {
     private readonly _doc: BlockCraft.Doc,
     readonly kind: InlineObjectKind,
     private readonly _closeBlockToolbar: () => void,
+    private readonly _toolbarEnabled: () => boolean = () => true,
   ) {}
 
   init(): void {
+    this._subscriptions.add(this._doc.interaction?.policyChanges$.subscribe(() => {
+      if (!this._toolbarEnabled()) this.close()
+    }))
     this._subscriptions.add(
       this._doc.placement.registerObjectLayoutAdapter(this.kind, {
         toInline: ({block}) => this.convertBlockToInline(block, false),
@@ -198,7 +202,7 @@ export class InlineObjectInteractionController {
     event.stopPropagation()
     editable.setInlineRange(offset, 1)
     if (
-      this._doc.isReadonly ||
+      !this._toolbarEnabled() || this._doc.isReadonly ||
       this._doc.readonlyManager.isReadonly(block)
     ) {
       this.close()
@@ -255,6 +259,7 @@ export class InlineObjectInteractionController {
   ): void {
     if (
       this._doc.isReadonly ||
+      this._doc.interaction?.policy.native.moveExistingBlocks === false ||
       this._doc.event.status.isComposing ||
       !context.frame.isConnected ||
       !context.block.containerElement.isConnected

@@ -1,3 +1,5 @@
+import {InteractionModeDebugComponent} from './interaction-mode-debug.component';
+import {createFloatingLayoutExample} from './floating-layout.example';
 import {createParagraphAlignmentExamples} from './paragraph-alignment.examples';
 import { AfterViewInit, ChangeDetectorRef, Component, ComponentRef, ElementRef, NgZone, OnDestroy, ViewChild, inject } from '@angular/core';
 import { OverlayRef } from '@angular/cdk/overlay';
@@ -325,6 +327,7 @@ const ACTION_SECTIONS: DebugSection[] = [
     DocumentScaleSettingsComponent,
     IdlePrefetchDebugConsoleComponent,
     PersonCardDebugComponent,
+    InteractionModeDebugComponent,
     DateCardDebugComponent,
     WeatherDebugComponent,
     RevisionReviewPanelComponent,
@@ -382,6 +385,8 @@ const ACTION_SECTIONS: DebugSection[] = [
             </div>
           </div>
         </section>
+
+        <playground-interaction-mode-debug [doc]="editorDoc" />
 
         <playground-date-card-debug [doc]="editorDoc" (prepare)="initializeEditor()" />
 
@@ -652,24 +657,13 @@ const ACTION_SECTIONS: DebugSection[] = [
           <section
             class="editor-stage"
             [class.editor-stage--flow]="!paginationEnabled">
-            <article #documentHeader class="playground-document-header">
-              <div class="playground-document-header__eyebrow">宿主文档头 · root 外部</div>
-              <h1>BlockCraft 分页坐标验证文档</h1>
-              <div class="playground-document-header__meta">
-                <span class="playground-document-header__avatar">BC</span>
-                <span>BlockCraft Playground</span>
-                <span class="playground-document-header__divider" aria-hidden="true"></span>
-                <span>连续布局与分页布局复用同一 DOM</span>
-              </div>
-            </article>
             @if (virtualizationEnabled) {
               <block-craft-editor
                 #editor
                 [stickyTop]="0"
                 [showFixedToolbar]="false"
                 [virtualizationEnabled]="true"
-                [paginationSparseView]="true"
-                [paginationDocumentHeader]="paginationDocumentHeaderOptions">
+                [paginationSparseView]="true">
               </block-craft-editor>
             } @else {
               <block-craft-editor
@@ -677,8 +671,7 @@ const ACTION_SECTIONS: DebugSection[] = [
                 [stickyTop]="0"
                 [showFixedToolbar]="false"
                 [virtualizationEnabled]="false"
-                [paginationSparseView]="false"
-                [paginationDocumentHeader]="paginationDocumentHeaderOptions">
+                [paginationSparseView]="false">
               </block-craft-editor>
             }
           </section>
@@ -1727,7 +1720,6 @@ const ACTION_SECTIONS: DebugSection[] = [
 })
 export class AppComponent implements AfterViewInit, OnDestroy {
   @ViewChild('editor') editor?: EditorComponent;
-  @ViewChild('documentHeader', {read: ElementRef}) documentHeader?: ElementRef<HTMLElement>;
   @ViewChild('markdownStreamHost') markdownStreamHost?: ElementRef<HTMLElement>;
 
   readonly actionSections = ACTION_SECTIONS;
@@ -1765,11 +1757,6 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   documentScaleViewport: HTMLElement | null = null;
   documentScaleStage: HTMLElement | null = null;
   documentScaleSurface: HTMLElement | null = null;
-  readonly paginationDocumentHeaderOptions = {
-    element: () => this.documentHeader?.nativeElement ?? null,
-    placement: 'content' as const,
-    gap: 24,
-  };
 
   // 临时调试：复制时过滤行内链接属性（a:link），可开关
   copyFilterActive = false;
@@ -1836,6 +1823,12 @@ graph TD
   private _imeScenarioRunner: ImeCollaborationScenarioRunner | null = null;
   ngAfterViewInit(): void {
     this.enablePlaygroundIdlePrefetch(this.editor);
+    if (new URLSearchParams(window.location.search).get('example') === 'floating-layout') {
+      this._autoInitTimer = window.setTimeout(() => {
+        this._autoInitTimer = null;
+        this.initializeEditor();
+      }, 0);
+    }
     // 外置工具栏依赖子编辑器在 ngOnInit 中创建的 Doc；ViewChild 就绪后补一轮
     // 检测，让工具栏从首屏开始位于 .editor-stage 外，而不是等首次用户操作。
     this.cdr.detectChanges();
@@ -2224,6 +2217,10 @@ graph TD
   }
 
   private createDemoSnapshot(): IBlockSnapshot {
+    if (new URLSearchParams(window.location.search).get('example') === 'floating-layout') {
+      const editor = this.requireEditor();
+      return createFloatingLayoutExample(editor.doc, editor.rootId);
+    }
     return JSON.parse(JSON.stringify(demoJSON)) as IBlockSnapshot;
   }
 

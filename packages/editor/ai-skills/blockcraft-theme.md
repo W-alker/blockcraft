@@ -4,6 +4,10 @@
 >
 > Last updated: 2026-11-10
 
+## 对象浮动抓手按钮的交互投影（未发布）
+
+`overrides.native.objectFloatingHandles: false` 投影为根元素的 `data-bc-interaction-object-floating-handles="false"`；主题仅隐藏 `[data-bc-object-floating-handle]`。对象边框、边缘拖动区、缩放与正文 `bc-drag-handle` 保留各自的规则。默认 `true`，不改变既有主题表现；布局控件总开关仍优先。
+
 ## 浮动抓手反馈（未发布）
 
 顶部浮动抓手保持 24×14px；悬停和键盘聚焦使用活跃色 12% 混合背景及 `--bc-shadow-sm`，按下为 20% 混合背景。
@@ -13,12 +17,25 @@ Tooltip 使用 CSES CDK 浮层，提供点击选择和拖拽移动说明，不�
 ## 对象悬停与内部编辑提示
 
 `components/object-interaction-chrome.scss` 统一文本框、形状、艺术字、图片的选择提示：
-悬停或内部编辑时使用 `1px dashed color-mix(in srgb, var(--bc-active-color) 35%, transparent)`，整体选中时使用 1px 实线缩放框。
+内部编辑时使用 `1px dashed color-mix(in srgb, var(--bc-active-color) 35%, transparent)`，整体选中时使用 1px 实线缩放框。
+混合模式不因悬停显示对象边框或抓手（含图片、贴纸与填写区）；设计模式保留悬停提示。文字/键盘聚焦和整体选中入口保持可用。
 虚实边框以原虚线位置为准：文本框/艺术字 `outline-offset: -1px`，形状 `0px`，图片 `2px`；整体组合保留 4px 外扩。两态均为 1px，仅改变线型与颜色。
 缩放抓手保持 8px，回到各自的边框位置。旋转按钮采用 `--bc-active-color` 实心圆；按钮和 14px 连接线跟随北侧抓手的同一偏移定位，两端分别贴合旋转按钮和北侧抓手；媒体控件的连续悬停命中区域保持。形状默认仅显示有限参数调整点；显式顶点模式使用 `shape-block--editing-points` 本地视图类，临时隐藏聚焦框及缩放、旋转、沿边拖动控件，只显示真实路径顶点与曲线控制点。退出后恢复原框线和抓手。
 旋转按钮悬停与拖动统一使用 24px 环形箭头光标（白色描边、黑色箭头），热点位于箭头尖端；资源不可用时回退 `crosshair`。抓手尺寸、命中区和旋转事务保持。
 设计模式内部编辑时已显示的抓手框也采用淡虚线；不改变抓手显隐、命中带或拖动事务。
 只作用于编辑态屏幕提示，不改变对象保存的轮廓、快照、只读锁定装饰及打印；填写区和贴纸保持原有样式。
+
+## 交互策略视图标记（未发布）
+
+`doc.interaction` 投影下列根属性（布尔值均为字符串 `true|false`）：
+- `data-bc-interaction-layout-controls`：布局控件总显隐。
+- `data-bc-interaction-hover-controls`：悬停反馈。
+- `data-bc-interaction-content-resize-handles`：文字聚焦时的缩放抓手。
+- `data-bc-interaction-group-outline`：组合选中和内部聚焦边框。
+- `data-bc-interaction-move-existing-blocks`：移动意图；行为由控制器检查，不能用 CSS 代替。
+
+主题以能力属性为条件，不再用模式名决定交互。`data-bc-interaction-mode="mixed|immersive|design"` 仍提供标签兼容，但存在个性化覆盖时不能推导有效行为。只读时模式标签为 mixed，布尔投影为 false；主题仍受只读和 screen/打印边界约束。销毁时清理这些属性。
+`themes/components/interaction-mode.scss` 沿用已有 `.focused` 投影显示内部抓手，关闭布局控件优先；不改变选区、内容布局或打印。属性不能作为权限依据，也不进入文档数据。
 
 ## 代码块行容器
 
@@ -391,12 +408,12 @@ block-axis space, so native caret hit testing reaches the paragraph throughout
 the frame without a blank-area event handler. The WordArt presentation variant
 does not grow its last child because it owns vertical alignment itself.
 
-形状的边缘入口由 `bc-object-edge-controls` 的局部样式控制，只有四条边缘带和键盘聚焦触发显框；
+形状的边缘入口由 `bc-object-edge-controls` 与对象交互主题控制；混合模式仅聚焦时显框，设计模式也允许悬停显框；
 中心不拦截文字，命中带外侧 6px、内侧 2px，选中后交给已有形状操作控件。
 该入口不复用整块 hover 的主题 mixin；嵌套形状出现时外层容器入口让位。
 
 文本框、可编辑艺术字和填写区共享内部 `object-corner-controls` 主题 mixin，
-负责显示各自 `bc-object-corner-controls` 的轻量入口。整块悬停或内部聚焦时，
+负责显示各自 `bc-object-corner-controls` 的轻量入口。设计模式整块悬停、各模式内部聚焦时（沉浸模式除外），
 细边框与顶部 24×14px 浮动抓手同时出现；默认不再创建四个轻量 L 角、角部按钮与其命中区。
 顶部抓手沿对象顶边居中，使用 `bc_yidong` 字体图标，沿用轻量入口的显隐和打印排除规则。
 颜色使用 `--bc-active-color` 与背景主题变量，正文编辑区域不作为拖动面。

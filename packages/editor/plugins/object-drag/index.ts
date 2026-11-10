@@ -21,6 +21,7 @@ export class ObjectDragPlugin extends DocPlugin {
   }
 
   private onPointerDown(event: PointerEvent): void {
+    if (this.doc.interaction?.policy.native.moveExistingBlocks === false) return
     if (event.defaultPrevented || event.button !== 0 || this.doc.isReadonly) return
     if (this.doc.dragController.state !== 'idle' || this.doc.placement.state !== 'idle') return
     const target = event.target

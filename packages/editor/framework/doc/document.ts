@@ -1,4 +1,6 @@
 import { DocCRUD } from "./crud";
+import {DocumentInteraction} from './interaction-mode'
+import type {EditorInteractionMode, EditorInteractionConfig} from './interaction-policy'
 import type {DocumentCompositionSession} from './composition'
 import {attachCompositionDocument, detachCompositionDocument, assertCompositionRoot, assertCompositionActive, DocumentCompositionMutationError} from './composition-guards'
 import { ComponentRef, Injector, NgZone, ViewContainerRef } from "@angular/core";
@@ -74,6 +76,10 @@ export interface DocConfig {
   embeds?: [string, EmbedConverter][]
   plugins?: DocPlugin[]
   readonly?: boolean
+  /** Local editing interaction; never persisted or synchronized. Default: mixed. */
+  interactionMode?: EditorInteractionMode
+  /** Local interaction preset and sparse overrides. Takes precedence over interactionMode. */
+  interaction?: EditorInteractionConfig
   /** Stable current user id used to own block locks. Omit to disable lock control. */
   currentUserId?: string
   /** Default origin for new block locks created by generic editor controls. */
@@ -134,6 +140,9 @@ export class BlockCraftDoc {
   readonly model = new BlockModelGraph(this)
   readonly crud = new DocCRUD(this)
   readonly vm = new DocVM(this)
+  readonly interaction = new DocumentInteraction(this)
+  /** Compatibility alias for preset selection. */
+  readonly interactionMode = this.interaction
   readonly event = new UIEventDispatcher(this)
   readonly selection = new SelectionManager(this)
   readonly clipboard = this.runtime.createClipboard(this)
@@ -293,6 +302,7 @@ export class BlockCraftDoc {
     if (this._subsystemsDisposed) return
     this._subsystemsDisposed = true
     detachCompositionDocument(this)
+    this.interaction.destroy()
     this.objectAnimation.destroy()
     this.blockNavigation.destroy()
     this.virtualization.dispose()

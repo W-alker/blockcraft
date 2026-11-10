@@ -2,9 +2,44 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-10-30
+> Last updated: 2026-11-10
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
+
+## 交互配置与模式预设（未发布）
+
+配置 `DocConfig.interaction?: EditorInteractionConfig`。`preset` 默认为 `mixed`，也可为 `immersive`、`design`；`overrides` 按原生能力和插件分组。旧 `interactionMode` 配置仍可作为缺省预设；新 `interaction.preset` 优先。
+`doc.interaction` 是唯一状态所有者；`doc.interactionMode` 和 `DocumentInteractionMode` 是兼容别名。模式仅提供默认值，原生功能与插件读取解析后的策略。
+
+```typescript
+const interaction: EditorInteractionConfig = {
+  preset: 'mixed',
+  overrides: {
+    native: {hoverControls: false, contentResizeHandles: true, moveExistingBlocks: false},
+    plugins: {objectToolbar: {contentSelection: true}, imageToolbar: {contentSelection: false}},
+  },
+};
+doc.interaction.configure(interaction); // 原子替换，缺省 preset 为 mixed
+const changed = doc.interaction.setOverrides({native: {hoverControls: true}}); // 替换覆盖，保留当前预设
+doc.interaction.setOverrides({}); // 清空覆盖，恢复当前预设
+doc.interaction.set('design'); // 切换预设并清空覆盖；选择同一预设也会清空
+const policy = doc.interaction.policy; // 已合并、深度冻结的有效策略
+const subscription = doc.interaction.policyChanges$.subscribe(({preset, overrides, policy}) => updateControls(policy));
+subscription.unsubscribe();
+```
+
+插件字段由实际安装的插件通过 `interactionConfigs` 声明，核心不再维护插件字段清单。`doc.interaction.definitions` 是当前实例的元数据，`doc.interaction.presets` 是包含已安装插件默认值的完整三模式预设。框架级 `EDITOR_INTERACTION_PRESETS` 仅包含原生项；纯函数 `resolveEditorInteraction(config, definitions?)` 需要显式传入插件声明，缺省不包含任何插件。
+
+内置声明分别导出为 `OBJECT_TOOLBAR_INTERACTION`、`GROUP_TOOLBAR_INTERACTION`、`IMAGE_TOOLBAR_INTERACTION`、`REGION_TOOLBAR_INTERACTION`。推荐用 `doc.interaction.get(OBJECT_TOOLBAR_INTERACTION).contentSelection` 获取类型化值；通用动态访问使用 `policy.plugins['objectToolbar']?.['contentSelection']`。get 必须传实际注册的声明对象。
+
+`native` 支持 `layoutControls`、`objectFloatingHandles`、`hoverControls`、`contentResizeHandles`、`moveExistingBlocks`、`groupOutline`，均为 boolean。关闭布局控件优先于 hover/内部抓手显隐；移动开关独立控制已有块拖动及浮动对象方向键微调，仍允许合法的新对象插入与正文编辑。组合边框可独立于组合工具栏配置。`objectFloatingHandles` 默认开启；关闭仅收起对象顶部浮动抓手按钮，不影响正文块抓手、边框、整体选中的缩放抓手及工具栏。
+`plugins.objectToolbar/imageToolbar/regionToolbar.contentSelection` 独立控制内部选区触发；`plugins.groupToolbar.enabled` 控制整组选中工具栏。组合不继承成员选区。既有整块工具栏与 callout 正文触发保持原语义，配置不会自动安装插件；对未安装插件的覆盖会被拒绝。初始配置无效抛 TypeError，后装插件应先 register，再设置其覆盖。
+
+`configure()` / `setOverrides()` / `set()` 返回 boolean：IME、按住指针、流式/浮动拖动期间拒绝变更，不排队；非法覆盖、非法预设和已销毁实例返回 false。构造参数不合法时抛 TypeError。输入对象会复制并深度冻结，不能直接修改返回的 policy/overrides；空分组会移除。
+`policyChanges$` 在原子更新与根属性投影后通知，覆盖改变但预设不变也会通知；旧 `changes$` 仅通知预设标签变化。相同配置是幂等操作。
+
+配置不写入 Yjs、快照、Undo 或浏览器存储，不主动改变选区或滚动位置。只读时暂停编辑投影，恢复编辑后继续当前配置。策略是交互意图，不是修改权限，锁与只读仍优先；宿主合法的数据 API 不受 UI 开关限制。
+Playground 左侧调试台根据当前 Doc 声明自动生成“个性化交互”控件（布尔、枚举、数值、文本），支持跟随预设和恢复；固定工具栏不增加切换入口。插件声明、默认值及校验规则见 `blockcraft-plugin.md`。
 
 ## 对象动画与阅读表面（未发布）
 
@@ -2498,3 +2533,7 @@ authorizeStructureTransform: ({purpose}) =>
 合同位于框架 `framework/doc/view/block-expansion-host.ts`，可供表格、图表及其他需要展开的块接入。控制器仅管理本地视图，不写 Yjs，不重新创建块、编辑器或协作会话。
 Mermaid 块仍持有虚拟化 lease、可视化编辑器、只读检查与历史；detach 时收起宿主投影，destroy 时释放控制器。
 各块显式消费此 Token 后接入；Mermaid 是首个框架消费者。未配置时保持该块原有视图行为；不得依赖组件私有控制器或篡改已安装包。
+
+### 专注预设的工具栏开关（未发布）
+
+已安装的 `textToolbar`、`textMarker`、`objectToolbar`、`imageToolbar`、`regionToolbar`、`stickerToolbar`、`materialToolbar`、`groupToolbar` 均由各自插件声明 `enabled` 字段；immersive 默认为 `false`，mixed/design 默认为 `true`。需要专注时仍显示某一工具栏，可覆盖 `plugins: {textToolbar: {enabled: true}}` 等字段。框架不枚举插件命名空间；未安装的插件不得配置。

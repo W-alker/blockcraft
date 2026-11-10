@@ -1,3 +1,5 @@
+import {STICKER_TOOLBAR_INTERACTION} from './interaction-config'
+export {STICKER_TOOLBAR_INTERACTION} from './interaction-config'
 import {fromEvent, Subject, Subscription, takeUntil, type Observable} from 'rxjs'
 import {DocPlugin, getPositionWithOffset} from '../../framework'
 import {nextTick} from '../../global'
@@ -8,6 +10,7 @@ import {InlineObjectToolbarComponent, INLINE_OBJECT_LAYOUT_OPTIONS} from '../obj
 
 /** Layout controls for the selected Sticker Block; movement stays in ObjectDragPlugin. */
 export class StickerToolbarPlugin extends DocPlugin {
+  override readonly interactionConfigs = [STICKER_TOOLBAR_INTERACTION]
   override name = 'sticker-toolbar'
   private readonly subscriptions = new Subscription()
   private readonly close$ = new Subject<void>()
@@ -17,9 +20,10 @@ export class StickerToolbarPlugin extends DocPlugin {
   private inlineObject?: InlineObjectInteractionController
 
   override init(): void {
-    this.inlineObject = new InlineObjectInteractionController(this.doc, 'sticker', this.close)
+    this.inlineObject = new InlineObjectInteractionController(this.doc, 'sticker', this.close, () => this.toolbarEnabled)
     this.inlineObject.init()
-    this.subscriptions.add(this.doc.selection.selectionChange$.subscribe(selection => {
+    const syncToolbar = (selection: BlockCraft.Selection | null) => {
+      if (!this.toolbarEnabled) { this.close(); return }
       const stickerSelection = selection && selection.isInSameBlock
         && selection.anchor.type === 'selected' && selection.head.type === 'selected'
         && this.doc.model.getFlavour(selection.anchor.blockId) === 'sticker'
@@ -31,7 +35,9 @@ export class StickerToolbarPlugin extends DocPlugin {
         return
       }
       if (block !== this.active) this.open(block)
-    }))
+    }
+    this.subscriptions.add(this.doc.selection.selectionChange$.subscribe(syncToolbar))
+    this.subscriptions.add(this.doc.interaction?.policyChanges$.subscribe(() => syncToolbar(this.doc.selection.value)))
     this.subscriptions.add(this.doc.subscribeReadonlyChange(readonly => {
       if (readonly) this.close()
     }))
@@ -65,7 +71,12 @@ export class StickerToolbarPlugin extends DocPlugin {
       && !this.doc.placement.isInObjectGroup(block.id)
   }
 
+  private get toolbarEnabled(): boolean {
+    return this.doc.interaction?.get(STICKER_TOOLBAR_INTERACTION).enabled !== false
+  }
+
   private open(block: BlockCraft.BlockComponent): void {
+    if (!this.toolbarEnabled) return
     this.inlineObject?.close()
     this.close()
     this.active = block

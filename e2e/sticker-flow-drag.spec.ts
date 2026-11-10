@@ -148,9 +148,10 @@ for (const flavour of ['sticker', 'image']) for (const inColumn of [false, true]
 }
 
 for (const flavour of ['sticker', 'image']) {
-  test(`${flavour} 未选中时悬停显示八向抓手，缩放不触发排序，旋转抓手可连续移入`, async ({page}) => {
+  test(`${flavour} 设计模式未选中时悬停显示八向抓手，缩放不触发排序，旋转抓手可连续移入`, async ({page}) => {
     const {sourceId} = await setup(page, false, flavour)
     const source = page.locator(`[data-block-id="${sourceId}"]`)
+    await source.evaluate(element => (window as any).ng.getComponent(element).doc.interactionMode.set('design'))
     const surface = source.locator(flavour === 'sticker' ? '.sticker-block__surface' : '.img-wrapper')
     await page.mouse.move(0, 0)
     await expect(source).not.toHaveClass(/\bselected\b/)

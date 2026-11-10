@@ -5,7 +5,7 @@
 > For configuring existing built-in plugins, see `blockcraft-plugins-ref.md`.
 > For event system internals, see L2: `blockcraft-event.md`.
 >
-> Last updated: 2026-10-16
+> Last updated: 2026-11-10
 
 ## 文档右键菜单装配
 
@@ -15,15 +15,58 @@
 菜单使用 CDK Overlay，关闭/销毁清理监听；不更改通用 Selection/Input 事件默认行为。
 详细能力及 ClipboardManager 命令入口见 `blockcraft-plugins-util.md`。
 
+## 插件声明交互配置（未发布）
+
+插件通过纯数据 `interactionConfigs` 声明配置，不修改 Doc 核心字段清单或调试台。每个声明有独立 namespace，允许一个插件提供多个声明。用 `defineInteractionConfig()` 校验、复制并冻结声明，在模块级导出，避免初始化时依赖 `this.doc`。
+
+```typescript
+import {DocPlugin, defineInteractionConfig} from '@ccc/blockcraft';
+import {Subscription} from 'rxjs';
+
+export const MY_INTERACTION = defineInteractionConfig({
+  namespace: 'myFeature',
+  label: '我的插件',
+  fields: {
+    showEntry: {type: 'boolean', label: '显示入口', default: false, presets: {design: true}},
+    delay: {type: 'number', label: '显示延迟', default: 100, min: 0, max: 1000, integer: true},
+    side: {type: 'select', label: '入口位置', default: 'left', options: [
+      {value: 'left', label: '左侧'}, {value: 'right', label: '右侧'},
+    ]},
+    caption: {type: 'text', label: '入口名称', default: '工具', maxLength: 20},
+  },
+});
+
+export class MyFeaturePlugin extends DocPlugin {
+  override name = 'my-feature';
+  override readonly interactionConfigs = [MY_INTERACTION];
+  private subscription?: Subscription;
+  init() {
+    this.subscription = this.doc.interaction.policyChanges$.subscribe(() => {
+      const config = this.doc.interaction.get(MY_INTERACTION); // 类型化、只读值
+      // 用 config.showEntry / delay / side / caption 更新自己的入口。
+    });
+  }
+  destroy() { this.subscription?.unsubscribe(); }
+}
+```
+
+宿主传 `interaction.overrides.plugins.myFeature`；解析优先级为字段 default → 当前 preset 字段值 → 用户覆盖。`boolean`、`number`、`select`、`text` 的值分别为布尔、有限数值、选项字符串、文本字符串。数值支持 min/max/integer，文本支持 maxLength；默认值和每个预设值也受相同校验。未知字段、未注册命名空间和非法值拒绝，`native` 为保留命名空间。
+
+Doc 构造时收集 `DocConfig.plugins[]` 全部声明，再解析初始配置，因此任一插件 init 都能读取其他已声明配置，不受初始化顺序影响。后装插件在 `register(doc)` 内、事件注册及 init 前登记；同一实例的声明登记幂等，不表示可重复调用 register/init。不同插件占用同一 namespace（即使字段相同）会抛 TypeError，整批声明原子失败；活动输入/手势或 Doc 已销毁时后装登记抛 Error。
+
+`get()` 必须传实际注册的声明对象，不接受复制对象或同名伪造声明。可从导出的声明获得类型推断；需要按字符串遍历时使用 `policy.plugins[namespace]`。`definitions` 提供冻结的表单元数据，`presets` 提供当前实例完整预设。Playground 按 definitions 自动生成控件，未安装插件不显示。
+
+注册表属于 Doc，无进程级共享状态；随 Doc 释放。目前无独立插件卸载协议，手动调用 plugin.destroy() 不删除声明；后装插件应先注册，再设置覆盖。配置不能替代只读/锁授权，不自动安装插件，也不把插件构造参数自动并入交互配置。
+
 ## Plugin Lifecycle
 
 ```
-DocConfig.plugins[] → doc._initPlugins() → plugin.register(doc) → registerClassEvents() → plugin.init()
+DocConfig.plugins[] → 收集交互声明并解析初始配置 → plugin.register(doc) → registerClassEvents() → plugin.init()
                                                                                               ↓
                                                           doc.destroy() ← plugin.destroy() ←──┘
 ```
 
-1. Framework calls `register(doc)` — sets `this.doc`, wires `@EventListen`/`@BindHotKey` decorators
+1. Framework calls `register(doc)` — ensures interaction declarations are registered, sets `this.doc`, wires `@EventListen`/`@BindHotKey` decorators
 2. Framework calls `init()` — your setup code runs
 3. On doc destruction, framework calls `destroy()` — your cleanup code runs
 

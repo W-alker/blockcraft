@@ -6,6 +6,37 @@
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
+## 工具栏交互声明（未发布）
+
+`ObjectFormatToolbarPlugin.interactionConfigs` 注册 `OBJECT_TOOLBAR_INTERACTION`（objectToolbar）与 `GROUP_TOOLBAR_INTERACTION`（groupToolbar）；`ImgToolbarPlugin` 注册 `IMAGE_TOOLBAR_INTERACTION`（imageToolbar）；`CalloutToolbarPlugin` 注册 `REGION_TOOLBAR_INTERACTION`（regionToolbar）。声明位于各自目录 `interaction-config.ts`，由插件入口导出，默认值与三模式覆盖由插件拥有。
+插件通过 `doc.interaction.get(声明对象)` 读取类型化配置，继续订阅 `policyChanges$`。已有配置路径、构造参数和浮动工具栏生命周期保留；不存在的插件不会在实例注册表与调试台中出现。
+
+## 专注预设停用浮动编辑工具栏（未发布）
+
+各插件声明自己的 `enabled` 字段：`objectToolbar`、`imageToolbar`、`regionToolbar`、`stickerToolbar`、`materialToolbar`。默认 `true`，immersive 预设为 `false`；`groupToolbar.enabled` 继续独立控制组合工具栏。切换关闭时清理现有浮层及待打开计时器，点击、选区、焦点和行内对象路径均不会重开；切回 mixed/design 后恢复原触发规则。物料配置由 `MaterialToolbarPlugin` 拥有，兼容 `WeatherToolbarPlugin` 继承使用，不应同时安装两者。
+
+这是停用插件的浮动 UI 能力，不卸载渲染器、布局转换适配器或正文命令；正文输入、原生选区与行内对象复制仍可用。图片查看、附件打开等内容访问功能不属于本开关。高级宿主可在 immersive 下用 `overrides.plugins.<namespace>.enabled = true` 单独恢复所需工具栏。
+
+`InlineObjectInteractionController` 的第四个可选构造参数 `toolbarEnabled: () => boolean` 默认返回 `true`；所属插件传入配置读取回调，策略变更时关闭行内浮层，选择 Embed 的模型路径保留。
+
+## 可配置的内部选区工具栏（未发布）
+
+`ObjectFormatToolbarPlugin`、`ImgToolbarPlugin` 和 `CalloutToolbarPlugin` 分别读取
+`policy.plugins.objectToolbar/imageToolbar/regionToolbar.contentSelection`（design 预设默认开启），
+根据模型选区两端查找同一个最近对象，为文本框、艺术字、形状、图片说明、内容区域显示对应浮动工具栏。
+同一对象内跨段落可显示；跨对象、gap、失效目标或只读目标不扩展显示。
+组合是查找边界，不因成员内部选区弹出组合工具栏；成员自身可以显示自己的工具栏，整组选中仍保留组合菜单。
+订阅 `doc.interaction.policyChanges$`，预设和覆盖修改均重新判定现有选区。新入口不创建整块选区，也不为正在编辑的艺术字添加整块选中类；
+工具栏复用同一实例处理连续文字输入，从内部选区提交的对象格式变更进入普通用户事务；提交时仍保留的文字选区会记录到 Undo。
+未覆盖时 mixed/design 的既有工具栏触发规则保留；immersive 默认关闭以下编辑工具栏。`plugins.groupToolbar.enabled` 独立控制整组工具栏。规则位于 Plugin 层，不改变 `objectFormat.getSelectionIds()` 的整块选择契约。
+
+## 模式下的对象拖动（未发布）
+
+`native.layoutControls` 控制几何控件显隐；`native.moveExistingBlocks` 控制 ObjectDrag、浮动 Placement、已有块排序、
+行内环绕图片/形状/艺术字的移动入口（immersive 预设两项均关闭）；对象格式命令与媒体内容操作继续可用。
+underlay 对象的 CDK 控制层随模式切换移除/重建，避免正文下方对象通过浮层继续被误拖。
+mixed/design 沿用原正文编辑和对象移动/排序事务；design 在对象文字聚焦时直接显示缩放抓手。
+
 ## 浮动文本工具栏默认按钮（未发布）
 
 `FloatTextToolbarPlugin` 默认不再显示上标、下标和行内公式按钮。
@@ -874,7 +905,8 @@ new BookmarkBlockExtensionPlugin();
 Callout shows its existing floating color toolbar when editing a direct child
 (`widgets/callout.toolbar.ts`). `render-unit` uses its own
 `widgets/render-unit.toolbar.ts` on whole-block selection, including an empty
-region. Two first-level rail buttons reuse the shared object popup: appearance
+region; design mode also accepts a selection inside that nearest region.
+Two first-level rail buttons reuse the shared object popup: appearance
 contains fill/outline tabs, while text contains inner-padding/typography tabs.
 The outline tab keeps uniform width, style and color controls and can edit each
 side independently through `borderTop` / `borderRight` / `borderBottom` /

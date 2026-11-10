@@ -27,7 +27,8 @@ import {ChangeDetectionStrategy, Component, Input} from '@angular/core'
       pointer-events: none; opacity: 0;
       outline: 1px solid color-mix(in srgb, var(--bc-active-color) 55%, transparent);
     }
-    :host(:hover), :host(:focus-within) { opacity: 1; }
+    /* Pointer hover is owned by the mode-aware object interaction theme. */
+    :host(:focus-within) { opacity: 1; }
     button {
       position: absolute; box-sizing: border-box; margin: 0; padding: 0;
       border: 0; background: transparent; outline: none;

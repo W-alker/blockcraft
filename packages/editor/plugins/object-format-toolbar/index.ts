@@ -1,3 +1,5 @@
+import {OBJECT_TOOLBAR_INTERACTION, GROUP_TOOLBAR_INTERACTION} from './interaction-config'
+export {OBJECT_TOOLBAR_INTERACTION, GROUP_TOOLBAR_INTERACTION} from './interaction-config'
 import {FloatingToolbarState, type FloatingToolbarOptions} from '../../components/floating-toolbar';
 import {
   FlexibleConnectedPositionStrategy,
@@ -45,6 +47,7 @@ import {
   isObjectToolbarOwnedTarget,
 } from "../object-layout/object-toolbar-interaction";
 import { InlineObjectInteractionController } from "../object-layout/inline-object-interaction";
+import { resolveObjectToolbarContentTarget } from "../object-layout/object-toolbar-content-target";
 import type { ShapeBlockComponent } from "../../blocks/shape-block";
 
 export * from "./object-format-toolbar.component";
@@ -79,6 +82,7 @@ export interface ObjectFormatToolbarOptions extends FloatingToolbarOptions {}
 
 /** One object toolbar owner for Shape, TextBox, WordArt and mixed selection. */
 export class ObjectFormatToolbarPlugin extends DocPlugin {
+  override readonly interactionConfigs = [OBJECT_TOOLBAR_INTERACTION, GROUP_TOOLBAR_INTERACTION]
   override name = "object-format-toolbar";
 
   readonly toolbarState: FloatingToolbarState;
@@ -111,6 +115,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   private previewFrame: number | null = null;
   private pendingPreview?: ObjectFormatPatch;
   private activeWordArtHost?: HTMLElement;
+  private editingContents = false;
   private textBoxResizerGesture?: { blockId: string; pointerId: number };
 
   init(): void {
@@ -118,8 +123,8 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       if (collapsed) this.finishPointEditing();
     }));
     this.inlineObjects = [
-      new InlineObjectInteractionController(this.doc, "shape", this.close),
-      new InlineObjectInteractionController(this.doc, "word-art", this.close),
+      new InlineObjectInteractionController(this.doc, "shape", this.close, () => this.toolbarEnabled),
+      new InlineObjectInteractionController(this.doc, "word-art", this.close, () => this.toolbarEnabled),
     ];
     this.inlineObjects.forEach((controller) => controller.init());
     this.subscription.add(
@@ -133,6 +138,14 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
         if (readonly) this.close();
       }),
     );
+    if (this.doc.interaction) {
+      this.subscription.add(this.doc.interaction.policyChanges$.subscribe(() => {
+        if (!this.doc.interaction.get(OBJECT_TOOLBAR_INTERACTION).contentSelection && this.editingContents) this.close();
+        if (!this.doc.interaction.get(GROUP_TOOLBAR_INTERACTION).enabled && this.toolbarKind === "group") this.close();
+        this.syncSelectionWithinGroupFrames(this.doc.selection.value);
+        this.sync(this.doc.selection.value);
+      }));
+    }
     this.subscription.add(
       fromEvent<PointerEvent>(document, "pointerdown", { capture: true })
         .pipe(takeUntil(this.doc.onDestroy$))
@@ -195,6 +208,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     this.panelResizeObserver = undefined;
     this.activeWordArtHost?.classList.remove("word-art-block--object-selected");
     this.activeWordArtHost = undefined;
+    this.editingContents = false;
     this.restorePreview();
     this.releaseRetainedObjectChrome();
     this.close$.next();
@@ -216,13 +230,17 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     this.textBoxResizerGesture = undefined;
   };
 
+  private get toolbarEnabled(): boolean {
+    return this.doc.interaction?.get(OBJECT_TOOLBAR_INTERACTION).enabled !== false;
+  }
+
   private sync(selection: BlockCraft.Selection | null): void {
     if (this.doc.isReadonly) {
       this.close();
       return;
     }
     if (!selection) {
-      if (this.ownsInteraction()) {
+      if (this.ownsInteraction() && (this.toolbarKind === "group" ? this.doc.interaction?.get(GROUP_TOOLBAR_INTERACTION).enabled !== false : this.toolbarEnabled)) {
         this.retainObjectChrome();
         return;
       }
@@ -235,11 +253,18 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     }
     const groupState = this.resolveGroupToolbarState(selection);
     if (groupState) {
+      if (this.doc.interaction?.get(GROUP_TOOLBAR_INTERACTION).enabled === false) {
+        this.close();
+        return;
+      }
       this.openGroupToolbar(groupState);
       this.retainObjectChrome(true);
       return;
     }
-    const state = this.doc.objectFormat.readSelection();
+    if (!this.toolbarEnabled) { this.close(); return; }
+    const selectedState = this.doc.objectFormat.readSelection();
+    const contentTarget = !selectedState && resolveObjectToolbarContentTarget(this.doc, selection, this.doc.interaction?.get(OBJECT_TOOLBAR_INTERACTION).contentSelection ?? false);
+    const state = selectedState || (contentTarget ? this.doc.objectFormat.readSelection([contentTarget]) : null);
     const parentId = state && state.blockIds.length > 1
       ? this.doc.model.getParentId(state.blockIds[0]!)
       : null;
@@ -250,20 +275,22 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       this.close();
       return;
     }
-    this.open(state, false);
+    this.open(state, false, !!contentTarget);
     this.retainObjectChrome(true);
   }
 
   private open(
     state: BlockObjectFormatSelectionState,
     groupSelection: boolean,
+    editingContents = false,
   ): void {
     const key = state.blockIds.join("\u0000");
     if (
       this.overlayRef &&
       this.toolbarKind === "format" &&
       this.activeIds.join("\u0000") === key &&
-      this.component?.groupSelection === groupSelection
+      this.component?.groupSelection === groupSelection &&
+      this.editingContents === editingContents
     ) {
       this.componentState(state);
       return;
@@ -273,7 +300,8 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       .map((id) => this.doc.vm.get(id)?.instance)
       .find((block) => block?.hostElement.isConnected);
     if (!anchor) return;
-    if (anchor.flavour === "word-art") {
+    this.editingContents = editingContents;
+    if (anchor.flavour === "word-art" && !editingContents) {
       anchor.hostElement.classList.add("word-art-block--object-selected");
       this.activeWordArtHost = anchor.hostElement;
     }
@@ -406,14 +434,27 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   }
 
   private applyPatch(patch: ObjectFormatPatch): void {
+    const contentTargetMatches = this.activeIds.length === 1 &&
+      resolveObjectToolbarContentTarget(this.doc, this.doc.selection?.value, this.doc.interaction?.get(OBJECT_TOOLBAR_INTERACTION).contentSelection ?? false) === this.activeIds[0];
     const allowDetachedSelection =
       this.doc.objectFormat.getSelectionIds() === null &&
-      this.ownsInteraction();
-    const result = this.doc.objectFormat.updateSelection(
+      (this.editingContents
+        ? contentTargetMatches || (!this.doc.selection.value && this.ownsInteraction())
+        : this.ownsInteraction());
+    const update = () => this.doc.objectFormat.updateSelection(
       this.activeIds,
       patch,
       { allowDetachedSelection },
     );
+    let result!: ReturnType<BlockCraft.Doc['objectFormat']['updateSelection']>;
+    if (this.editingContents && allowDetachedSelection) {
+      // This new entry edits an object while the text caret remains authoritative.
+      // Use a normal user transaction and capture that caret for Undo.
+      this.doc.crud.undoManager.captureSelectionBeforeChange();
+      this.doc.crud.transact(() => { result = update(); });
+    } else {
+      result = update();
+    }
     if (
       result.reason === "selection-changed" ||
       result.reason === "target-missing"
@@ -676,6 +717,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     if (
       target === this.doc.root.hostElement &&
       (sameIds(this.doc.objectFormat.getSelectionIds(), this.activeIds) ||
+        (this.activeIds.length === 1 && resolveObjectToolbarContentTarget(this.doc, this.doc.selection.value, this.doc.interaction?.get(OBJECT_TOOLBAR_INTERACTION).contentSelection ?? false) === this.activeIds[0]) ||
         sameIds(
           this.resolveGroupToolbarSelectionIds(this.doc.selection.value),
           this.activeIds,
@@ -1068,7 +1110,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     selection: BlockCraft.Selection | null,
   ): void {
     const nextHosts = new Set<HTMLElement>();
-    if (selection) {
+    if (selection && this.doc.interaction?.policy.native.groupOutline !== false) {
       const endpointIds = new Set([
         selection.anchor.blockId,
         selection.head.blockId,
@@ -1191,7 +1233,9 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       this.doc.selection.selectBlock(block);
       return;
     }
-    if (this.overlayRef) this.close();
+    if (this.overlayRef && !(this.editingContents && this.activeIds.length === 1 && this.activeIds[0] === block.id)) {
+      this.close();
+    }
     const editorTarget = Boolean(target.closest(".word-art-block__editor"));
     if (editorTarget && this.isEditingWordArt(block.id)) return;
     if (!editorTarget) {

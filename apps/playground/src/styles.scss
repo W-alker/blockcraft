@@ -355,9 +355,7 @@ template-edit-surface [data-bc-render-unit].selected{
    这里先在模板页兜底验证效果；确认后再走框架修复流程。 */
 .tpl-page .columns-block{ display:flow-root }
 
-/* Playground 文档坐标验证：工具栏属于编辑外壳，header 与 root 才属于同一
-   794px 文档列。分页插件会临时把同一个 header 节点投影到首页。 */
-playground-home .editor-stage{ --playground-document-width:794px }
+/* Playground 外壳占满宿主；分页纸张宽度由分页插件独立管理。 */
 playground-home .playground-editor-toolbar{
   box-sizing:border-box; width:100%; margin:0 0 12px; border-radius:12px;
   background:var(--bc-bg-elevated); z-index:10;
@@ -366,31 +364,8 @@ playground-home .editor-stage > block-craft-editor{
   display:block; box-sizing:border-box; width:100%; margin:0;
 }
 playground-home .editor-stage--flow > block-craft-editor{
-  width:var(--playground-document-width); margin:0 auto;
+  width:100%; min-width:0; margin:0;
 }
 playground-home .editor-stage--flow .editor-container{
   border-left-width:0; border-right-width:0;
-}
-playground-home .playground-document-header{
-  box-sizing:border-box; width:var(--playground-document-width); margin:0 auto 24px;
-  padding:28px 56px 0; color:var(--bc-color);
-}
-playground-home .playground-document-header.bc-pagination-document-header{ padding:0 }
-playground-home .playground-document-header__eyebrow{
-  margin-bottom:8px; color:var(--bc-active-color); font-size:11px; font-weight:700;
-  letter-spacing:.08em; text-transform:uppercase;
-}
-playground-home .playground-document-header h1{
-  margin:0; font-size:30px; line-height:1.25; letter-spacing:-.02em;
-}
-playground-home .playground-document-header__meta{
-  display:flex; align-items:center; gap:10px; margin-top:14px;
-  color:var(--bc-color-light); font-size:12px; line-height:24px;
-}
-playground-home .playground-document-header__avatar{
-  display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px;
-  border-radius:50%; color:#fff; background:var(--bc-active-color); font-size:9px; font-weight:800;
-}
-playground-home .playground-document-header__divider{
-  width:1px; height:14px; background:var(--bc-border-color);
 }

@@ -117,7 +117,7 @@ export class BlockControllerPlugin extends DocPlugin {
       fromEvent<MouseEvent>(this.doc.root.hostElement, 'mouseover')
         .pipe(takeUntil(this.doc.onDestroy$))
         .subscribe(e => {
-          if (this.doc.isReadonly || this.isHidden || this._cpr.instance.menuPinned) return
+          if (this.doc.isReadonly || this.doc.interaction?.policy.native.layoutControls === false || this.isHidden || this._cpr.instance.menuPinned) return
           this.clearTimer()
 
           const target = e.target as HTMLElement

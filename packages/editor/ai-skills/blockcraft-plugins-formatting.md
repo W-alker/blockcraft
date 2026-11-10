@@ -2,7 +2,15 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-11-03
+> Last updated: 2026-11-10
+
+## 编辑交互模式与工具栏（未发布）
+
+模式入口位于 Playground 左侧调试台，由宿主调用 `doc.interactionMode.set()`；
+`bc-fixed-toolbar` 不提供模式切换，simple/full 仍仅控制工具栏密度。
+固定工具栏监听模式变化并取消未完成的绘制插入，订阅随工具栏销毁。
+
+`FloatTextToolbarPlugin` 声明 `textToolbar.enabled`，`TextMarkerPlugin` 声明 `textMarker.enabled`，默认开启，immersive 预设关闭。策略变化立即关闭已有浮层，后续选区／selectEnd 不再打开；原有 `FloatTextToolbarPlugin({enabled})` 和 `setEnabled()` 与文档策略取 AND，不会被模式切换覆盖。加粗等格式快捷键保持可用，关闭浮层不卸载命令插件。
 
 ## 应用标题时恢复默认字号与行高
 

@@ -4,6 +4,67 @@
 >
 > Last updated: 2026-11-10 | Tracks `@ccc/blockcraft` npm releases.
 
+## 0.12.0 — 可配置编辑交互（2026-11-10）
+
+- Severity: minor。
+- What changed / Why: 将混合、沉浸、设计交互整理为文档实例配置；原生能力由框架声明，插件通过元数据注册自己的字段。宿主可组合产品档位，无需在各插件中硬编码模式判断。
+- New APIs: `DocConfig.interaction`、`doc.interaction`、`defineInteractionConfig()`、`DocPlugin.interactionConfigs`；具体字段及行为见下面本版本条目。
+- Behavior Changes: 默认 mixed 取消对象悬停边框/抓手；immersive 停用浮动编辑工具栏；design 允许对象内部选区显示相应工具栏（组合除外）。原有正文编辑、快捷键、只读和文档数据契约保持。
+- Migration Recipe: 既有 Doc 构造继续可用，默认 mixed。需要自定义时传 `{interaction: {preset: 'mixed', overrides: {...}}}`；插件覆盖只填写实际安装的命名空间。配置不入协同与 Undo，宿主自行保存用户偏好。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-plugin.md`、`blockcraft-event.md`、`blockcraft-selection.md`、`blockcraft-theme.md`、`blockcraft-plugins-block.md`、`blockcraft-plugins-formatting.md`、`blockcraft-plugins-toolbar.md`。
+
+## 0.12.0 — 专注预设停用浮动编辑工具栏（2026-11-10）
+
+- Severity: minor；版本号由发布者决定。
+- What changed: 文字／代码标记／对象／图片／区域／贴纸／物料工具栏插件声明 `enabled` 配置，默认开启、immersive 默认关闭；组合继续复用原 `groupToolbar.enabled`。
+- Why: 专注模式此前仅收起几何控件，点击整体对象和文字选区仍会弹出工具栏。
+- New APIs: `plugins.textToolbar/textMarker/objectToolbar/imageToolbar/regionToolbar/stickerToolbar/materialToolbar.enabled`；声明对象由各插件入口导出。`InlineObjectInteractionController` 新增可选第四参数 `toolbarEnabled: () => boolean`（默认开启）。
+- Behavior Changes: 关闭时销毁既有浮层、取消延迟打开任务，并阻止选区与行内路径重开；正文编辑、快捷键、布局适配器仍有效。FloatTextToolbar 原有 enabled 选项与文档策略取 AND；模式切换不覆盖用户单独禁用的选项。mixed/design 保持既有交互。
+- Migration Recipe: 使用 immersive 且需保留特定编辑工具栏的宿主，设置 `overrides.plugins.<namespace>.enabled = true`；未安装插件不添加覆盖。无需数据迁移。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-plugins-formatting.md`。
+
+## 未发布 — 对象浮动抓手独立显隐（2026-11-10）
+
+- Severity: minor；版本号由发布者决定。
+- What changed: `EditorNativeInteractionPolicy` / `NATIVE_INTERACTION_CONFIG` 新增 boolean 字段 `objectFloatingHandles`，默认 `true`。
+- Why: 轻量编辑可收起对象顶部的浮动抓手按钮，同时保留正文块抓手、对象边框、整体选中缩放及工具栏。
+- New APIs: `overrides.native.objectFloatingHandles`；根元素投影 `data-bc-interaction-object-floating-handles`，个性化配置表单自动展示。
+- Behavior Changes: 仅当覆盖为 `false` 时隐藏 `[data-bc-object-floating-handle]`；未覆盖的宿主保留原行为，布局控件总开关仍优先。此字段不改变移动授权、选区或文档数据。
+- Migration Recipe: 无必需迁移；需关闭时配置 `doc.interaction.configure({preset: 'mixed', overrides: {native: {objectFloatingHandles: false}}})`。显式构造完整 `EditorNativeInteractionPolicy` 的宿主需补上该字段；普通部分覆盖无需修改。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-theme.md`。
+
+## 未发布 — 插件交互配置声明与实例注册表（2026-11-10）
+
+- Severity: minor；仍为未发布交互 API 的演进，版本号由发布者决定。
+- What changed: 新增 `defineInteractionConfig()`、`InteractionConfigDefinition/Field/Value/ConfigValues`、`EditorInteractionRegistry` 与 `NATIVE_INTERACTION_CONFIG`。`DocPlugin.interactionConfigs` 声明插件字段；Doc 构造先收集配置插件声明，`register(doc)` 确保后装声明在 init 前登记。核心移除工具栏字段清单，调试台按元数据自动生成布尔/枚举/数值/文本控件。
+- Why: 第三方插件新增配置不再需要修改 Doc 解析器、预设函数或调试表单；声明由插件拥有，解析和变更通知由 Document 负责。
+- New APIs: `doc.interaction.get(definition)`、`definitions`、`presets`、`registerPlugin(plugin)`；内置导出 `OBJECT_TOOLBAR_INTERACTION`、`GROUP_TOOLBAR_INTERACTION`、`IMAGE_TOOLBAR_INTERACTION`、`REGION_TOOLBAR_INTERACTION`。
+- Deprecations: 无删除。旧模式 API 与已安装插件的覆盖路径仍有效；插件构造参数保持原样。
+- Behavior Changes: 仅注册已安装插件的字段，未注册命名空间拒绝；重复或保留 namespace 抛 TypeError，非法声明/默认值/预设值也拒绝。后装声明在活动输入/手势期间抛 Error；配置更新仍返回 boolean。注册表实例隔离、元数据和快照冻结，get 要求实际注册的声明对象；手动 destroy 插件不卸载其声明。框架级 `EDITOR_INTERACTION_PRESETS` 及未传声明的 `resolveEditorInteraction()` 仅包含原生项，完整预设改读实例 `presets`。
+- Migration Recipe: Before: `doc.interaction.policy.plugins.objectToolbar.contentSelection`；After: `doc.interaction.get(OBJECT_TOOLBAR_INTERACTION).contentSelection`。宿主 `overrides.plugins.objectToolbar` 路径不变。纯解析改为 `resolveEditorInteraction(config, [OBJECT_TOOLBAR_INTERACTION])`；自定义插件声明示例见 `blockcraft-plugin.md`。未知插件覆盖应在安装插件后再设置。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-plugin.md`、`blockcraft-app.md`、`blockcraft-plugins-toolbar.md`。
+
+
+## 未发布 — 交互配置与模式预设（2026-11-10）
+
+- Severity: minor；版本号由发布者决定，本次不调整 package.json。
+- What changed: 新增 `EditorInteractionConfig/Overrides/Policy/Snapshot`、`EDITOR_INTERACTION_PRESETS`、`resolveEditorInteraction()` 与 `DocumentInteraction`；Doc 增加 `interaction` 配置/服务，旧 `interactionMode` 仍为同一实例的兼容入口。原生交互与插件由有效策略驱动，模式名只用于预设选择。
+- Why: 支持同一预设下独立配置 hover、布局控件、聚焦抓手、移动、组合框与各工具栏触发，避免分散的模式特例。
+- New APIs: `configure()`、`setOverrides()`、`policy`、`overrides`、`snapshot`、`policyChanges$`；布尔根属性 `data-bc-interaction-{layout-controls,hover-controls,content-resize-handles,move-existing-blocks,group-outline}`。
+- Deprecations: 无删除；保留 `DocumentInteractionMode`、`DocConfig.interactionMode`、`doc.interactionMode.value/set/changes$`。
+- Behavior Changes: 未覆盖时三模式表现不变；`set(preset)` 同时清空个性化覆盖（同预设也清空），`setOverrides({})` 恢复当前预设。覆盖改变会通知 `policyChanges$`，旧 `changes$` 仅通知预设变化。运行时无效配置返回 false，构造配置无效抛 TypeError；IME/指针/拖动期间拒绝配置变更。只读/锁仍优先，配置不写 Yjs、快照、Undo 或存储。
+- Migration Recipe: 旧 `doc.interactionMode.set('design')` 可继续使用；新写法 `doc.interaction.configure({preset: 'mixed', overrides: {plugins: {objectToolbar: {contentSelection: true}}}})`。自定义插件从判断 `value === 'design'` 改为读取对应 policy 并订阅 `policyChanges$`；主题从模式选择器改为能力根属性。配置不会安装插件或改变合法数据命令权限。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-event.md`、`blockcraft-selection.md`、`blockcraft-theme.md`、`blockcraft-plugins-block.md`、`blockcraft-plugins-toolbar.md`。
+
+
+## 未发布 — 2026-11-10：设计模式内部选区显示对象工具栏
+
+- Severity: patch（设计模式工具栏触发规则调整；版本号不变）。
+- What changed / Why: 编辑文本框、艺术字、形状、图片说明或内容区域内部内容时，设计模式显示最近对象的浮动工具栏，便于同时编辑文字与对象外观。
+- Behavior Changes: 同一对象内跨段落可用；跨对象、gap、失效或只读目标不扩展显示。组合不因成员内部选区显示组合菜单，成员工具栏和整组选中菜单仍可用。保持文字选区与艺术字编辑态；新入口格式操作记录用户事务与光标撤销。模式切换重新判定目标，连续输入不重建工具栏。
+- Migration Recipe: 无 API 或数据迁移。mixed/immersive 沿用既有触发规则，`objectFormat.getSelectionIds()` 仍只解析对象整块选区。宿主测试 design 时应允许内部选区显示对应工具栏。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-plugins-toolbar.md`。
+
 ## 未发布 — 2026-11-10：浮动抓手反馈与填写区流式排序
 
 - Severity: minor（新增可选抓手职责与呈现配置；版本号由用户决定，本次不修改）。
@@ -29,6 +90,14 @@
 - Behavior Changes: 整体组合也统一为 1px 虚实线，保留原 4px 外扩，文本框、艺术字、图片及组合的 8px 缩放抓手随之居中对齐细描边；形状尺寸抓手保持原边框位置，自由顶点模式与尺寸抓手互斥；旋转按钮改为活跃色实心圆点，并与 14px 连接线一起跟随北侧抓手偏移，保持两端连接，按钮尺寸和手柄长度不变。仅编辑态屏幕交互层生效；对象保存的轮廓、几何、数据与拖动命中带保持，填写区、贴纸、只读和打印样式不变。
 - Migration Recipe: 无 API 或数据迁移。依赖原 2px 实线或内侧悬停框的主题覆盖/截图基线需更新；活跃色仍使用原主题变量。旋转按钮悬停/拖动使用白描边黑色环形箭头光标，资源不可用时回退十字准星。
 - Affected ai-skills files: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-theme.md`。
+
+## 未发布 — 2026-11-10：混合模式取消对象悬停提示
+
+- Severity: patch（混合模式交互默认行为调整；版本号不变）。
+- What changed / Why: 混合模式的文本框、艺术字、形状、图片、贴纸和填写区不再因鼠标悬停显示对象边框或抓手，减少正文编辑时的视觉干扰。
+- Behavior Changes: 内部文字/键盘聚焦的轻量入口和整块选中后的缩放操作保留；设计模式继续提供悬停提示，沉浸模式保持隐藏。无新增监听器、模型或布局变化。
+- Migration Recipe: 无 API 或数据迁移。依赖未选中对象悬停抓手的交互测试应切换到 design；mixed 下先选中对象再调整。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-theme.md`。
 
 ## 未发布 — 2026-11-10：布局菜单统一为紧凑单列
 
@@ -88,6 +157,17 @@
 - Behavior Changes: `ObjectFormatToolbarPlugin` 不再自动创建动画侧栏；形状、文本框、艺术字默认对象侧栏移除“动画”页签。贴纸、组合和混选也不提供动画浮动按钮，其他编辑工具栏保留。
 - Migration Recipe: 无数据迁移。`doc.objectAnimation`、`props.animation`、已有动画播放和宿主显式打开的设置组件不变；不删除已有动画配置。
 - Affected ai-skills files: `blockcraft.md`、`blockcraft-plugins-toolbar.md`。
+
+## 未发布 — 2026-11-09：混合、沉浸与设计编辑模式
+
+- Severity: minor（新增可选交互模式；版本由用户决定，本次不改版本号）。
+- What changed / Why: 将专注内容、混合操作和对象布局控制表达为文档本地交互状态，复用现有选区、排序与浮动移动领域。
+- New APIs: `EditorInteractionMode`、`DocumentInteractionMode`、`DocConfig.interactionMode`、`doc.interactionMode.value / changes$ / set(mode): boolean`。
+- Behavior Changes: 默认 mixed 保持既有交互；Playground 左侧调试台提供模式入口，固定工具栏保持原有入口。immersive 收起对象控制点并关闭已有对象移动；design 保留直接文字编辑，文本框/艺术字/带文字形状聚焦时显示八向抓手。只读时暂停模式覆盖；IME/指针/拖动期间拒绝切换。
+- DOM: 根元素新增本地 `data-bc-interaction-mode`，仅屏幕控制点显隐使用，不改变快照与打印内容。
+- Deprecations / Breaking Changes: 无。
+- Migration Recipe: 原配置无需迁移；宿主可从不传该字段改为 `interactionMode: 'design'`，运行时调用 `doc.interactionMode.set('mixed')`。没有数据迁移；模式不写 Yjs 或 Undo，不改变布局类型、ACL 或锁规则。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-selection.md`、`blockcraft-event.md`、`blockcraft-plugins-formatting.md`、`blockcraft-plugins-block.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-theme.md`。
 
 ## 未发布 — 2026-11-09：移除图片与动态物料的浮动动画入口
 

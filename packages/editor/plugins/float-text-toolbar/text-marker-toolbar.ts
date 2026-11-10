@@ -1,3 +1,5 @@
+import {TEXT_MARKER_INTERACTION} from './interaction-config'
+export {TEXT_MARKER_INTERACTION} from './interaction-config'
 import {DocPlugin, type EditableBlockComponent} from "../../framework";
 import {debounceTime, fromEvent, Subject, Subscription, take, takeUntil} from "rxjs";
 import {ComponentRef} from "@angular/core";
@@ -10,6 +12,7 @@ import {isSelectionAlive} from "../../framework/modules/selection/liveness";
 import {isExternalModalOpen} from "./external-modal";
 
 export class TextMarkerPlugin extends DocPlugin {
+  override readonly interactionConfigs = [TEXT_MARKER_INTERACTION]
   override name = "text-marker-toolbar";
   override version = 1.0
 
@@ -42,6 +45,9 @@ export class TextMarkerPlugin extends DocPlugin {
 
   init() {
     this.utils = new TextToolbarUtils(this.doc)
+    this._sub.add(this.doc.interaction?.policyChanges$.subscribe(() => {
+      if (this.doc.interaction.get(TEXT_MARKER_INTERACTION).enabled === false) this.closeToolbar()
+    }))
 
     this._sub.add(fromEvent(this.doc.scrollContainer?.ownerDocument ?? document, 'focusin').subscribe(() => {
       if (this.toolbarOvr && isExternalModalOpen(this.doc)) this.closeToolbar()
@@ -76,7 +82,7 @@ export class TextMarkerPlugin extends DocPlugin {
   }
 
   private _canShow(selection: BlockCraft.Selection | null): selection is BlockCraft.Selection {
-    if (this._destroyed || this.doc.isReadonly || isExternalModalOpen(this.doc) ||
+    if (this.doc.interaction?.get(TEXT_MARKER_INTERACTION).enabled === false || this._destroyed || this.doc.isReadonly || isExternalModalOpen(this.doc) ||
       !isFloatTextToolbarSelection(selection) || !selection.isInSameBlock ||
       !isSelectionAlive(selection, this.doc) || this._isSelectionReadonly(selection)) return false
     const session = this.doc.inputManger?.compositionSession

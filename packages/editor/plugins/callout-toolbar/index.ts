@@ -1,3 +1,5 @@
+import {REGION_TOOLBAR_INTERACTION} from './interaction-config'
+export {REGION_TOOLBAR_INTERACTION} from './interaction-config'
 import {FloatingToolbarState, type FloatingToolbarOptions} from '../../components/floating-toolbar';
 import { DocPlugin, getPositionWithOffset } from "../../framework";
 import { fromEvent, Subject, Subscription, takeUntil } from "rxjs";
@@ -7,8 +9,10 @@ import { RenderUnitToolbar } from "./widgets/render-unit.toolbar";
 import { throttle } from "../../global";
 import {isSelectionAlive} from "../../framework/modules/selection/liveness";
 import {isObjectToolbarOwnedTarget} from '../object-layout/object-toolbar-interaction'
+import {resolveObjectToolbarContentTarget} from '../object-layout/object-toolbar-content-target'
 
 export class CalloutToolbarPlugin extends DocPlugin {
+  override readonly interactionConfigs = [REGION_TOOLBAR_INTERACTION]
   override name = 'callout-toolbar';
 
   readonly toolbarState: FloatingToolbarState;
@@ -30,6 +34,10 @@ export class CalloutToolbarPlugin extends DocPlugin {
   private _activeContainerBlock: BlockCraft.BlockComponent | null = null
   private _toolbarInteraction = false
   private _releaseRegionPresentation?: () => void
+
+  private get toolbarEnabled(): boolean {
+    return this.doc.interaction?.get(REGION_TOOLBAR_INTERACTION).enabled !== false
+  }
 
   private _isReadonly(block: BlockCraft.BlockComponent) {
     return this.doc.readonlyManager?.isReadonly(block) ?? this.doc.isReadonly
@@ -59,8 +67,9 @@ export class CalloutToolbarPlugin extends DocPlugin {
         this.closeToolbar()
       }
     }))
-    this._sub.add(this.doc.selection.selectionChange$.subscribe(selection => {
+    const syncToolbar = (selection: BlockCraft.Selection | null) => {
       this.clearTimer()
+      if (!this.toolbarEnabled) { this.closeToolbar(); return }
 
       if (!selection && this._toolbarInteraction && !this.doc.isReadonly && this._activeContainerBlock &&
           this._isBlockAlive(this._activeContainerBlock) &&
@@ -103,7 +112,11 @@ export class CalloutToolbarPlugin extends DocPlugin {
 
         this.openToolbar(containerBlock)
       }, 200)
-    }))
+    }
+    this._sub.add(this.doc.selection.selectionChange$.subscribe(syncToolbar))
+    if (this.doc.interaction) {
+      this._sub.add(this.doc.interaction.policyChanges$.subscribe(() => syncToolbar(this.doc.selection.value)))
+    }
     const stateChange$ = this.doc.readonlyManager?.stateChange$
     if (stateChange$) {
       this._sub.add(stateChange$.subscribe(() => {
@@ -123,6 +136,7 @@ export class CalloutToolbarPlugin extends DocPlugin {
   }
 
   openToolbar = (containerBlock: BlockCraft.BlockComponent) => {
+    if (!this.toolbarEnabled) return;
     if (!this.isAppearanceContainer(containerBlock)) return;
     if (this._overlayRef && this._activeContainerBlock === containerBlock) return;
     if (!this._isBlockAlive(containerBlock) || this._isReadonly(containerBlock)) return;
@@ -187,7 +201,13 @@ export class CalloutToolbarPlugin extends DocPlugin {
   private resolveAppearanceContainer(
     selection: typeof this.doc.selection.value,
   ): BlockCraft.BlockComponent | null {
-    if (!selection || !selection.isInSameBlock) return null
+    if (!selection) return null
+    const objectId = resolveObjectToolbarContentTarget(this.doc, selection, this.doc.interaction?.get(REGION_TOOLBAR_INTERACTION).contentSelection ?? false)
+    if (objectId) {
+      const block = this.doc.vm.get(objectId)?.instance
+      return block?.flavour === 'render-unit' ? block : null
+    }
+    if (!selection.isInSameBlock) return null
 
     try {
       if (selection.start.type === 'text' && selection.end.type === 'text') {

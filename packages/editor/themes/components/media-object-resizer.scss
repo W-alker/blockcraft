@@ -7,10 +7,10 @@
   }
 
   div.image-block.selected > .image-block__container > .img-wrapper > shape-resizer,
-  div.image-block .img-wrapper:hover > shape-resizer,
+  &:not([data-bc-interaction-hover-controls='false']) div.image-block .img-wrapper:hover > shape-resizer,
   div.image-block .img-wrapper > shape-resizer:focus-within,
   div.sticker-block.selected > .sticker-block__surface > shape-resizer,
-  div.sticker-block .sticker-block__surface:hover > shape-resizer,
+  &:not([data-bc-interaction-hover-controls='false']) div.sticker-block .sticker-block__surface:hover > shape-resizer,
   div.sticker-block .sticker-block__surface > shape-resizer:focus-within {
     display: block;
   }

@@ -54,6 +54,9 @@ export class BlockPlacementInteractionController {
       if (readonly) this.cancelDrag()
       this.scheduleUnderlayChrome()
     }))
+    if (this.doc.interaction) {
+      this.subscriptions.add(this.doc.interaction.policyChanges$.subscribe(() => this.scheduleUnderlayChrome()))
+    }
     this.doc.afterInit?.(root => {
       if (this.stateSubject.closed || this.rootHost) return
       this.rootHost = root.hostElement
@@ -167,6 +170,7 @@ export class BlockPlacementInteractionController {
     if (
       !block ||
       event.button !== 0 ||
+      this.doc.interaction?.policy.native.moveExistingBlocks === false ||
       this.stateSubject.value !== 'idle' ||
       this.doc.dragController.state !== 'idle' ||
       this.runtime.getState(block).mode !== 'absolute' ||
@@ -486,6 +490,7 @@ export class BlockPlacementInteractionController {
       const blockIds = this.runtime.getAbsoluteObjectSelectionIds(selection)
       if (!blockIds) return
       context.preventDefault()
+      if (this.doc.interaction?.policy.native.moveExistingBlocks === false) return true
       if (this.state !== 'idle' || this.doc.dragController.state !== 'idle' ||
         blockIds.some(id => this.runtime.isReadonly(id))) return true
 
@@ -596,6 +601,10 @@ export class BlockPlacementInteractionController {
   }
 
   private readonly onRootPointerDown = (event: PointerEvent): void => {
+    if (this.doc.interaction?.policy.native.layoutControls === false) {
+      this.armFlowSelectionPassthrough(event)
+      return
+    }
     if (
       event.defaultPrevented ||
       event.button !== 0 ||
@@ -693,6 +702,12 @@ export class BlockPlacementInteractionController {
   }
 
   private scheduleUnderlayChrome(): void {
+    if (this.doc.interaction?.policy.native.layoutControls === false) {
+      if (this.chromeFrame) this.rootHost?.ownerDocument.defaultView?.cancelAnimationFrame(this.chromeFrame)
+      this.chromeFrame = 0
+      this.clearUnderlayChrome()
+      return
+    }
     const ownerWindow = this.rootHost?.ownerDocument.defaultView
     if (!ownerWindow || this.chromeFrame || (!this.underBlocks.size && !this.underlayChrome.size)) return
     this.doc.ngZone.runOutsideAngular(() => {

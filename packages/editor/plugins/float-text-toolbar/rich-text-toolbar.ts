@@ -1,3 +1,5 @@
+import {TEXT_TOOLBAR_INTERACTION} from './interaction-config'
+export {TEXT_TOOLBAR_INTERACTION} from './interaction-config'
 import {BindHotKey, DocPlugin, UIEventStateContext} from "../../framework";
 import {debounceTime, fromEvent, Subject, Subscription, takeUntil} from "rxjs";
 import {ComponentRef} from "@angular/core";
@@ -28,6 +30,7 @@ export interface FloatTextToolbarPluginOptions {
 }
 
 export class FloatTextToolbarPlugin extends DocPlugin {
+  override readonly interactionConfigs = [TEXT_TOOLBAR_INTERACTION]
   override name = 'float-text-toolbar';
   override version = 1.0;
 
@@ -60,6 +63,9 @@ export class FloatTextToolbarPlugin extends DocPlugin {
 
   init() {
     this.utils = new TextToolbarUtils(this.doc);
+    this._sub.add(this.doc.interaction?.policyChanges$.subscribe(() => {
+      if (this.doc.interaction.get(TEXT_TOOLBAR_INTERACTION).enabled === false) this.closeToolbar();
+    }));
 
     this._sub.add(fromEvent(this.doc.scrollContainer?.ownerDocument ?? document, 'focusin').subscribe(() => {
       if (this.toolbarOvr && isExternalModalOpen(this.doc)) this.closeToolbar();
@@ -108,7 +114,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   }
 
   openToolbar() {
-    if (!this.enabled || isExternalModalOpen(this.doc)) return;
+    if (!this.enabled || this.doc.interaction?.get(TEXT_TOOLBAR_INTERACTION).enabled === false || isExternalModalOpen(this.doc)) return;
     const sel = this.doc.selection.value;
     if (!isFloatTextToolbarSelection(sel) || !isSelectionAlive(sel as any, this.doc)) return;
     const readonly = this._isSelectionReadonly(sel);

@@ -12,4 +12,8 @@ export * from './undoManger'
 export * from './structure-transform'
 export * from './incoming-content'
 export * from './composition'
+export {DocumentInteraction, DocumentInteractionMode} from './interaction-mode'
+export * from './interaction-policy'
 export * from './view/block-expansion-host'
+
+export {defineInteractionConfig, type InteractionValue, type InteractionField, type InteractionConfigDefinition, type InteractionConfigValues} from './interaction-schema'

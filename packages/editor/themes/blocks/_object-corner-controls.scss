@@ -1,6 +1,6 @@
 // 只投影对象自己的入口，不把内部正文变成拖动面。
 @mixin object-corner-controls($path, $selected: '.selected') {
-  &:hover #{$path},
+  &:where([data-blockcraft-root]:not([data-bc-interaction-hover-controls='false']) *):hover #{$path},
   &:focus-within #{$path},
   &:where([data-blockcraft-root="true"]:focus-within *):is(.focused, :has(.focused)) #{$path} {
     opacity: 1;

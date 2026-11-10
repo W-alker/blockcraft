@@ -32,7 +32,7 @@ async function setup(page: Page, flavour: string, scale: number, nested = false,
     const Format = source.plugins.find((plugin: any) => plugin.name === 'object-format-toolbar').constructor
     const doc = new source.constructor({
       ...source.config, yDoc: new source.yDoc.constructor(), docId: snapshot.id,
-      plugins: [new Format(), new Drag()], scrollContainer: viewport, readonly: false,
+      plugins: [new Format(), new Drag()], interactionMode: 'design', scrollContainer: viewport, readonly: false,
       virtualization: {enabled: false},
     })
     doc.initBySnapshot(snapshot, mount)
@@ -162,6 +162,7 @@ for (const flavour of ['text-box', 'word-art']) {
     const editor = block.locator(flavour === 'text-box' ? '.text-box-block__content' : '.word-art-block__editor')
     const controls = block.locator('bc-object-corner-controls')
     const handle = controls.locator('[data-bc-object-floating-handle]')
+    await page.evaluate(() => (window as any).cornerInteraction.doc.interactionMode?.set('mixed'))
     const textPoint = await editor.evaluate(element => {
       const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
       let node: Node | null
@@ -189,6 +190,7 @@ for (const flavour of ['text-box', 'word-art']) {
     await page.keyboard.press('Enter')
     await expect.poll(() => selectedObject(page)).toBe(id)
     await blurObject(page)
+    await page.evaluate(() => (window as any).cornerInteraction.doc.interactionMode?.set('design'))
     await block.hover()
     await handle.focus()
     await expect(handle).toBeFocused()

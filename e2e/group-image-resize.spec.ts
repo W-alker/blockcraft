@@ -802,10 +802,11 @@ test('flow image hides rotation controls while retaining rotation and eight resi
 })
 
 for (const [rotation, scale] of [[0, 1], [30, 0.75], [0, 1.5]]) {
-  test(`unselected absolute image keeps handles while hovering toward rotation (${rotation}deg, scale ${scale})`, async ({page}) => {
+  test(`design: unselected absolute image keeps handles while hovering toward rotation (${rotation}deg, scale ${scale})`, async ({page}) => {
     const ids = (await mountFixture(page))!, id = ids.outsideId
     await page.evaluate(async ({id, siblingId, rotation, scale}) => {
       const doc = (window as any).__imageResizeDoc
+      doc.interactionMode.set('design')
       doc.placement.updateObjectGeometry(id, {position: '140 220', rotation})
       doc.viewScale.attach(doc.root.hostElement.parentElement)
       doc.viewScale.setScale(scale)
