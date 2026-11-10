@@ -75,9 +75,21 @@ export function createFloatingLayoutExample(doc: BlockCraft.Doc, rootId: string)
     {insert: ' 从晨间的一杯咖啡，到傍晚孩子们的游戏，一处好用的公共空间首先应该容纳平凡生活。场地不必一次完成，而是在使用中持续调整。'},
     {insert: ' 本阶段重点记录人们愿意停下的位置、树荫覆盖的时段，以及街区与河岸之间尚未打通的路径。每一个小小的观察，都将成为下一步设计的依据。'},
   ], {lh: 1.8, psa: 24})
+  const field = p('', {lh: 1.8, psa: 0})
+  field.meta = {...field.meta, plh: '在这里记录你的观察或建议…', plhMode: 'always'}
+  const region = doc.schemas.createSnapshot('render-unit', [{}, {
+    p: [20, 24], backColor: paper, backOpacity: 1,
+  }])
+  Object.assign(region.meta, {tplRegion: true})
+  region.children = [
+    p(rich('我的现场观察', 16, ink, true)),
+    p('最想保留的是沿河的老树与砖墙；希望增加能坐下来阅读、聊天的树荫空间。', {lh: 1.8}),
+    field,
+  ]
   return doc.schemas.createSnapshot('root', [rootId, [
     cover, columns, section('02  一条逐步生长的路径'), diagram, table,
     section('03  现场札记'), wrap,
+    section('04  共创记录 · 填写区'), region,
     p(rich('URBAN COMMONS     /     城市观察工作室                              概念提案 · 示例数据', 11, '#60746B'), {psb: 24}),
     doc.schemas.createSnapshot('placement-layout', [floats]),
   ]])

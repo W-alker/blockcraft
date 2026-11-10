@@ -11,9 +11,9 @@ async function outlineBounds(locator: Locator) {
   })
 }
 
-for (const flavour of ['text-box', 'shape', 'word-art', 'image']) {
-  for (const absolute of [false, true]) {
-   for (const scale of (['text-box', 'image'].includes(flavour) ? [0.75, 1, 1.5] : [1])) {
+for (const flavour of ['text-box', 'shape', 'word-art', 'image', 'render-unit']) {
+  for (const absolute of (flavour === 'render-unit' ? [false] : [false, true])) {
+   for (const scale of (['text-box', 'image', 'render-unit'].includes(flavour) ? [0.75, 1, 1.5] : [1])) {
     test(`${flavour} ${absolute ? 'absolute' : 'flow'} scale ${scale}: mixed hover stays quiet; design hover and editing retain chrome`, async ({page}) => {
       await page.routeWebSocket('**', socket => socket.close())
       await page.goto('/')
@@ -27,9 +27,11 @@ for (const flavour of ['text-box', 'shape', 'word-art', 'image']) {
         viewport.append(mount); document.body.append(viewport)
         const canvas = document.createElement('canvas')
         canvas.width = 280; canvas.height = 160
-        const args = flavour === 'image' ? [{src: canvas.toDataURL(), wr: 40, ar: 1.75}]
+        const args = flavour === 'render-unit' ? [{tplRegion: true}, {width: 280, height: 160, backColor: '#fff3db', borderTop: '2px solid #334455'}]
+          : flavour === 'image' ? [{src: canvas.toDataURL(), wr: 40, ar: 1.75}]
           : flavour === 'shape' ? ['rectangle', '对象内部文字'] : ['对象内部文字', {width: 280, height: 160}]
         const snapshot = source.schemas.createSnapshot(flavour, args)
+        if (flavour === 'render-unit') snapshot.children = [source.schemas.createSnapshot('paragraph', ['填写内容'])]
         if (flavour === 'shape') Object.assign(snapshot.props, {width: 280, height: 160})
         if (flavour === 'image') snapshot.children = [source.schemas.createSnapshot('caption', ['图片说明'])]
         const Format = source.plugins.find((plugin: any) => plugin.name === 'object-format-toolbar').constructor
@@ -49,9 +51,10 @@ for (const flavour of ['text-box', 'shape', 'word-art', 'image']) {
         return {id: snapshot.id as string, leafId: flavour === 'word-art' ? snapshot.id as string : doc.model.getChildrenIds(snapshot.id)[0] as string}
       }, {flavour, absolute, scale})
       const block = page.locator(`[data-block-id="${id}"]`)
+      const initialBackground = await block.evaluate(el => getComputedStyle(el).backgroundColor)
       const hint = block.locator(flavour === 'image' ? '.shape-resizer__frame'
         : flavour === 'shape' ? 'bc-object-edge-controls' : 'bc-object-corner-controls')
-      const surface = block.locator(flavour === 'image' ? '.img-wrapper'
+      const surface = flavour === 'render-unit' ? block : block.locator(flavour === 'image' ? '.img-wrapper'
         : flavour === 'shape' ? '.shape-block__shell' : `.${flavour}-block__surface`)
       await surface.hover({position: {x: 80, y: 60}})
       if (flavour === 'image') await expect(hint).toBeHidden()
@@ -77,7 +80,8 @@ for (const flavour of ['text-box', 'shape', 'word-art', 'image']) {
       await page.evaluate(() => (window as any).__objectChromeDoc.interactionMode.set('mixed'))
       if (flavour === 'image') await expect(hint).toBeHidden()
       else await expect(hint).toHaveCSS('opacity', '0')
-      await page.evaluate(leafId => {
+      if (flavour === 'render-unit') await block.getByText('填写内容', {exact: true}).click()
+      else await page.evaluate(leafId => {
         const doc = (window as any).__objectChromeDoc
         doc.root.hostElement.focus()
         doc.selection.setCursorAtBlock(leafId, true, false)
@@ -91,7 +95,10 @@ for (const flavour of ['text-box', 'shape', 'word-art', 'image']) {
       await page.emulateMedia({media: 'print'})
       await expect(hint).toBeHidden()
       await page.emulateMedia({media: 'screen'})
-      await page.evaluate(id => (window as any).__objectChromeDoc.selection.selectBlock(id), id)
+      if (flavour === 'render-unit') {
+        await block.getByRole('button', {name: '选中内容区域并拖动', exact: true}).focus()
+        await page.keyboard.press('Enter')
+      } else await page.evaluate(id => (window as any).__objectChromeDoc.selection.selectBlock(id), id)
       const frame = block.locator('shape-resizer > .shape-resizer__frame')
       await expect(frame).toBeVisible()
       await expect(frame).toHaveCSS('outline-style', 'solid')
@@ -99,6 +106,14 @@ for (const flavour of ['text-box', 'shape', 'word-art', 'image']) {
       await expect(frame).toHaveCSS('outline-offset', dashedStyle.offset)
       await expect.poll(async () => Math.max(...(await outlineBounds(frame)).map((value, i) => Math.abs(value - hoverBounds[i])))).toBeLessThan(0.2)
       if (flavour !== 'image') await expect(hint).toBeHidden()
+      if (flavour === 'render-unit') {
+        await expect(block).toHaveCSS('background-color', initialBackground)
+        await expect(block).toHaveCSS('border-top-color', 'rgb(51, 68, 85)')
+        await page.evaluate(() => (window as any).__objectChromeDoc.interactionMode.set('immersive'))
+        await expect(frame).toBeHidden()
+        await expect(hint).toBeHidden()
+        await expect(block).toHaveCSS('background-color', initialBackground)
+      }
       await page.evaluate(() => (window as any).__objectChromeDoc.toggleReadonly(true))
       await expect(block.locator('shape-resizer, bc-object-corner-controls, bc-object-edge-controls')).toHaveCount(0)
     })

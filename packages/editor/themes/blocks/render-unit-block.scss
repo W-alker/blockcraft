@@ -13,12 +13,15 @@
     isolation: isolate;
     min-height: calc(var(--bc-lh) * var(--bc-fs));
     box-sizing: border-box;
-    background-color: var(--bc-render-unit-background-color);
-    background-color: color-mix(
-      in srgb,
-      var(--bc-render-unit-background-color) var(--bc-render-unit-background-opacity),
-      transparent
-    );
+    // 对象整体选中由缩放框表达，保留填写区自身填充，避免通用块选中底色覆盖内容。
+    &, &[data-block-id].selected {
+      background-color: var(--bc-render-unit-background-color);
+      background-color: color-mix(
+        in srgb,
+        var(--bc-render-unit-background-color) var(--bc-render-unit-background-opacity),
+        transparent
+      );
+    }
     outline: 1px solid var(--bc-render-unit-border-color);
     outline-offset: -1px;
 

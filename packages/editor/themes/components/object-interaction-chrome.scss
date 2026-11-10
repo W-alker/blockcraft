@@ -16,6 +16,7 @@
   [data-blockcraft-root='true']:not(.readonly):not(.bc-print-content):not([data-bc-interaction-layout-controls='false']) {
     .text-box-block > .text-box-block__surface > bc-object-corner-controls,
     .word-art-block > .word-art-block__surface > bc-object-corner-controls,
+    .render-unit-block > bc-object-corner-controls,
     .shape-block > .shape-block__shell > bc-object-edge-controls {
       outline: 1px dashed color-mix(in srgb, var(--bc-active-color) 35%, transparent);
     }
@@ -23,7 +24,8 @@
     // Each object's existing dashed hint is authoritative; selection only
     // changes line style/color, without moving that boundary.
     .text-box-block > .text-box-block__surface > shape-resizer > .shape-resizer__frame,
-    .word-art-block > .word-art-block__surface > shape-resizer > .shape-resizer__frame {
+    .word-art-block > .word-art-block__surface > shape-resizer > .shape-resizer__frame,
+    .render-unit-block > shape-resizer > .shape-resizer__frame {
       @include object-selection-frame(-1px);
     }
     .shape-block > .shape-block__shell > shape-resizer > .shape-resizer__frame {
