@@ -1,3 +1,4 @@
+import {EDITOR_EXPERIENCES, type EditorExperience} from './editing-experience'
 import {assertInteractionKey, defineInteractionConfig, freezeInteractionValue, isInteractionRecord, validateInteractionValue,
   type EditorInteractionMode, type InteractionConfigDefinition, type InteractionValue} from './interaction-schema'
 export type {EditorInteractionMode} from './interaction-schema'
@@ -20,10 +21,12 @@ export interface EditorInteractionOverrides {
   readonly plugins?: Readonly<Record<string, Readonly<Record<string, InteractionValue>>>>
 }
 export interface EditorInteractionConfig {
+  readonly experience?: EditorExperience
   readonly preset?: EditorInteractionMode
   readonly overrides?: EditorInteractionOverrides
 }
 export interface EditorInteractionSnapshot {
+  readonly experience?: EditorExperience
   readonly preset: EditorInteractionMode
   readonly overrides: EditorInteractionOverrides
   readonly policy: EditorInteractionPolicy
@@ -32,16 +35,16 @@ export interface EditorInteractionSnapshot {
 export const NATIVE_INTERACTION_CONFIG = defineInteractionConfig({
   namespace: 'native', label: '原生交互', fields: {
     layoutControls: {type: 'boolean', label: '布局控件', default: true, presets: {immersive: false}},
-    objectFloatingHandles: {type: 'boolean', label: '对象浮动抓手按钮', default: true},
-    hoverControls: {type: 'boolean', label: '悬停边框与抓手', default: false, presets: {immersive: true, design: true}},
+    objectFloatingHandles: {type: 'boolean', label: '对象浮动抓手按钮', default: true, experiences: {light: false}},
+    hoverControls: {type: 'boolean', label: '悬停边框与抓手', default: false, presets: {immersive: true, design: true}, experiences: {layout: false}},
     contentResizeHandles: {type: 'boolean', label: '文字聚焦时显示缩放抓手', default: false, presets: {design: true}},
-    moveExistingBlocks: {type: 'boolean', label: '拖动与键盘移动已有块', default: true, presets: {immersive: false}},
-    groupOutline: {type: 'boolean', label: '组合选中与内部聚焦边框', default: true, presets: {immersive: false}},
+    moveExistingBlocks: {type: 'boolean', label: '拖动与键盘移动已有块', default: true, presets: {immersive: false}, experiences: {light: false}},
+    groupOutline: {type: 'boolean', label: '组合选中与内部聚焦边框', default: true, presets: {immersive: false}, experiences: {light: false}},
   },
 })
 
-function valuesFor(definition: InteractionConfigDefinition, mode: EditorInteractionMode): Record<string, InteractionValue> {
-  return Object.fromEntries(Object.entries(definition.fields).map(([key, field]) => [key, field.presets?.[mode] ?? field.default]))
+function valuesFor(definition: InteractionConfigDefinition, mode: EditorInteractionMode, experience?: EditorExperience): Record<string, InteractionValue> {
+  return Object.fromEntries(Object.entries(definition.fields).map(([key, field]) => [key, (experience ? field.experiences?.[experience] : undefined) ?? field.presets?.[mode] ?? field.default]))
 }
 function copyFields(value: unknown, definition: InteractionConfigDefinition): Record<string, InteractionValue> {
   if (!isInteractionRecord(value)) throw new TypeError(`Invalid interaction overrides: ${definition.namespace}`)
@@ -59,6 +62,7 @@ function copyFields(value: unknown, definition: InteractionConfigDefinition): Re
 export class EditorInteractionRegistry {
   readonly definitions: readonly InteractionConfigDefinition[]
   readonly presets: Readonly<Record<EditorInteractionMode, EditorInteractionPolicy>>
+  readonly experiences: Readonly<Record<EditorExperience, EditorInteractionPolicy>>
   private readonly plugins = new Map<string, InteractionConfigDefinition>()
 
   constructor(definitions: readonly InteractionConfigDefinition[] = []) {
@@ -70,15 +74,23 @@ export class EditorInteractionRegistry {
       this.plugins.set(source.namespace, defineInteractionConfig(source))
     }
     this.definitions = Object.freeze([NATIVE_INTERACTION_CONFIG, ...this.plugins.values()])
-    const preset = (mode: EditorInteractionMode): EditorInteractionPolicy => freezeInteractionValue({
-      native: valuesFor(NATIVE_INTERACTION_CONFIG, mode) as unknown as EditorNativeInteractionPolicy,
-      plugins: Object.fromEntries([...this.plugins].map(([key, definition]) => [key, valuesFor(definition, mode)])),
+    const preset = (mode: EditorInteractionMode, experience?: EditorExperience): EditorInteractionPolicy => freezeInteractionValue({
+      native: valuesFor(NATIVE_INTERACTION_CONFIG, mode, experience) as unknown as EditorNativeInteractionPolicy,
+      plugins: Object.fromEntries([...this.plugins].map(([key, definition]) => [key, valuesFor(definition, mode, experience)])),
     })
     this.presets = Object.freeze({mixed: preset('mixed'), immersive: preset('immersive'), design: preset('design')})
+    this.experiences = Object.freeze(Object.fromEntries(EDITOR_EXPERIENCES.map(item =>
+      [item.id, preset(item.preset, item.id)]))) as Readonly<Record<EditorExperience, EditorInteractionPolicy>>
   }
 
   resolve(config: EditorInteractionConfig = {}): EditorInteractionSnapshot {
-    const mode = config.preset ?? 'mixed'
+    const experience = config.experience
+    const definition = experience === undefined ? undefined : EDITOR_EXPERIENCES.find(item => item.id === experience)
+    if (experience !== undefined && !definition) throw new TypeError(`Unknown editing experience: ${experience}`)
+    if (definition && config.preset !== undefined && config.preset !== definition.preset) {
+      throw new TypeError('Experience and preset conflict')
+    }
+    const mode = definition?.preset ?? config.preset ?? 'mixed'
     if (!Object.hasOwn(this.presets, mode)) throw new TypeError(`Unknown interaction preset: ${mode}`)
     const source = config.overrides ?? {}
     if (!isInteractionRecord(source) || Object.keys(source).some(key => key !== 'native' && key !== 'plugins')) {
@@ -95,8 +107,8 @@ export class EditorInteractionRegistry {
         if (Object.keys(fields).length) pluginOverrides[key] = fields
       }
     }
-    const base = this.presets[mode]
-    return freezeInteractionValue({preset: mode,
+    const base = experience === undefined ? this.presets[mode] : this.experiences[experience]
+    return freezeInteractionValue({preset: mode, ...(experience === undefined ? {} : {experience}),
       overrides: {...(Object.keys(native).length ? {native} : {}),
         ...(Object.keys(pluginOverrides).length ? {plugins: pluginOverrides} : {})},
       policy: {native: {...base.native, ...native},

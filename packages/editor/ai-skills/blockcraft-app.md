@@ -6,6 +6,37 @@
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
+## 官方五档体验（0.12.6）
+
+editor 包统一导出 `EDITOR_EXPERIENCES`、`EditorExperience`、`EditorExperienceDefinition`。
+稳定 ID 与顺序为 `focus / light / mixed / layout / design`；元数据包含基础 preset、默认名称、短名称和说明，宿主可自定义展示文案。
+五档的原生差异由 `NATIVE_INTERACTION_CONFIG` 声明，插件差异由各插件字段的 `experiences` 声明；配置只解析已安装插件，不自动安装或引用任何插件。
+
+```typescript
+import {EDITOR_EXPERIENCES, type EditorInteractionConfig} from '@ccc/blockcraft';
+const interaction: EditorInteractionConfig = {experience: 'light'};
+// new BlockCraftDoc({...config, interaction});
+doc.interaction.setExperience('light'); // 清空原有自定义覆盖
+doc.interaction.configure({experience: 'light', overrides: {
+  plugins: {textToolbar: {openDelay: 500}}, // 仅覆盖已安装插件
+}});
+doc.interaction.setOverrides({}); // 恢复轻量档默认值，仍是轻量档
+const intent = doc.interaction.experience; // 当前选择意图；旧 preset 配置为 null
+const matched = doc.interaction.matchingExperience; // 有效策略匹配的档位，非标准组合为 null
+const defaults = doc.interaction.experiences.light; // 当前实例含已安装插件的冻结策略
+```
+
+优先级：字段 default → 基础 preset → experience → 显式 overrides。
+`experience` 优先于旧 `DocConfig.interactionMode`；若同时传 `experience` 和 `preset`，preset 必须与档位的基础 preset 一致，否则拒绝。
+`setOverrides()` 保留档位意图，仅替换用户覆盖；`set(mode)` 切回基础预设并清空档位意图和覆盖。
+`policyChanges$` 的 snapshot 选择五档时增加 `experience`，`preset`/`value`/`changes$` 仍保持原有三模式语义。
+后装插件自动继承当前档位和既有用户覆盖；切换继续遵守 IME、指针与拖动保护，返回 false 时由宿主按原规则重试。
+`matchingExperience` 比较有效策略，识别旧手工组合；多档同效时优先当前显式选择，否则按官方顺序返回首项。
+
+宿主保存稳定 ID 和自己的显式覆盖，不复制各插件默认值，升级后可自动采用新策略。
+入口、滑轨组件、引导、偏好持久化及“跟随上次”归宿主；框架不保存用户偏好，也不改变顶部固定工具栏。
+Playground 已使用此公共能力。cses-client 须安装 0.12.6 或后续版本，再把自己的 switch 改为 `{experience: level}`，无需改五档 ID 或存储数据。
+
 ## 交互配置与模式预设（未发布）
 
 配置 `DocConfig.interaction?: EditorInteractionConfig`。`preset` 默认为 `mixed`，也可为 `immersive`、`design`；`overrides` 按原生能力和插件分组。旧 `interactionMode` 配置仍可作为缺省预设；新 `interaction.preset` 优先。
@@ -35,7 +66,7 @@ subscription.unsubscribe();
 `native` 支持 `layoutControls`、`objectFloatingHandles`、`hoverControls`、`contentResizeHandles`、`moveExistingBlocks`、`groupOutline`，均为 boolean。关闭布局控件优先于 hover/内部抓手显隐；移动开关独立控制已有块拖动及浮动对象方向键微调，仍允许合法的新对象插入与正文编辑。组合边框可独立于组合工具栏配置。`objectFloatingHandles` 默认开启；关闭仅收起对象顶部浮动抓手按钮，不影响正文块抓手、边框、整体选中的缩放抓手及工具栏。
 `plugins.objectToolbar/imageToolbar/regionToolbar.contentSelection` 独立控制内部选区触发；`plugins.groupToolbar.enabled` 控制整组选中工具栏。组合不继承成员选区。既有整块工具栏与 callout 正文触发保持原语义，配置不会自动安装插件；对未安装插件的覆盖会被拒绝。初始配置无效抛 TypeError，后装插件应先 register，再设置其覆盖。
 
-`configure()` / `setOverrides()` / `set()` 返回 boolean：IME、按住指针、流式/浮动拖动期间拒绝变更，不排队；非法覆盖、非法预设和已销毁实例返回 false。构造参数不合法时抛 TypeError。输入对象会复制并深度冻结，不能直接修改返回的 policy/overrides；空分组会移除。
+`configure()` / `setOverrides()` / `set()` / `setExperience()` 返回 boolean：IME、按住指针、流式/浮动拖动期间拒绝变更，不排队；非法覆盖、非法预设和已销毁实例返回 false。构造参数不合法时抛 TypeError。输入对象会复制并深度冻结，不能直接修改返回的 policy/overrides；空分组会移除。
 `policyChanges$` 在原子更新与根属性投影后通知，覆盖改变但预设不变也会通知；旧 `changes$` 仅通知预设标签变化。相同配置是幂等操作。
 
 配置不写入 Yjs、快照、Undo 或浏览器存储，不主动改变选区或滚动位置。只读时暂停编辑投影，恢复编辑后继续当前配置。策略是交互意图，不是修改权限，锁与只读仍优先；宿主合法的数据 API 不受 UI 开关限制。

@@ -17,3 +17,5 @@ export * from './interaction-policy'
 export * from './view/block-expansion-host'
 
 export {defineInteractionConfig, type InteractionValue, type InteractionField, type InteractionConfigDefinition, type InteractionConfigValues} from './interaction-schema'
+
+export * from './editing-experience'

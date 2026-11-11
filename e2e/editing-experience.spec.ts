@@ -19,7 +19,8 @@ async function setup(page: Page) {
 }
 const state = (page: Page) => page.evaluate(() => {
   const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
-  return {policy: doc.interaction.policy, preset: doc.interaction.value, writes: (window as any).profileWrites,
+  return {policy: doc.interaction.policy, preset: doc.interaction.value, experience: doc.interaction.experience,
+    overrides: doc.interaction.overrides, writes: (window as any).profileWrites,
     selection: doc.selection.value?.toJSON(), undo: doc.crud.undoManager.isCanUndo()}
 })
 
@@ -83,6 +84,8 @@ test('five stops and keyboard controls apply combinations and display custom and
   for (let i = 0; i < names.length; i++) {
     await panel.getByRole('button', {name: names[i], exact: true}).click()
     const current = await state(page)
+    expect(current.experience).toBe(['focus', 'light', 'mixed', 'layout', 'design'][i])
+    expect(current.overrides).toEqual({})
     expect(current.policy.native.layoutControls).toBe(i > 0)
     expect(current.policy.native.moveExistingBlocks).toBe(i >= 2)
     expect(current.policy.native.contentResizeHandles).toBe(i >= 3)

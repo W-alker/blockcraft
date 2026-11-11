@@ -7,7 +7,7 @@ import {defineInteractionConfig} from './interaction-schema'
 const CUSTOM = defineInteractionConfig({namespace: 'customWidget', label: '自定义插件', fields: {
   enabled: {type: 'boolean', label: '启用入口', default: false, presets: {design: true}},
   placement: {type: 'select', label: '入口位置', default: 'left', options: [{value: 'left', label: '左侧'}, {value: 'right', label: '右侧'}]},
-  delay: {type: 'number', label: '延迟', default: 100, min: 0, max: 500, integer: true},
+  delay: {type: 'number', label: '延迟', default: 100, min: 0, max: 500, integer: true, experiences: {light: 275}},
   caption: {type: 'text', label: '入口名称', default: '工具', maxLength: 8},
 }})
 class CustomPlugin extends DocPlugin {
@@ -30,6 +30,43 @@ describe('per-document interaction registration', () => {
     dispose.push(() => {plugins.forEach(plugin => plugin.destroy()); doc.interaction.destroy()})
     return {doc, interaction: doc.interaction as DocumentInteraction}
   }
+
+  it('retains experience intent through overrides and late plugin registration', () => {
+    const h = setup([], {experience: 'light'})
+    expect(h.interaction.experience).toBe('light')
+    expect(h.interaction.matchingExperience).toBe('light')
+    h.interaction.setOverrides({native: {hoverControls: true}})
+    expect(h.interaction.experience).toBe('light')
+    expect(h.interaction.matchingExperience).toBeNull()
+    const plugin = new CustomPlugin()
+    plugin.register(h.doc)
+    dispose.push(() => plugin.destroy())
+    expect(h.interaction.get(CUSTOM).delay).toBe(275)
+    expect(h.interaction.policy.native.hoverControls).toBeTrue()
+    h.interaction.setOverrides({})
+    expect(h.interaction.matchingExperience).toBe('light')
+    expect(h.interaction.get(CUSTOM).delay).toBe(275)
+    h.interaction.set('mixed')
+    expect(h.interaction.experience).toBeNull()
+    expect(h.interaction.get(CUSTOM).delay).toBe(100)
+  })
+
+  it('switches experience atomically with the same gesture guard and clears custom overrides', () => {
+    const h = setup([new CustomPlugin()])
+    const before = h.interaction.snapshot
+    h.doc.event.status.isComposing = true
+    expect(h.interaction.setExperience('light')).toBeFalse()
+    expect(h.interaction.snapshot).toBe(before)
+    h.doc.event.status.isComposing = false
+    expect(h.interaction.setExperience('light', {plugins: {customWidget: {delay: 400}}})).toBeTrue()
+    expect(h.interaction.get(CUSTOM).delay).toBe(400)
+    expect(h.interaction.setExperience('light')).toBeTrue()
+    expect(h.interaction.get(CUSTOM).delay).toBe(275)
+    expect(h.interaction.overrides).toEqual({})
+    const selected = h.interaction.snapshot
+    expect(h.interaction.setExperience('invalid' as any)).toBeFalse()
+    expect(h.interaction.snapshot).toBe(selected)
+  })
 
   it('collects declarations before plugin init and gives the plugin the initial override', () => {
     const plugin = new CustomPlugin()

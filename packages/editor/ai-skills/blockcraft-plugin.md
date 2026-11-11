@@ -5,7 +5,7 @@
 > For configuring existing built-in plugins, see `blockcraft-plugins-ref.md`.
 > For event system internals, see L2: `blockcraft-event.md`.
 >
-> Last updated: 2026-11-10
+> Last updated: 2026-11-11
 
 ## 文档右键菜单装配
 
@@ -28,7 +28,7 @@ export const MY_INTERACTION = defineInteractionConfig({
   label: '我的插件',
   fields: {
     showEntry: {type: 'boolean', label: '显示入口', default: false, presets: {design: true}},
-    delay: {type: 'number', label: '显示延迟', default: 100, min: 0, max: 1000, integer: true},
+    delay: {type: 'number', label: '显示延迟', default: 100, min: 0, max: 1000, integer: true, experiences: {light: 650}},
     side: {type: 'select', label: '入口位置', default: 'left', options: [
       {value: 'left', label: '左侧'}, {value: 'right', label: '右侧'},
     ]},
@@ -50,11 +50,11 @@ export class MyFeaturePlugin extends DocPlugin {
 }
 ```
 
-宿主传 `interaction.overrides.plugins.myFeature`；解析优先级为字段 default → 当前 preset 字段值 → 用户覆盖。`boolean`、`number`、`select`、`text` 的值分别为布尔、有限数值、选项字符串、文本字符串。数值支持 min/max/integer，文本支持 maxLength；默认值和每个预设值也受相同校验。未知字段、未注册命名空间和非法值拒绝，`native` 为保留命名空间。
+宿主传 `interaction.overrides.plugins.myFeature`；解析优先级为字段 default → 当前 preset 字段值 → 当前 experience 字段值 → 用户覆盖。`boolean`、`number`、`select`、`text` 的值分别为布尔、有限数值、选项字符串、文本字符串。数值支持 min/max/integer，文本支持 maxLength；默认值、每个预设值和每个体验档位值也受相同校验。`experiences` 可选键为 focus/light/mixed/layout/design；未声明的档位继承基础 preset。插件只读取有效值，不分支判断档位名称。未知字段、未注册命名空间和非法值拒绝，`native` 为保留命名空间。
 
 Doc 构造时收集 `DocConfig.plugins[]` 全部声明，再解析初始配置，因此任一插件 init 都能读取其他已声明配置，不受初始化顺序影响。后装插件在 `register(doc)` 内、事件注册及 init 前登记；同一实例的声明登记幂等，不表示可重复调用 register/init。不同插件占用同一 namespace（即使字段相同）会抛 TypeError，整批声明原子失败；活动输入/手势或 Doc 已销毁时后装登记抛 Error。
 
-`get()` 必须传实际注册的声明对象，不接受复制对象或同名伪造声明。可从导出的声明获得类型推断；需要按字符串遍历时使用 `policy.plugins[namespace]`。`definitions` 提供冻结的表单元数据，`presets` 提供当前实例完整预设。Playground 按 definitions 自动生成控件，未安装插件不显示。
+`get()` 必须传实际注册的声明对象，不接受复制对象或同名伪造声明。可从导出的声明获得类型推断；需要按字符串遍历时使用 `policy.plugins[namespace]`。`definitions` 提供冻结的表单元数据，`presets` 提供当前实例完整三模式预设，`experiences` 提供完整五档策略；后装插件也自动继承当前体验。Playground 按 definitions 自动生成控件，未安装插件不显示。
 
 注册表属于 Doc，无进程级共享状态；随 Doc 释放。目前无独立插件卸载协议，手动调用 plugin.destroy() 不删除声明；后装插件应先注册，再设置覆盖。配置不能替代只读/锁授权，不自动安装插件，也不把插件构造参数自动并入交互配置。
 

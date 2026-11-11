@@ -1,3 +1,4 @@
+import {EDITOR_EXPERIENCES, type EditorExperience} from './editing-experience'
 import {BehaviorSubject, Subscription} from 'rxjs'
 
 import {EditorInteractionRegistry, type EditorInteractionMode, type EditorInteractionConfig, type EditorInteractionOverrides} from './interaction-policy'
@@ -36,8 +37,9 @@ export class DocumentInteraction {
       this.registeredPlugins.add(plugin)
       plugin.interactionConfigs.forEach(definition => this.definitionTokens.set(definition, definition.namespace))
     })
-    this.current = this.registry.resolve({...doc.config.interaction,
-      preset: doc.config.interaction?.preset ?? doc.config.interactionMode ?? 'mixed'})
+    this.current = this.registry.resolve(doc.config.interaction?.experience !== undefined
+      ? doc.config.interaction
+      : {...doc.config.interaction, preset: doc.config.interaction?.preset ?? doc.config.interactionMode ?? 'mixed'})
     this.policyState.next(this.current)
     this.state.next(this.current.preset)
     // Track active gestures before plugin listeners. Design uses the existing
@@ -50,6 +52,19 @@ export class DocumentInteraction {
   /** Metadata for native capabilities and only the plugins installed in this document. */
   get definitions() { return this.registry.definitions }
   get presets() { return this.registry.presets }
+  get experiences() { return this.registry.experiences }
+  /** Selected experience intent; custom overrides may differ from its defaults. */
+  get experience(): EditorExperience | null { return this.current.experience ?? null }
+  /** Effective default match, or null for a custom combination. */
+  get matchingExperience(): EditorExperience | null {
+    const actual = JSON.stringify(this.policy)
+    if (this.experience && JSON.stringify(this.experiences[this.experience]) === actual) return this.experience
+    return EDITOR_EXPERIENCES.find(item => JSON.stringify(this.experiences[item.id]) === actual)?.id ?? null
+  }
+
+  setExperience(experience: EditorExperience, overrides?: EditorInteractionOverrides): boolean {
+    return this.configure({experience, overrides})
+  }
 
   get<F extends Readonly<Record<string, InteractionField>>>(definition: InteractionConfigDefinition<F>): InteractionConfigValues<F> {
     const namespace = this.definitionTokens.get(definition)
@@ -66,7 +81,7 @@ export class DocumentInteraction {
     if (!plugin.interactionConfigs.length) { this.registeredPlugins.add(plugin); return }
     if (this.isBusy()) throw new Error('Cannot register interaction configuration during an active input or gesture')
     const registry = new EditorInteractionRegistry([...this.registry.definitions.slice(1), ...plugin.interactionConfigs])
-    const next = registry.resolve({preset: this.value, overrides: this.overrides})
+    const next = registry.resolve(this.current)
     this.registry = registry
     plugin.interactionConfigs.forEach(definition => this.definitionTokens.set(definition, definition.namespace))
     this.registeredPlugins.add(plugin)
@@ -89,9 +104,9 @@ export class DocumentInteraction {
     return ['mixed', 'immersive', 'design'].includes(mode) && this.configure({preset: mode})
   }
 
-  /** Replace overrides; an empty object restores the active preset. */
+  /** Replace overrides; an empty object restores the active experience or preset. */
   setOverrides(overrides: EditorInteractionOverrides): boolean {
-    return this.configure({preset: this.value, overrides})
+    return this.configure({...this.current, overrides})
   }
 
   /** Atomic replacement. False for invalid input or while IME/pointer/movement is active. */

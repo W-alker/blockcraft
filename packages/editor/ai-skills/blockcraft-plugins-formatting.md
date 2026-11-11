@@ -15,7 +15,7 @@
 ## 文字浮动工具栏的选区停留时间（未发布）
 
 `TEXT_TOOLBAR_INTERACTION` 新增 `textToolbar.openDelay`：0–2000 的整数毫秒，默认 350。
-Playground 轻量档覆盖为 650；专注仍通过 `enabled: false` 关闭，其他档位保持 350。
+官方轻量档通过 experiences 声明为 650；专注仍通过 `enabled: false` 关闭，其他档位保持 350。
 选区继续变化时重新计时；切换本插件的开关或延迟取消旧任务并关闭当前浮层，等待下一次选区变化。
 `setEnabled(false)` 也取消旧任务；其他插件配置变化不会打断计时。销毁时清理订阅与计时。
 显式 `openToolbar()` 不等待延迟，仍遵守启用、选区与权限检查；固定工具栏、格式快捷键、

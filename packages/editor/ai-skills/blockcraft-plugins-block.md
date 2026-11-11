@@ -8,7 +8,7 @@
 
 `BlockControllerPlugin` 声明并导出 `BLOCK_CONTROLLER_INTERACTION`（namespace `blockController`）：`enabled` 控制正文块操作入口（默认 true，immersive 为 false），`hoverMenu` 控制悬停自动展开菜单（默认 true）。`native.layoutControls` 总开关和只读仍优先；关闭时隐藏入口并清理当前菜单、延迟显示与待确认点击。`hoverMenu: false` 保留点击选择并打开菜单，关闭已有菜单和待执行 hover 弹出。已有块排序另由 `moveExistingBlocks` 控制，显隐不是移动授权。
 
-Playground 轻量档覆盖 `plugins.blockController.hoverMenu: false`；混排及设计保持自动菜单。固定工具栏、BlockGapCreator 的光标/输入能力及快捷键不随本配置改变。自定义入口配置使用 `doc.interaction.configure({preset: "mixed", overrides: {plugins: {blockController: {enabled: true, hoverMenu: false}}}})`，无需卸载插件或修改 Doc 字段清单。
+官方轻量档通过 experiences 声明 `plugins.blockController.hoverMenu: false`；混排及设计保持自动菜单。固定工具栏、BlockGapCreator 的光标/输入能力及快捷键不随本配置改变。自定义入口配置使用 `doc.interaction.configure({preset: "mixed", overrides: {plugins: {blockController: {enabled: true, hoverMenu: false}}}})`，无需卸载插件或修改 Doc 字段清单。
 mixed/design 保持原正文拾取与块抓手行为；design 仅增强聚焦对象的几何控制点显示。
 模式不改变块菜单的数据命令、锁定权限或自定义扩展配置。
 

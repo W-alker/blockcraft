@@ -253,7 +253,7 @@ where a painted absolute handle may still be reported as its `td` or content.
 
 构造参数保持不变。插件声明并导出 `TABLE_TOOLBAR_INTERACTION`（namespace `tableToolbar`）：
 `enabled` 控制结构浮动工具栏，默认 true，immersive 为 false；`textFocus` 控制单元格内文字编辑时自动显示，默认 true。
-Playground 轻量档覆盖 `textFocus: false`，仍在明确选中行、列或单元格区域时显示。
+官方轻量档通过 experiences 声明 `textFocus: false`，仍在明确选中行、列或单元格区域时显示。
 工具栏开关不影响键盘、剪贴板、行列选择、列宽拖动、文档数据或权限；顶部固定工具栏不变。
 表格组件消费声明的有效策略，普通态和全屏一致；未安装此插件时保留原有显示行为。
 切换相关配置取消待创建的工具栏，再按当前选区同步；无关插件配置不触发刷新。

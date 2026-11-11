@@ -10,7 +10,7 @@
 ## 表格结构工具栏交互策略（未发布）
 
 `TableBlockBinding` 注册 `TABLE_TOOLBAR_INTERACTION`，`TableBlockComponent` 消费 `plugins.tableToolbar.enabled/textFocus`。
-`enabled` 默认 true、immersive 为 false；`textFocus` 默认 true，Playground 轻量档覆盖 false，
+`enabled` 默认 true、immersive 为 false；`textFocus` 默认 true，官方轻量档通过 experiences 声明 false，
 因此轻量仅在行、列、单元格区域选择时显示结构工具栏。未安装该插件的表格保留原有行为。
 普通态 CDK 与全屏内联工具栏共用门控；关闭时取消延迟帧，在测量几何前返回；最终创建 Overlay 前再次检查。
 配置变化只刷新当前表格 UI，保持模型选区、数据、行列抓手与列宽拖动；只读始终优先。

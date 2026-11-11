@@ -4,6 +4,27 @@
 >
 > Last updated: 2026-11-11 | Tracks `@ccc/blockcraft` npm releases.
 
+## 0.12.6 — 官方五档体验统一到 editor 包（2026-11-11）
+
+- Severity: patch（按本次发布要求；新增可选五档 API，旧三模式与自定义配置保持兼容）。
+- What changed / Why: 五档组合从 Playground 收敛到 editor；插件自行声明体验差异，避免宿主维护重复的插件字段清单。
+- New APIs: `EDITOR_EXPERIENCES`、`EditorExperience`、`EditorExperienceDefinition`；`EditorInteractionConfig.experience`、snapshot 可选 `experience`；`DocumentInteraction.setExperience()` / `experience` / `experiences` / `matchingExperience`；字段元数据 `experiences`；`EditorInteractionRegistry.experiences`。
+- Behavior Changes: 使用新 experience 配置时解析 default → preset → experience → overrides。`setOverrides({})` 恢复当前档位；后装插件自动继承档位。旧 preset-only 配置不变，`set(mode)` 清空体验意图。两种 selector 同传时必须一致，非法配置沿用构造抛错/configure 返回 false 的边界。状态和偏好不写入协作文档，顶部固定工具栏不变。
+- Deprecations: 无；三模式和自定义覆盖继续支持。
+- Migration Recipe: 先升级到包含本能力的版本。宿主将手工五档 switch 改为 `doc.interaction.configure({experience: savedLevel})`，保留原 ID 和偏好存储；只有产品专属差异才额外传 overrides。自定义插件可在字段中增加 `experiences: {light: value}`，未填写档位沿用基础预设。无需文档数据迁移。
+
+```typescript
+// before（宿主维护轻量组合）
+doc.interaction.configure({preset: 'mixed', overrides: {
+  native: {moveExistingBlocks: false, groupOutline: false, objectFloatingHandles: false},
+  plugins: {/* 每个已安装插件的轻量覆盖 */},
+}});
+// after（包内统一维护，宿主可按需追加自己的 overrides）
+doc.interaction.configure({experience: 'light'});
+```
+
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-plugin.md`、`blockcraft-block.md`、`blockcraft-plugins-block.md`、`blockcraft-plugins-formatting.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-plugins-inline.md`。
+
 ## 0.12.5 — 编辑档位插件策略与附件动作（2026-11-11）
 
 - Severity: patch（按本次发布要求；新增配置和附件动作扩展保持既有 API 兼容）。

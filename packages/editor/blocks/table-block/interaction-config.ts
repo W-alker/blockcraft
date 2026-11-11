@@ -4,6 +4,6 @@ import {defineInteractionConfig} from '../../framework/doc/interaction-schema'
 export const TABLE_TOOLBAR_INTERACTION = defineInteractionConfig({
   namespace: 'tableToolbar', label: '表格结构工具栏', fields: {
     enabled: {type: 'boolean', label: '显示表格浮动工具栏', default: true, presets: {immersive: false}},
-    textFocus: {type: 'boolean', label: '编辑单元格文字时显示', default: true},
+    textFocus: {type: 'boolean', label: '编辑单元格文字时显示', default: true, experiences: {light: false}},
   },
 })

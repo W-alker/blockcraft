@@ -108,7 +108,7 @@ Manages click behavior on attachment blocks (file picker for empty blocks, uploa
 
 `AttachmentExtensionPlugin` 声明并导出 `ATTACHMENT_TOOLBAR_INTERACTION`：
 `plugins.attachmentToolbar.hoverOpen` 默认 true，各档位保留悬停；`selectionOpen` 默认 true，immersive 为 false，
-Playground 轻量档也覆盖为 false。混排/布局/设计中，单个附件整体选中时显示同一工具栏，移开鼠标仍保留；
+官方轻量档也声明为 false。混排/布局/设计中，单个附件整体选中时显示同一工具栏，移开鼠标仍保留；
 选区离开后回到悬停规则。跨块选区、gap 光标不触发；整篇只读始终忽略 selectionOpen，仅保留原悬停/触屏入口。
 切换档位立即按当前选区重新判断，不改选区、文档内容或 Undo。锁定块仍按原权限隐藏编辑动作；
 上传、预览、下载、文件粘贴及宿主自定义动作不变。

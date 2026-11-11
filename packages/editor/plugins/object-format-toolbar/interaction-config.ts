@@ -9,6 +9,6 @@ export const OBJECT_TOOLBAR_INTERACTION = defineInteractionConfig({
 
 export const GROUP_TOOLBAR_INTERACTION = defineInteractionConfig({
   namespace: 'groupToolbar', label: '组合工具栏', fields: {
-    enabled: {type: 'boolean', label: '整组选中工具栏', default: true, presets: {immersive: false}},
+    enabled: {type: 'boolean', label: '整组选中工具栏', default: true, presets: {immersive: false}, experiences: {light: false}},
   },
 })

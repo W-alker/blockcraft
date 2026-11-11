@@ -29,6 +29,9 @@ test('文字浮层延迟由档位和调试配置控制，输入与固定工具�
   }
   const debug = page.getByTestId('interaction-mode-debug')
   await debug.locator('summary').click()
+  const delayMode = debug.getByRole('combobox', {name: '选区停留后显示（毫秒）配置方式', exact: true})
+  await expect(delayMode).toHaveValue('inherit')
+  await delayMode.selectOption('custom')
   const delay = debug.getByRole('spinbutton', {name: '选区停留后显示（毫秒）', exact: true})
   await expect(delay).toHaveValue('650')
   await delay.fill('1200')

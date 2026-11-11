@@ -1,3 +1,5 @@
+import {EDITOR_EXPERIENCES, type EditorExperience} from './editing-experience'
+
 export type EditorInteractionMode = 'mixed' | 'immersive' | 'design'
 export type InteractionValue = boolean | number | string
 
@@ -5,6 +7,7 @@ type FieldBase<T extends InteractionValue> = {
   readonly label: string
   readonly default: T
   readonly presets?: Partial<Readonly<Record<EditorInteractionMode, T>>>
+  readonly experiences?: Partial<Readonly<Record<EditorExperience, T>>>
 }
 export type InteractionField =
   | (FieldBase<boolean> & {readonly type: 'boolean'})
@@ -60,12 +63,14 @@ export function defineInteractionConfig<const F extends Readonly<Record<string, 
   for (const [key, source] of Object.entries(definition.fields)) {
     assertInteractionKey(key)
     if (!isInteractionRecord(source) || typeof source.label !== 'string' || !source.label) throw new TypeError(`Invalid interaction field: ${key}`)
-    const keys = ['type', 'label', 'default', 'presets', ...(source.type === 'number' ? ['min', 'max', 'integer']
+    const keys = ['type', 'label', 'default', 'presets', 'experiences', ...(source.type === 'number' ? ['min', 'max', 'integer']
       : source.type === 'text' ? ['maxLength'] : source.type === 'select' ? ['options'] : [])]
     if (Object.keys(source).some(name => !keys.includes(name))) throw new TypeError(`Unknown interaction field constraint: ${key}`)
     if (source.presets !== undefined && !isInteractionRecord(source.presets)) throw new TypeError(`Invalid interaction presets: ${key}`)
     if (source.type === 'number' && source.integer !== undefined && typeof source.integer !== 'boolean') throw new TypeError(`Invalid integer constraint: ${key}`)
-    const field = {...source, ...(source.presets ? {presets: {...source.presets}} : {})} as InteractionField
+    if (source.experiences !== undefined && !isInteractionRecord(source.experiences)) throw new TypeError(`Invalid interaction experiences: ${key}`)
+    const field = {...source, ...(source.presets ? {presets: {...source.presets}} : {}),
+      ...(source.experiences ? {experiences: {...source.experiences}} : {})} as InteractionField
     if (field.type === 'select') {
       if (!Array.isArray(field.options) || !field.options.length || field.options.some(option =>
         !option || typeof option.value !== 'string' || typeof option.label !== 'string') ||
@@ -84,6 +89,11 @@ export function defineInteractionConfig<const F extends Readonly<Record<string, 
       fields[key] = field
     }
     if (!validateInteractionValue(fields[key]!, field.default)) throw new TypeError(`Invalid interaction default: ${key}`)
+    for (const [id, value] of Object.entries(field.experiences ?? {})) {
+      if (!EDITOR_EXPERIENCES.some(item => item.id === id) || !validateInteractionValue(fields[key]!, value)) {
+        throw new TypeError(`Invalid interaction experience: ${key}.${id}`)
+      }
+    }
     for (const [mode, value] of Object.entries(field.presets ?? {})) {
       if (!['mixed', 'immersive', 'design'].includes(mode) || !validateInteractionValue(fields[key]!, value)) {
         throw new TypeError(`Invalid interaction preset: ${key}.${mode}`)
