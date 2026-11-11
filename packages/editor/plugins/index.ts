@@ -1,6 +1,7 @@
 export * from './codeEditorBinding'
 export * from './tableBlockBinding'
 export * from './inline-link-extension'
+export {LINK_BLOCK_RESOLVER, type LinkBlockResolver, type LinkBlockTarget, type LinkBlockResolution, type LinkBlockResolveContext} from './link-block-resolver'
 export * from './img-toolbar'
 export * from './float-text-toolbar'
 export * from './fixed-toolbar'

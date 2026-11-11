@@ -2,13 +2,19 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-27
+> Last updated: 2026-11-11
 
 ## Inline Extensions
 
 ### InlineLinkExtension
 
 > `plugins/inline-link-extension/` — Hyperlink interactions and editing.
+
+宿主可在 Doc 注入器提供 `LINK_BLOCK_RESOLVER`，将业务链接解析为注册块（flavour、params、label），
+或明确 blocked / unhandled；只有 unhandled 回退为内置网页。菜单和执行共享合同，支持 Promise 和 AbortSignal，
+执行重新解析并以相对范围校验源链接。链接打开、编辑、解除和转卡片仍沿用原规则。
+`switchView('embed')` 现在异步解析宿主目标，返回 Promise<void>；无 resolver 时保留原转换结果。
+完整 Provider 和异步边界见 `blockcraft-app.md`。
 
 Handles inline link clicks (编辑模式单击显示工具栏、双击导航；整篇文档只读时单击直接导航，拖选文字和右键不导航，双击只导航一次；单个块锁定仍保留原工具栏行为), provides link editing/unbinding/copying, and supports direct conversion to card or embed views.
 

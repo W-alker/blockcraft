@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-11-10
+> Last updated: 2026-11-11
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -74,6 +74,46 @@ await doc.clipboard.pasteFromClipboard(selection, 'auto')     // 'auto' | 'plain
 取消删除；删除前重新解析相对位置并检查权限。读取拒绝/不可用会 reject，调用方必须显示反馈。
 粘贴返回 true 表示已派发到正常 paste 事件链，不代表异步图片上传或后续插件已经完成。
 无内容/锚点失效/写入不允许返回 false。不会自动申请持久权限或在打开菜单时读取剪贴板。
+
+## 链接转块扩展（0.12.4）
+
+宿主在 Doc 的注入器提供 `LINK_BLOCK_RESOLVER`，识别业务链接并返回已注册块的创建参数。
+BlockCraft 负责菜单、源链接范围、父容器／只读检查、Schema 创建和独立撤销事务；业务身份、
+资源信息、网络访问与权限由宿主拥有。不要在 DocConfig、元信息抓取服务或通用 iframe 中复制这些规则。
+
+```typescript
+import {LINK_BLOCK_RESOLVER, type LinkBlockResolver} from '@ccc/blockcraft';
+
+const resolver: LinkBlockResolver = {
+  async resolve(url, {phase, signal}) {
+    const resource = host.parseResourceLink(url);
+    if (!resource) return {kind: 'unhandled'};
+    const info = await host.getAuthorizedResource(resource, {phase, signal});
+    if (!info) return {kind: 'blocked'};
+    if (info.kind === 'spreadsheet') {
+      // spreadsheet 是宿主声明并注册的 Schema，不属于框架业务类型。
+      return {kind: 'block', label: '内嵌电子表格', flavour: 'spreadsheet',
+        params: [{targetDocumentId: info.id}]};
+    }
+    return {kind: 'block', label: '附件预览', flavour: 'attachment',
+      params: [{url: info.resourceUrl, name: info.name, type: info.mimeType, size: info.size}]};
+  },
+};
+// 可在组件 providers 直接提供；使用传给 Doc 的同一个组件注入器即可。
+const providers = [{provide: LINK_BLOCK_RESOLVER, useValue: resolver}];
+```
+
+- `resolve` 接收规范化的有效 HTTP(S) URL，支持同步或 Promise。`phase` 为 `menu` / `convert`；
+  菜单准备与执行分别解析，不能把菜单结果当成最终授权。通过 AbortSignal 取消过期请求；宿主应响应取消。
+- `block`：菜单使用 label，执行时由已注册 Schema 创建块；`blocked`：不提供转换，绝不回退为网页；
+  `unhandled`：继续已有网页／旧平台嵌入。缺少目标 Schema、root 目标、异常或无效返回不回退为网页。
+- 解析必须只读，不创建资源、不写正文。params 只存稳定资源引用和必要展示信息，不能包含会话 token 或临时授权凭据。
+- 异步执行保留相对文本范围，完成后重验源链接、只读／锁、父容器与目标 Schema；源变化、销毁或新转换会使旧结果失效。
+  一次转换是一次撤销；前后文字及格式保留，不复制源块的锁／实例元数据给新块。
+- 只覆盖行内链接／书签卡片转目标块。普通链接与卡片互转、直接网页创建／编辑、存量块读取、
+  Adapter 导入和自定义块反向转链接仍使用各自合同。附件块当前是卡片并提供打开预览能力，不新增正文内文件渲染器。
+- 未配置 resolver 时保留原行为。不增加日常输入扫描、全局可变注册表或跨文档资源缓存；
+  宿主缓存应自行按身份和权限隔离。独立 Doc 可用子注入器隔离，自建子注入器由宿主销毁。
 
 ## High-Level Wiring
 

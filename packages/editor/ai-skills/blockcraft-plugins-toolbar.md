@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-11-10
+> Last updated: 2026-11-11
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -876,6 +876,10 @@ text. HTML round-trips the payload; Markdown degrades to readable text.
 ---
 
 ## BookmarkBlockExtensionPlugin
+
+`LINK_BLOCK_RESOLVER` 可由 Doc 注入器提供，卡片与行内链接共用链接转块合同；
+菜单显示目标 label，提交重新解析并校验源卡片，支持异步取消。blocked／失败不回退为网页，
+未配置／unhandled 保留内置转换；转回链接不调用 resolver。Provider 示例见 `blockcraft-app.md`。
 
 > `plugins/bookmark-frame-extension/` — Toolbar for bookmark blocks.
 > Runtime plugin ID: `bookmark-block-extension`.

@@ -1,6 +1,6 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, EventEmitter, Input, Output } from "@angular/core";
+import { ChangeDetectionStrategy, Component, DestroyRef, EventEmitter, computed, Input, Output } from "@angular/core";
 import { BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective } from "../../../components";
-import {getEmbedViewFlavour} from '../../link-view-utils';
+import {LinkBlockMenuState} from '../../link-view-utils';
 
 @Component({
   selector: 'inline-link-toolbar',
@@ -26,7 +26,12 @@ import {getEmbedViewFlavour} from '../../link-view-utils';
 
     <ng-template #viewModeTpl>
       <bc-float-toolbar direction="column" (onItemClick)="itemClicked.emit($event)">
-        @for (mode of LINK_VIEW_MODE_MAP; track mode[0]) {
+        @if (blockView.loading()) {
+          <bc-float-toolbar-item [disabled]="true">正在解析链接…</bc-float-toolbar-item>
+        } @else if (blockView.failed()) {
+          <bc-float-toolbar-item [disabled]="true">链接解析失败</bc-float-toolbar-item>
+        }
+        @for (mode of LINK_VIEW_MODE_MAP(); track mode[0]) {
           <bc-float-toolbar-item [value]="mode[0]" name="switch-view" [active]="mode[0] === 'inline'">
             {{ mode[1] }}
           </bc-float-toolbar-item>
@@ -72,18 +77,25 @@ export class InlineLinkToolbar {
   @Output()
   itemClicked = new EventEmitter<BcFloatToolbarItemComponent>()
 
-  protected readonly LINK_VIEW_MODE_MAP: Map<string, string> = new Map([['inline', '链接视图'], ['card', '卡片视图']])
+  readonly blockView = new LinkBlockMenuState()
+  protected readonly LINK_VIEW_MODE_MAP = computed(() => {
+    const modes = new Map([['inline', '链接视图'], ['card', '卡片视图']])
+    const target = this.blockView.target()
+    if (target) modes.set('embed', target.label)
+    return modes
+  })
 
   constructor(
     public readonly destroyRef: DestroyRef
   ) {
   }
 
-  ngOnInit() {
-    if (getEmbedViewFlavour(this.link, this.doc.schemas)) {
-      this.LINK_VIEW_MODE_MAP.set('embed', '嵌入视图')
-    }
+  ngOnChanges() {
+    if (this.doc && !this.isReadOnly && !this.doc.isReadonly) this.blockView.load(this.link, this.doc)
+    else this.blockView.cancel()
   }
+
+  ngOnDestroy() { this.blockView.cancel() }
 
   onItemClick($event: BcFloatToolbarItemComponent) {
     this.itemClicked.emit($event)

@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-11-10 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-11-11 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 
 对象顶部浮动抓手可通过 `overrides.native.objectFloatingHandles` 独立收起（默认 `true`），不影响正文块菜单与整体选中缩放；配置与投影见 `blockcraft-app.md`、`blockcraft-theme.md`。
 
@@ -184,6 +184,11 @@ Schema 的 `objectDrag` 和视图区域标记见 `blockcraft-plugins-block.md`�
 供预览恢复使用；它不是持久化字段。具体规则见 `blockcraft-block.md` 的 Fixed Object Groups。
 组合四角等比缩放同步艺术字字号，四边调整保留字号；文字、路径预览与持久化共享缩放规则，
 尺寸和字号共同撤销。普通文本框字号保持不变。
+
+## 宿主链接转块（0.12.4）
+
+LINK_BLOCK_RESOLVER 是链接／书签插件共享的业务扩展点，支持异步解析为已注册块、明确拒绝或回退内置网页。
+解析不修改正文，框架统一管理源范围、权限边界、取消与 Undo；Provider 示例和合同见 `blockcraft-app.md`。
 
 ## Core Concepts
 

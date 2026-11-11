@@ -4,6 +4,15 @@
 >
 > Last updated: 2026-11-11 | Tracks `@ccc/blockcraft` npm releases.
 
+## 0.12.4 — 宿主链接转块解析（2026-11-11）
+
+- Severity: patch（按本次发布要求；新增可选宿主扩展，默认行为保持兼容）。
+- What changed / Why: 在插件层新增 LINK_BLOCK_RESOLVER / LinkBlockResolver / LinkBlockResolution / LinkBlockTarget / LinkBlockResolveContext，支持将业务链接转为宿主已注册块。业务识别由宿主实现，框架统一管理转换生命周期。
+- New APIs: Doc Injector 提供 resolve(url, {phase, signal})，同步或 Promise 返回 block（flavour、params、label）、blocked 或 unhandled。业务资源识别和授权归宿主；框架负责创建、替换和撤销。
+- Behavior Changes: 链接和卡片菜单显示目标名称，执行重新解析；明确拒绝、异常、无效返回和未知 Schema 不回退为网页。未提供／unhandled 保留内置统一网页和旧平台转换。异步期间源链接变化、只读、销毁和更新的转换使旧结果失效；保留前后文字、格式与独立 Undo。
+- Migration Recipe: 既有无自定义解析的调用无需修改。新宿主通过 LINK_BLOCK_RESOLVER 接入；仅过滤时返回 blocked/unhandled。InlineLinkExtension.switchView 返回 Promise<void>，需要等待转换完成的调用方应 await。无需持久化格式迁移；直接网页创建、既有读取和自定义块反向转换不扩展。
+- Affected ai-skills files: blockcraft.md、blockcraft-app.md、blockcraft-plugins-inline.md、blockcraft-plugins-toolbar.md。
+
 ## 0.12.3 — 媒体块交互边框与抓手统一（2026-11-11）
 
 - Severity: patch（交互样式一致性修复）。

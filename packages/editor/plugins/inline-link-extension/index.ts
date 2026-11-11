@@ -14,7 +14,7 @@ import {ComponentRef} from "@angular/core";
 import {LinkEditFloatDialog} from "./widgets/link-edit-dialog";
 import {OneShotRangeAnchor} from "../../framework/utils/one-shot-selection-anchor";
 import {isSelectionAlive} from "../../framework/modules/selection/liveness";
-import {getEmbedViewFlavour, runLinkViewChange} from '../link-view-utils';
+import {resolveLinkBlockTarget, runLinkViewChange} from '../link-view-utils';
 
 type TextLinkInfo = {
   textRange: {
@@ -35,6 +35,7 @@ export class InlineLinkExtension extends DocPlugin {
 
   private _linkNode: HTMLElement | null = null
   private _activeBlock: BlockCraft.BlockComponent | null = null
+  private _conversionAbort?: AbortController
 
   private _isReadonly(block: BlockCraft.BlockComponent) {
     return this.doc.readonlyManager?.isReadonly(block) ?? this.doc.isReadonly
@@ -213,7 +214,7 @@ export class InlineLinkExtension extends DocPlugin {
           return
         case 'switch-view':
           if ((item.value === 'card' || item.value === 'embed') && !this._isReadonly(block)) {
-            this.switchView(item.value)
+            void this.switchView(item.value, item.value === 'embed' ? this._cpr?.instance.blockView.target()?.flavour : undefined)
           }
           this.closeToolbar()
           return
@@ -338,45 +339,61 @@ export class InlineLinkExtension extends DocPlugin {
     })
   }
 
-  switchView(view: 'card' | 'embed' = 'card') {
+  async switchView(view: 'card' | 'embed' = 'card', expectedFlavour?: BlockCraft.BlockFlavour): Promise<void> {
     if (!this._linkNode) return
-    const link = this.tryGetLink(this._linkNode)
-    if (!link) return
-
-    const linkInfo = this._tryGetTextLinkInfo(this._linkNode)
-    if (!linkInfo) return
-    const _range = linkInfo.textRange
-    const {block, index, length} = _range
-    if (!this._isBlockAlive(block) || !this.doc.isEditable(block)) return
-    if (this._isReadonly(block)) return
-
-    const flavour = view === 'embed' ? getEmbedViewFlavour(link, this.doc.schemas) : 'bookmark'
-    if (!flavour || !this.doc.schemas.has(flavour)) return
-    const hasSuffix = index + length < block.textLength
-    if (!block.parentId || !this.doc.canInsertChild(block.parentId, flavour)
-      || (hasSuffix && !this.doc.canInsertChild(block.parentId, block.flavour))) {
-      this.doc.messageService.warn('当前位置无法转换为该视图')
-      return
-    }
-    const target = this.doc.schemas.createSnapshot(flavour, [link])
-    const insertBlocks: IBlockSnapshot[] = [target]
-
-    if (hasSuffix) {
-      const splitRightDeltas = sliceDelta(block.textDeltas(), index + length)
-      insertBlocks.push(this.doc.schemas.createSnapshot(block.flavour, [splitRightDeltas, block.props]))
-    }
-
-    void runLinkViewChange(this.doc, block, target.id, () => {
-      if (index === 0) {
-        this.doc.crud.replaceWithSnapshots(block.id, insertBlocks)
-      } else {
-        block.deleteText(index, block.textLength - index)
-        this.doc.crud.insertBlocksAfter(block, insertBlocks)
+    const url = this.tryGetLink(this._linkNode)
+    if (!url) return
+    const info = this._tryGetTextLinkInfo(this._linkNode)
+    if (!info || !this._isBlockAlive(info.textRange.block) || this._isReadonly(info.textRange.block)) return
+    const source = info.textRange.block
+    const anchor = new OneShotRangeAnchor(this.doc)
+    anchor.capture(source, info.textRange.index, info.textRange.length)
+    this._conversionAbort?.abort()
+    const controller = new AbortController()
+    this._conversionAbort = controller
+    try {
+      const resolved = view === 'embed'
+        ? await resolveLinkBlockTarget(url, this.doc, {phase: 'convert', signal: controller.signal})
+        : {kind: 'block' as const, label: '卡片视图', flavour: 'bookmark' as const, params: [url] as [string]}
+      if (!resolved || controller.signal.aborted) return
+      if (expectedFlavour && resolved.flavour !== expectedFlavour) return
+      const range = anchor.resolve()
+      if (!range || range.block !== source || !this._isBlockAlive(source) || this._isReadonly(source)) return
+      const {block, index, length} = range
+      const current = sliceDelta(block.textDeltas(), index, index + length)
+      if (!length || current.some(op => typeof op.insert !== 'string' || op.attributes?.['a:link'] !== url)
+        || current.map(op => op.insert).join('') !== info.text) return
+      const flavour = resolved.flavour
+      if (!this.doc.schemas.has(flavour)) return
+      const hasSuffix = index + length < block.textLength
+      if (!block.parentId || !this.doc.canInsertChild(block.parentId, flavour)
+        || (hasSuffix && !this.doc.canInsertChild(block.parentId, block.flavour))) {
+        this.doc.messageService.warn('当前位置无法转换为该视图')
+        return
       }
-    })
+      const target = this.doc.schemas.createSnapshot(flavour, resolved.params)
+      const insertBlocks: IBlockSnapshot[] = [target]
+      if (hasSuffix) {
+        const splitRightDeltas = sliceDelta(block.textDeltas(), index + length)
+        insertBlocks.push(this.doc.schemas.createSnapshot(block.flavour, [splitRightDeltas, block.props]))
+      }
+      await runLinkViewChange(this.doc, block, target.id, () => {
+        if (index === 0) this.doc.crud.replaceWithSnapshots(block.id, insertBlocks)
+        else {
+          block.deleteText(index, block.textLength - index)
+          this.doc.crud.insertBlocksAfter(block, insertBlocks)
+        }
+      })
+    } catch {
+      if (!controller.signal.aborted) this.doc.messageService.warn('链接转换失败，请重试')
+    } finally {
+      anchor.reset()
+      if (this._conversionAbort === controller) this._conversionAbort = undefined
+    }
   }
 
   destroy() {
+    this._conversionAbort?.abort()
     this.closeToolbar()
     this._sub.unsubscribe()
   }
