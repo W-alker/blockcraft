@@ -39,6 +39,53 @@ async function state(page: Page, ids: string[]) {
   }, ids)
 }
 
+test('编辑档位控制正文入口和自动菜单，固定工具栏及正文输入保持可用', async ({page}) => {
+  const ids = await setup(page)
+  const experience = page.getByTestId('editing-experience')
+  const text = page.locator(`block-craft-editor [data-block-id="${ids[0]}"] .edit-container`)
+  const handle = page.locator('bc-drag-handle .btn')
+  const menu = page.locator('.cdk-overlay-pane[data-float-index="1"] > bc-float-toolbar')
+  const fixed = page.locator('bc-fixed-toolbar')
+  const fixedBefore = await fixed.innerText()
+  await experience.getByRole('button', {name: '轻量编辑', exact: true}).click()
+  expect(await fixed.innerText()).toBe(fixedBefore)
+  await text.hover()
+  await expect(handle).toBeVisible()
+  await handle.hover()
+  await page.waitForTimeout(650) // 自动菜单延迟 500ms，需跨过延迟检查不会回弹。
+  await expect(menu).toHaveCount(0)
+  await handle.click()
+  await expect(menu).toBeVisible()
+
+  await experience.getByRole('button', {name: '专注内容', exact: true}).click()
+  await expect(menu).toHaveCount(0)
+  await text.hover()
+  await expect(handle).toBeHidden()
+  await text.click()
+  await page.keyboard.press('End')
+  await page.keyboard.type('abc')
+  await expect(text).toContainText('abc')
+  await page.keyboard.press('Backspace')
+  await expect(text).toContainText('ab')
+  await expect(fixed).toBeVisible()
+
+  await experience.getByRole('button', {name: '图文混排', exact: true}).click()
+  await text.hover()
+  await handle.hover()
+  await expect(menu).toBeVisible()
+  // 仅关闭插件入口，不改变预设；已打开的菜单也要立即消失。
+  const debug = page.getByTestId('interaction-mode-debug')
+  await debug.locator('summary').click()
+  await debug.getByLabel('显示块操作入口', {exact: true}).selectOption('false')
+  await expect(menu).toHaveCount(0)
+  await text.hover()
+  await expect(handle).toBeHidden()
+  await debug.getByLabel('显示块操作入口', {exact: true}).selectOption('true')
+  await debug.locator('summary').hover()
+  await text.hover()
+  await expect(handle).toBeVisible()
+})
+
 for (const multi of [false, true]) {
   test(`抓手选中${multi ? '多段' : '单段'}后顶部文本工具可用且只格式化所选段落`, async ({page}) => {
     const ids = await setup(page)

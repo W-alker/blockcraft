@@ -42,6 +42,7 @@ import { TableFullscreenController } from "./table-fullscreen-controller";
 import {fitTableColumnWidths, measureTableCellWidths, measureTableCellWidthMetrics} from './table-column-fit';
 import {smartTableColumnWidths, TableCellWidthProfile} from './table-smart-width';
 import {TableColumnWidthObserver} from './table-column-width-observer';
+import {TABLE_TOOLBAR_INTERACTION} from './interaction-config';
 
 const TABLE_CELL_SELECTED_CLASS = 'bc-table-cell-selected'
 const TABLE_COL_RESIZE_PREVIEW_ATTR = 'data-bc-table-col-resize-preview'
@@ -748,6 +749,18 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       .subscribe(selection => {
         this._syncTableFocusUi(selection)
       })
+
+    let toolbarPolicy = this.doc.interaction?.policy.plugins[TABLE_TOOLBAR_INTERACTION.namespace]
+    this.doc.interaction?.policyChanges$.pipe(takeUntil(this.onDestroy$)).subscribe(({policy}) => {
+      const next = policy.plugins[TABLE_TOOLBAR_INTERACTION.namespace]
+      if (next?.['enabled'] === toolbarPolicy?.['enabled'] && next?.['textFocus'] === toolbarPolicy?.['textFocus']) return
+      toolbarPolicy = next
+      this._hideTableMenu()
+      this.refreshTableMenuFromSelection()
+    })
+    this.doc.readonlyManager.stateChange$.pipe(takeUntil(this.onDestroy$)).subscribe(() => {
+      if (this._tableMenu.visible && !this._isGone() && this.isReadonly) this._hideTableMenu()
+    })
 
     // 在表格内进行文本编辑（普通打字 / IME 提交）时折叠行/列多选高亮。
     // Model-owned table-cell 选区切换到文本光标时会由 _syncTableFocusUi 同步清理；
@@ -2091,6 +2104,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     return true
   }
 
+  private _canShowTableToolbar(kind: 'cell' | 'cells' | 'row' | 'col' = 'cell'): boolean {
+    const policy = this.doc.interaction?.policy.plugins[TABLE_TOOLBAR_INTERACTION.namespace]
+    return !this.isReadonly && policy?.['enabled'] !== false && (kind !== 'cell' || policy?.['textFocus'] !== false)
+  }
+
   private _showTableMenu(options: {
     rowIndex: number,
     rowCount?: number,
@@ -2102,7 +2120,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this._disposeToolbar()
       return
     }
-    if (this.isReadonly) {
+    if (!this._canShowTableToolbar(options.selectionKind)) {
       this._hideTableMenu()
       return
     }
@@ -2168,7 +2186,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   private _hideTableMenu() {
     this._cancelTableMenuFrames()
-    // 真正"用户离开了表格"时才走这里：销毁 CDK overlay + 隐藏内联 toolbar。
+    // 用户离开表格或当前策略不允许显示时：销毁 CDK overlay + 隐藏内联 toolbar。
     // 切换单元格不再触发这里（_clearSelectionUiState 不再 hide），
     // 因此 selection 切换时工具栏只更新位置/内容，不会重建。
     //
@@ -2364,7 +2382,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this._disposeToolbar()
       return
     }
-    if (this.isReadonly || !this._tableMenu.visible || !this.tableMenuAnchor) {
+    if (!this._canShowTableToolbar(this._tableMenu.selectionKind) || !this._tableMenu.visible || !this.tableMenuAnchor) {
       this._disposeToolbar()
       return
     }

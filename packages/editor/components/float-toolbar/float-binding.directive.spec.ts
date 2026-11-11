@@ -44,6 +44,24 @@ describe("BcOverlayTriggerDirective lifecycle", () => {
     host.remove();
   });
 
+  it('cancels pending hover opening when switching to explicit-only interaction', fakeAsync(() => {
+    const {directive, host} = makeDirective();
+    directive.delay = 50;
+    const open = spyOn(directive, 'openOverlay');
+    directive.showOverlay();
+    directive.hoverEnabled = false;
+    tick(60);
+    directive.showOverlay();
+    tick(60);
+    expect(open).not.toHaveBeenCalled();
+    directive.hoverEnabled = true;
+    directive.showOverlay();
+    tick(50);
+    expect(open).toHaveBeenCalledTimes(1);
+    directive.ngOnDestroy();
+    host.remove();
+  }));
+
   it("does not attach a duplicate overlay when click follows hover", () => {
     const {directive, host} = makeDirective();
     const overlayRef = {
@@ -65,6 +83,17 @@ describe("BcOverlayTriggerDirective lifecycle", () => {
     (directive as any).overlayRef = overlayRef;
     return {directive, host, overlayRef};
   };
+
+  it('closes an existing hover panel but still allows explicit persistent opening', () => {
+    const {directive, host, overlayRef} = makeOpenDirective();
+    directive.hoverEnabled = false;
+    expect(overlayRef.dispose).toHaveBeenCalledTimes(1);
+    (directive as any).overlayRef = overlayRef;
+    directive.openOverlay(true);
+    expect((directive as any).persistentListeners).toBeDefined();
+    directive.ngOnDestroy();
+    host.remove();
+  });
 
   it('promotes a hovered panel to persistent and cancels a pending leave', fakeAsync(() => {
     const {directive, host, overlayRef} = makeOpenDirective();

@@ -2,7 +2,13 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-11-10
+> Last updated: 2026-11-11
+
+## 浮层自动展开与显式打开
+
+`BcOverlayTriggerDirective` 新增 `[bcOverlayHover]`（默认 true），只控制鼠标进入时的自动展开。
+设为 false 会关闭当前浮层并取消延迟打开；之后显式 `openOverlay(true)` 仍可打开并固定菜单。
+`bcOverlayDisabled` 继续同时阻止自动和显式打开。默认调用方无须修改；正文块操作入口消费此能力，固定工具栏保持原行为。
 
 ## 通用浮动工具栏外观
 

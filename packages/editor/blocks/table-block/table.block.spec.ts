@@ -7,6 +7,48 @@ import {BlockSelection} from "../../framework/modules/selection/blockSelection";
 import {BehaviorSubject, Subject} from "rxjs";
 import {isNativeInputTarget} from "../../framework/utils/node-search";
 
+describe('TableBlockComponent interaction policy', () => {
+  function setup(policy: Record<string, boolean>, readonly = false) {
+    const table = Object.create(TableBlockComponent.prototype) as any;
+    table.doc = {interaction: {policy: {plugins: {tableToolbar: policy}}}};
+    Object.defineProperty(table, 'isReadonly', {value: readonly});
+    table._isTableUiLive = () => true;
+    table._hideTableMenu = jasmine.createSpy('hide');
+    table._disposeToolbar = jasmine.createSpy('dispose');
+    table.tableWrapper = {nativeElement: {querySelector: jasmine.createSpy('measureTarget').and.returnValue(null)}};
+    return table;
+  }
+
+  it('suppresses text-focus UI before querying geometry but allows explicit structural selections', () => {
+    const table = setup({enabled: true, textFocus: false});
+    table._showTableMenu({rowIndex: 0, colIndex: 0, selectionKind: 'cell'});
+    expect(table.tableWrapper.nativeElement.querySelector).not.toHaveBeenCalled();
+    expect(table._hideTableMenu).toHaveBeenCalledTimes(1);
+    for (const selectionKind of ['cells', 'row', 'col']) {
+      table._showTableMenu({rowIndex: 0, colIndex: 0, selectionKind});
+    }
+    expect(table.tableWrapper.nativeElement.querySelector).toHaveBeenCalledTimes(3);
+  });
+
+  for (const readonly of [false, true]) {
+    it(`blocks all structure UI with the master switch or readonly (readonly=${readonly})`, () => {
+      const table = setup({enabled: readonly, textFocus: true}, readonly);
+      for (const selectionKind of ['cell', 'cells', 'row', 'col']) {
+        table._showTableMenu({rowIndex: 0, colIndex: 0, selectionKind});
+      }
+      expect(table.tableWrapper.nativeElement.querySelector).not.toHaveBeenCalled();
+      expect(table._hideTableMenu).toHaveBeenCalledTimes(4);
+    });
+  }
+
+  it('rechecks policy before delayed overlay creation', () => {
+    const table = setup({enabled: false});
+    table._tableMenu = {visible: true, selectionKind: 'row'};
+    table._showTableMenuOverlay();
+    expect(table._disposeToolbar).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("TableBlockComponent selection UI sync", () => {
   it("clears a stale rectangle when selection moves into anchor cell text", () => {
     const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;

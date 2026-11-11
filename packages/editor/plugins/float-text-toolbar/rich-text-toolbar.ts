@@ -1,7 +1,7 @@
 import {TEXT_TOOLBAR_INTERACTION} from './interaction-config'
 export {TEXT_TOOLBAR_INTERACTION} from './interaction-config'
 import {BindHotKey, DocPlugin, UIEventStateContext} from "../../framework";
-import {debounceTime, fromEvent, Subject, Subscription, takeUntil} from "rxjs";
+import {EMPTY, fromEvent, Subject, Subscription, switchMap, takeUntil, timer} from "rxjs";
 import {ComponentRef} from "@angular/core";
 import {FloatTextToolbarComponent, IToolbarMenuItem} from "./widgets/toolbar.component";
 import {ConnectedPosition, OverlayRef} from "@angular/cdk/overlay";
@@ -38,6 +38,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   private toolbarOvr?: OverlayRef;
   private _cpr?: ComponentRef<FloatTextToolbarComponent>;
   private _closeCpr$ = new Subject();
+  private readonly _cancelPendingOpen$ = new Subject<void>();
 
   protected utils!: TextToolbarUtils;
   private enabled: boolean;
@@ -54,7 +55,10 @@ export class FloatTextToolbarPlugin extends DocPlugin {
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
-    if (!enabled) this.closeToolbar();
+    if (!enabled) {
+      this._cancelPendingOpen$.next();
+      this.closeToolbar();
+    }
   }
 
   private _isSelectionReadonly(selection: BlockCraft.Selection) {
@@ -63,8 +67,14 @@ export class FloatTextToolbarPlugin extends DocPlugin {
 
   init() {
     this.utils = new TextToolbarUtils(this.doc);
+    let interaction = this.doc.interaction?.get(TEXT_TOOLBAR_INTERACTION);
     this._sub.add(this.doc.interaction?.policyChanges$.subscribe(() => {
-      if (this.doc.interaction.get(TEXT_TOOLBAR_INTERACTION).enabled === false) this.closeToolbar();
+      const next = this.doc.interaction.get(TEXT_TOOLBAR_INTERACTION);
+      if (next.enabled !== interaction?.enabled || next.openDelay !== interaction?.openDelay) {
+        this._cancelPendingOpen$.next();
+        this.closeToolbar();
+      }
+      interaction = next;
     }));
 
     this._sub.add(fromEvent(this.doc.scrollContainer?.ownerDocument ?? document, 'focusin').subscribe(() => {
@@ -78,7 +88,11 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     );
 
     this._sub.add(
-      this.doc.selection.changeObserve().pipe(debounceTime(350)).subscribe(() => {
+      this.doc.selection.changeObserve().pipe(switchMap(() => {
+        const config = this.doc.interaction?.get(TEXT_TOOLBAR_INTERACTION);
+        if (!this.enabled || config?.enabled === false) return EMPTY;
+        return timer(config?.openDelay ?? 350).pipe(takeUntil(this._cancelPendingOpen$));
+      })).subscribe(() => {
         this.closeToolbar();
         this.openToolbar();
       })
@@ -241,6 +255,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     // 对齐 ImgToolbar 的正确实现。
     this.closeToolbar();
     this._sub?.unsubscribe();
+    this._cancelPendingOpen$.complete();
   }
 }
 

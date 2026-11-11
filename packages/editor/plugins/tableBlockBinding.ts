@@ -1,4 +1,6 @@
 import {checkIncomingContentSize} from '../framework/doc/incoming-content'
+import {TABLE_TOOLBAR_INTERACTION} from '../blocks/table-block/interaction-config'
+export {TABLE_TOOLBAR_INTERACTION} from '../blocks/table-block/interaction-config'
 import {
   BindHotKey,
   ClipboardDataType,
@@ -23,6 +25,7 @@ import {
 } from "../framework/modules/table";
 
 export class TableBlockBinding extends DocPlugin {
+  override readonly interactionConfigs = [TABLE_TOOLBAR_INTERACTION]
   override name = 'table-block-binding'
 
   private _isTableProtected(table: BlockCraft.IBlockComponents['table']): boolean {

@@ -106,7 +106,15 @@ new FloatTextToolbarPlugin({
 
 Manages click behavior on attachment blocks (file picker for empty blocks, upload-in-progress warnings), shows a connected toolbar with rename/download/preview/delete actions, and handles file paste. Rename mode keeps the attachment visually active with the private `.bc-attachment-renaming` class while the native rename input owns focus; whole-block `.selected` remains owned by `SelectionManager`.
 
-附件工具栏由鼠标/笔悬停 200ms 打开，不再依赖整块选区；移出附件与工具栏后延迟 200ms 关闭，跨越二者间隙时可继续操作。悬停不修改选区；触屏保留点击访问工具栏，点击外部关闭。块 hover 使用主题浅底色和边框，区别于选中态。重命名打开独立输入面板，关闭后保持原有选区恢复。只读模式保留预览/下载与非编辑扩展项，点击空附件上传、上传中提示和文件粘贴沿用原行为。Escape、块/文档销毁清理浮层。
+`AttachmentExtensionPlugin` 声明并导出 `ATTACHMENT_TOOLBAR_INTERACTION`：
+`plugins.attachmentToolbar.hoverOpen` 默认 true，各档位保留悬停；`selectionOpen` 默认 true，immersive 为 false，
+Playground 轻量档也覆盖为 false。混排/布局/设计中，单个附件整体选中时显示同一工具栏，移开鼠标仍保留；
+选区离开后回到悬停规则。跨块选区、gap 光标不触发；整篇只读始终忽略 selectionOpen，仅保留原悬停/触屏入口。
+切换档位立即按当前选区重新判断，不改选区、文档内容或 Undo。锁定块仍按原权限隐藏编辑动作；
+上传、预览、下载、文件粘贴及宿主自定义动作不变。
+配置示例：`doc.interaction.configure({preset: 'mixed', overrides: {plugins: {attachmentToolbar: {selectionOpen: false}}}})`。
+
+默认配置下，附件工具栏由鼠标/笔悬停 200ms 打开，不再依赖整块选区；移出附件与工具栏后延迟 200ms 关闭，跨越二者间隙时可继续操作。悬停不修改选区；触屏保留点击访问工具栏，点击外部关闭。块 hover 使用主题浅底色和边框，区别于选中态。重命名打开独立输入面板，关闭后保持原有选区恢复。只读模式保留预览/下载与非编辑扩展项，点击空附件上传、上传中提示和文件粘贴沿用原行为。Escape、块/文档销毁清理浮层。
 
 附件工具栏与卡片右侧对齐，空间不足时仍使用既有浮层翻转/边界约束。附件采用单行紧凑卡片：左侧单个文件图标、文件名，右侧仅显示大小；上传/同步时保留进度状态。文件名主体在剩余宽度内省略，后缀与文件大小优先完整显示；完整文件名可通过 title 查看，极窄容器下大小独立换行，超长后缀允许折行。`.attachment-block__name` 内拆为 `.attachment-block__name-stem` 和 `.attachment-block__name-extension`；无后缀、点文件和末尾句点不拆分。编辑视图与快照采用同一布局，`attachment-block__icon-wrapper` 位于开头，`attachment-block__size` 是卡片直接子节点，不再渲染重复的 `attachment-block__prefix`。
 
@@ -120,7 +128,7 @@ new AttachmentExtensionPlugin(options?: AttachmentExtensionOptions)
 
 | Option             | Type                                | Default                          | Description                          |
 | ------------------ | ----------------------------------- | -------------------------------- | ------------------------------------ |
-| `extraItems`       | `IAttachmentToolbarItem[]`          | `[]`                             | Extra toolbar buttons                |
+| `extraItems`       | `AttachmentToolbarAction[]`          | `[]`                             | Extra toolbar buttons                |
 | `onExtraItemClick` | `(itemName, block, doc) => boolean` | —                                | Handler for custom button clicks     |
 | `onPreview`        | `(block, doc) => void`              | —                                | If provided, adds a "Preview" button |
 | `previewIcon`      | `string`                            | `'bc_eye-open'`                  | Icon for the preview button          |
@@ -142,19 +150,26 @@ new AttachmentExtensionPlugin(options?: AttachmentExtensionOptions)
 
 ```typescript
 new AttachmentExtensionPlugin({
-  onPreview: (block, doc) => {
-    const url = block.props.url;
-    window.open(url, "_blank");
-  },
-  extraItems: [{ name: "share", icon: "bc_icon bc_share", label: "分享" }],
-  onExtraItemClick: (name, block, doc) => {
-    if (name === "share") {
-      /* ... */ return true;
-    }
-    return false;
-  },
+  onPreview: (block, doc) => hostPreview(block.props),
+  extraItems: [{
+    name: "web-view", icon: "bc_wangluo", label: "转为网页块", editOnly: true,
+    visible: (block, doc) => doc.schemas.has('embed'),
+    onClick: (block, doc) => convertAttachmentToEmbed(doc, block),
+  }],
 });
 ```
+
+`AttachmentToolbarAction` 兼容 `IAttachmentToolbarItem`，新增可选的同步 `visible(block, doc)`
+和 `onClick(block, doc): void | Promise<void>`。按钮自己的 `onClick` 优先；缺省时沿用
+`onExtraItemClick(name, block, doc)`。`name` 应唯一，且不能使用内置的 rename/preview/download/delete。
+`visible` 应无副作用；在浮层打开、当前附件属性或只读状态变化以及点击前求值。
+外部业务状态改变后，下次打开或点击会重新求值，不监听任意业务 Store。
+`editOnly`、`showWhenUnavailable` 同时约束展示和执行；异步动作失败给出统一提示，文档销毁后不再提示。
+异步回调自身仍需在写入前检查目标、权限和资源是否有效。
+
+上传完成和远端属性更新直接刷新当前浮层，不关闭重建、不改变选区。
+嵌套文档的 hover/touch 事件由所属文档处理。宿主不应为刷新工具栏额外执行 blur/select/recalculate，
+也无需添加捕获点击或上传监听。宿主只保留预览服务和格式转换等业务实现。
 
 ---
 

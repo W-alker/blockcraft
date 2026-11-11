@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-11-10
+> Last updated: 2026-11-11
 
 ## 编辑交互模式与工具栏（未发布）
 
@@ -11,6 +11,19 @@
 固定工具栏监听模式变化并取消未完成的绘制插入，订阅随工具栏销毁。
 
 `FloatTextToolbarPlugin` 声明 `textToolbar.enabled`，`TextMarkerPlugin` 声明 `textMarker.enabled`，默认开启，immersive 预设关闭。策略变化立即关闭已有浮层，后续选区／selectEnd 不再打开；原有 `FloatTextToolbarPlugin({enabled})` 和 `setEnabled()` 与文档策略取 AND，不会被模式切换覆盖。加粗等格式快捷键保持可用，关闭浮层不卸载命令插件。
+
+## 文字浮动工具栏的选区停留时间（未发布）
+
+`TEXT_TOOLBAR_INTERACTION` 新增 `textToolbar.openDelay`：0–2000 的整数毫秒，默认 350。
+Playground 轻量档覆盖为 650；专注仍通过 `enabled: false` 关闭，其他档位保持 350。
+选区继续变化时重新计时；切换本插件的开关或延迟取消旧任务并关闭当前浮层，等待下一次选区变化。
+`setEnabled(false)` 也取消旧任务；其他插件配置变化不会打断计时。销毁时清理订阅与计时。
+显式 `openToolbar()` 不等待延迟，仍遵守启用、选区与权限检查；固定工具栏、格式快捷键、
+只读自定义动作的授权规则和代码块标记工具栏均不改变。
+
+```typescript
+doc.interaction.configure({preset: 'mixed', overrides: {plugins: {textToolbar: {openDelay: 650}}}});
+```
 
 ## 应用标题时恢复默认字号与行高
 
@@ -33,7 +46,7 @@
 右键菜单与固定工具栏共用内部 `TypographySettingsController`，复用已有设置弹窗与
 `ToolbarSelectionSession`。设置目标、只读检查、字体/段落事务和取消恢复统一处理；
 右键入口无需固定工具栏组件。字体、段落数据格式与原工具栏入口保持兼容。
-浮动文字工具栏的 350ms 延迟不变。
+浮动文字工具栏默认延迟 350ms，可通过 `textToolbar.openDelay` 覆盖。
 
 ## 独立字重
 
@@ -64,7 +77,7 @@
 
 > `plugins/float-text-toolbar/rich-text-toolbar.ts` — Floating rich-text formatting toolbar shown on text selection.
 
-Shows a formatting toolbar 350ms after user makes a non-collapsed text selection. Provides bold/italic/underline/strikethrough/code shortcuts and extensible custom buttons. Model-owned table-cell rectangle selections do not open this toolbar, and text-shaped selections that cross different table cells are also ignored so table rectangle UI cannot be mistaken for a rich-text range. Normal text selection inside a single table cell still opens the toolbar.
+Shows a formatting toolbar after a non-collapsed text selection settles (350ms by default; configurable through `textToolbar.openDelay`). Provides bold/italic/underline/strikethrough/code shortcuts and extensible custom buttons. Model-owned table-cell rectangle selections do not open this toolbar, and text-shaped selections that cross different table cells are also ignored so table rectangle UI cannot be mistaken for a rich-text range. Normal text selection inside a single table cell still opens the toolbar.
 
 ### Configuration
 

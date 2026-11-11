@@ -48,12 +48,15 @@ describe('floating toolbar readonly actions', () => {
     const lockChanges = new Subject<void>();
     const drags = new Subject<string>();
     const clicks = new Subject<any>();
+    const policyChanges = new Subject<void>();
+    const policy = {enabled: true, openDelay: 350};
     const block = {id: 'p', plainTextOnly: false};
     const selection: any = {isInSameBlock: true, start: {type: 'text', blockId: 'p', offset: 0},
       end: {type: 'text', blockId: 'p', offset: 4}, firstBlock: block, lastBlock: block};
     const componentRef = {setInput: jasmine.createSpy('setInput'), instance: {onExtraItemClick: clicks}};
     const overlayRef = {dispose: jasmine.createSpy('dispose'), overlayElement: document.createElement('div')};
     const doc: any = {isReadonly: true, scrollContainer: document.createElement('div'),
+      interaction: {get: () => ({...policy}), policyChanges$: policyChanges},
       selection: {value: selection, changeObserve: () => changes, nextChangeObserve: () => changes},
       subscribeReadonlyChange: (cb: any) => readonlyChanges.subscribe(cb),
       readonlyManager: {isSelectionReadonly: () => false, stateChange$: lockChanges},
@@ -66,9 +69,62 @@ describe('floating toolbar readonly actions', () => {
     plugin.init();
     spyOn(plugin, '_calcPosition').and.returnValue({connectElement: document.createElement('div'), connectPositions: []});
     spyOn(plugin.utils, 'getCurrentCommonAttrs').and.returnValue({attrs: new Map(), colors: {}, props: {}});
-    return {plugin, doc, selection, changes, readonlyChanges, lockChanges, drags, clicks, componentRef, overlayRef, handler};
+    return {plugin, doc, selection, changes, readonlyChanges, lockChanges, drags, clicks, componentRef, overlayRef, handler, policy, policyChanges};
   }
   const comment = {name: 'comment', value: 'comment', label: '添加评论'};
+
+  it('waits for the configured delay after the latest selection change', fakeAsync(() => {
+    const t = setup({readonlyExtraItems: [comment]});
+    t.policy.openDelay = 650;
+    t.policyChanges.next();
+    t.changes.next(t.selection);
+    tick(400);
+    t.changes.next(t.selection);
+    tick(649);
+    expect(t.doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+    tick(1);
+    expect(t.doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(1);
+    t.plugin.destroy();
+  }));
+
+  for (const setting of ['enabled', 'openDelay', 'hostEnabled']) {
+    it(`cancels pending work when ${setting} changes and waits for a new selection`, fakeAsync(() => {
+      const t = setup({readonlyExtraItems: [comment]});
+      t.changes.next(t.selection);
+      tick(100);
+      if (setting === 'hostEnabled') {
+        t.plugin.setEnabled(false);
+        t.plugin.setEnabled(true);
+      } else {
+        if (setting === 'enabled') t.policy.enabled = false;
+        else t.policy.openDelay = 650;
+        t.policyChanges.next();
+        t.policy.enabled = true;
+        t.policyChanges.next();
+      }
+      tick(1000);
+      expect(t.doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+      t.changes.next(t.selection);
+      tick(t.policy.openDelay);
+      expect(t.doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(1);
+      t.plugin.destroy();
+    }));
+  }
+
+  it('preserves pending work for unrelated policy changes and keeps explicit opening immediate', fakeAsync(() => {
+    const t = setup({readonlyExtraItems: [comment]});
+    t.changes.next(t.selection);
+    tick(100);
+    t.policyChanges.next();
+    tick(250);
+    expect(t.doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(1);
+    t.policy.openDelay = 2000;
+    t.policyChanges.next();
+    expect(t.overlayRef.dispose).toHaveBeenCalled();
+    t.plugin.openToolbar();
+    expect(t.doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(2);
+    t.plugin.destroy();
+  }));
 
   it('keeps readonly closed without explicit actions, even with editable extras', () => {
     const t = setup({extraItems: [comment]});

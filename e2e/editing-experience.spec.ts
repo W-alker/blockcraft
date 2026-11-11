@@ -88,6 +88,10 @@ test('five stops and keyboard controls apply combinations and display custom and
     expect(current.policy.native.contentResizeHandles).toBe(i >= 3)
     expect(current.policy.plugins.objectToolbar.contentSelection).toBe(i >= 3)
     expect(current.policy.plugins.groupToolbar.enabled).toBe(i >= 2)
+    expect(current.policy.plugins.attachmentToolbar.hoverOpen).toBe(true)
+    expect(current.policy.plugins.attachmentToolbar.selectionOpen).toBe(i >= 2)
+    expect(current.policy.plugins.tableToolbar.enabled).toBe(i > 0)
+    expect(current.policy.plugins.tableToolbar.textFocus).toBe(i !== 1)
     expect(current.policy.native.objectFloatingHandles).toBe(i !== 1)
     expect(current.policy.native.hoverControls).toBe(i === 0 || i === 4)
   }

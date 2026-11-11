@@ -31,6 +31,14 @@ export class BcOverlayTriggerDirective implements OnDestroy {
   @Input() withBackdrop = false;
   @Input() delay = 0;
 
+  private _hoverEnabled = true;
+  /** Only controls automatic opening; explicit openOverlay() remains available. */
+  @Input('bcOverlayHover')
+  set hoverEnabled(enabled: boolean) {
+    this._hoverEnabled = enabled
+    if (!enabled) this.closePanel()
+  }
+
   private _overlayDisabled = false;
   @Input('bcOverlayDisabled')
   set overlayDisabled(disabled: boolean) {
@@ -79,7 +87,7 @@ export class BcOverlayTriggerDirective implements OnDestroy {
 
   @HostListener('mouseenter')
   showOverlay() {
-    if (this.overlayRef || this._openDelayTimer || !this.contentTemplate || this.overlayDisabled) {
+    if (!this._hoverEnabled || this.overlayRef || this._openDelayTimer || !this.contentTemplate || this.overlayDisabled) {
       return;
     }
 

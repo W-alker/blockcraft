@@ -15,8 +15,18 @@ import {RenameInputPad} from "./widgets/rename-input-pad";
 import {isSelectionAlive} from "../../framework/modules/selection/liveness";
 import {ComponentRef} from "@angular/core";
 import {focusAfterImageInsertion} from '../../framework/modules/selection/after-insertion';
+import {ATTACHMENT_TOOLBAR_INTERACTION} from './interaction-config';
+export {ATTACHMENT_TOOLBAR_INTERACTION} from './interaction-config';
 
 type AttachmentBlock = BlockCraft.IBlockComponents['attachment']
+
+/** 按钮展示与业务动作放在同一处；旧 IAttachmentToolbarItem 配置仍可直接使用。 */
+export interface AttachmentToolbarAction extends IAttachmentToolbarItem {
+  /** 同步、无副作用的条件；打开、附件属性/权限变化和执行前重新判断。 */
+  visible?: (block: AttachmentBlock, doc: BlockCraft.Doc) => boolean
+  /** 优先于旧 onExtraItemClick；异步失败由插件统一提示。 */
+  onClick?: (block: AttachmentBlock, doc: BlockCraft.Doc) => void | Promise<void>
+}
 
 const ATTACHMENT_RENAMING_CLASS = 'bc-attachment-renaming'
 const ATTACHMENT_CONTENT_SELECTOR = [
@@ -33,7 +43,7 @@ export interface AttachmentExtensionOptions {
   /**
    * 追加到工具栏的自定义按钮
    */
-  extraItems?: IAttachmentToolbarItem[];
+  extraItems?: AttachmentToolbarAction[];
 
   /**
    * 自定义按钮点击回调。返回 true 表示已处理。
@@ -67,6 +77,7 @@ export interface AttachmentExtensionOptions {
 }
 
 export class AttachmentExtensionPlugin extends DocPlugin {
+  override readonly interactionConfigs = [ATTACHMENT_TOOLBAR_INTERACTION]
   override name = "attachment-extension";
 
   fileService!: DocFileService
@@ -80,6 +91,16 @@ export class AttachmentExtensionPlugin extends DocPlugin {
   private _closeToolbar$ = new Subject<void>()
 
   private _activeBlock: AttachmentBlock | null = null
+  private _selectedBlock: AttachmentBlock | null = null
+
+  private get hoverToolbarEnabled(): boolean {
+    // 阅读仍可通过悬停访问下载/预览，不受编辑档位影响。
+    return this.doc.isReadonly || this.doc.interaction?.get(ATTACHMENT_TOOLBAR_INTERACTION).hoverOpen !== false
+  }
+
+  private get selectionToolbarEnabled(): boolean {
+    return !this.doc.isReadonly && this.doc.interaction?.get(ATTACHMENT_TOOLBAR_INTERACTION).selectionOpen !== false
+  }
 
   private _isReadonly(block: AttachmentBlock) {
     return this.doc.readonlyManager?.isReadonly(block) ?? this.doc.isReadonly
@@ -141,16 +162,30 @@ export class AttachmentExtensionPlugin extends DocPlugin {
     }
 
     this._sub = new Subscription()
+    let hoverEnabled = this.hoverToolbarEnabled
+    let selectionEnabled = this.selectionToolbarEnabled
+    const syncInteraction = () => {
+      const next = this.hoverToolbarEnabled
+      const nextSelection = this.selectionToolbarEnabled
+      if (next === hoverEnabled && nextSelection === selectionEnabled) return
+      if (next !== hoverEnabled) this.closeToolbar()
+      hoverEnabled = next
+      selectionEnabled = nextSelection
+      this.syncSelectionToolbar()
+    }
+    this._sub.add(this.doc.interaction?.policyChanges$.subscribe(syncInteraction))
+    this._sub.add(this.doc.subscribeReadonlyChange?.(syncInteraction))
+    this._sub.add(this.doc.selection.selectionChange$.subscribe(() => this.syncSelectionToolbar()))
+    this.syncSelectionToolbar()
     // Delegated boundary events avoid a listener per attachment and DOM layout reads.
     this.doc.ngZone.runOutsideAngular(() => {
       const root = this.doc.root.hostElement
       this._sub!.add(fromEvent<PointerEvent>(root, 'pointerover').subscribe(event => {
-        if (event.pointerType === 'touch' || event.buttons) return
+        if (!this.hoverToolbarEnabled || event.pointerType === 'touch' || event.buttons) return
         const target = event.target
         if (!(target instanceof Element)) return
-        const blockId = closetBlockId(target)
-        const block = blockId ? this._getLiveAttachmentBlockById(blockId) : null
-        if (!block || this._hoveredBlock === block) return
+        const block = this._getAttachmentFromTarget(target)
+        if (!block || this._hoveredBlock === block || (this._selectedBlock && this._selectedBlock !== block)) return
         if (this._activeBlock === block && this._toolbarRef) {
           this.clearTimer()
           this._hoveredBlock = block
@@ -160,15 +195,14 @@ export class AttachmentExtensionPlugin extends DocPlugin {
         this._hoveredBlock = block
         this._timer = setTimeout(() => {
           this._timer = null
-          if (this._hoveredBlock !== block || !this._isBlockAlive(block)) return
+          if (!this.hoverToolbarEnabled || this._hoveredBlock !== block || !this._isBlockAlive(block)) return
           this.doc.ngZone.run(() => this._openToolbar(block))
         }, 200)
       }))
-      // Touch has no hover: retain the existing tap-to-access toolbar path.
+      // 触屏没有 hover，保留原有点击访问入口。
       this._sub!.add(fromEvent<PointerEvent>(root, 'pointerup').subscribe(event => {
         if (event.pointerType !== 'touch' || !(event.target instanceof Element)) return
-        const blockId = closetBlockId(event.target)
-        const block = blockId ? this._getLiveAttachmentBlockById(blockId) : null
+        const block = this._getAttachmentFromTarget(event.target)
         if (!block?.props.url) return
         this.doc.ngZone.run(() => {
           this.closeToolbar()
@@ -193,8 +227,33 @@ export class AttachmentExtensionPlugin extends DocPlugin {
           this.closeToolbar()
           return
         }
-        this._toolbarComponentRef.setInput('isReadonly', this._isReadonly(activeBlock))
+        this.refreshToolbar()
       }))
+    }
+    this._sub.add(this.doc.onPropsUpdate$.subscribe(event => {
+      if (this._activeBlock && event.transactions.some(change => change.block === this._activeBlock)) {
+        this.refreshToolbar()
+      }
+    }))
+  }
+
+  private syncSelectionToolbar() {
+    const previous = this._selectedBlock
+    const selection = this.doc.selection.value
+    const block = this.selectionToolbarEnabled && selection?.isInSameBlock &&
+      selection.anchor.type === 'selected' && selection.head.type === 'selected'
+      ? this._getLiveAttachmentBlockById(selection.firstBlock.id) : null
+    this._selectedBlock = block
+    if (block) {
+      this.clearTimer()
+      if (this._activeBlock !== block || !this._toolbarRef) {
+        const hovered = this._hoveredBlock === block
+        this.closeToolbar()
+        if (hovered) this._hoveredBlock = block
+        this._openToolbar(block)
+      }
+    } else if (previous && this._activeBlock === previous && this._hoveredBlock !== previous) {
+      this.closeToolbar()
     }
   }
 
@@ -215,19 +274,14 @@ export class AttachmentExtensionPlugin extends DocPlugin {
     this._toolbarRef = overlayRef
     this._toolbarComponentRef = componentRef
 
-    const canUse = this._isCanUse(attachmentBlock)
     componentRef.setInput('doc', this.doc)
-    componentRef.setInput('canUse', canUse)
-    componentRef.setInput('isReadonly', this._isReadonly(attachmentBlock))
+    this.refreshToolbar()
     componentRef.setInput('showPreview', !!this.options?.onPreview)
     if (this.options?.previewIcon) {
       componentRef.setInput('previewIcon', this.options.previewIcon)
     }
     if (this.options?.previewLabel) {
       componentRef.setInput('previewLabel', this.options.previewLabel)
-    }
-    if (this.options?.extraItems?.length) {
-      componentRef.setInput('extraItems', this.options.extraItems)
     }
 
     attachmentBlock.onDestroy$.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
@@ -242,14 +296,16 @@ export class AttachmentExtensionPlugin extends DocPlugin {
       const readonly = this._isReadonly(attachmentBlock)
       switch (v.name) {
         case 'rename':
-          if (readonly) return
+          if (readonly || !this._isCanUse(attachmentBlock)) return
           this.closeToolbar()
           this.onRename(attachmentBlock)
           break
         case 'download':
+          if (!this._isCanUse(attachmentBlock)) return
           this.fileService.downloadAttachment(attachmentBlock.props);
           break
         case 'preview':
+          if (!this._isCanUse(attachmentBlock)) return
           this.options?.onPreview?.(attachmentBlock, this.doc)
           break
         case 'delete':
@@ -257,7 +313,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
           this.doc.crud.deleteBlockById(attachmentBlock.id)
           break
         default:
-          this.options?.onExtraItemClick?.(v.name, attachmentBlock, this.doc)
+          void this.runExtraAction(v.name, attachmentBlock)
           break
       }
     })
@@ -281,10 +337,51 @@ export class AttachmentExtensionPlugin extends DocPlugin {
 
   private _scheduleClose() {
     this.clearTimer()
+    if (this._selectedBlock && this._selectedBlock === this._activeBlock) return
     this._timer = setTimeout(() => {
       this._timer = null
       this.doc.ngZone.run(() => this.closeToolbar())
     }, 200)
+  }
+
+  private visibleActions(block: AttachmentBlock): AttachmentToolbarAction[] {
+    const canUse = this._isCanUse(block)
+    const readonly = this._isReadonly(block)
+    return (this.options?.extraItems ?? []).filter(item =>
+      (canUse || item.showWhenUnavailable) && (!item.editOnly || !readonly) &&
+      (!item.visible || item.visible(block, this.doc)))
+  }
+
+  private refreshToolbar() {
+    const block = this._activeBlock
+    const ref = this._toolbarComponentRef
+    if (!block || !ref) return
+    if (!this._isBlockAlive(block)) {
+      this.closeToolbar()
+      return
+    }
+    ref.setInput('canUse', this._isCanUse(block))
+    ref.setInput('isReadonly', this._isReadonly(block))
+    ref.setInput('extraItems', this.visibleActions(block))
+  }
+
+  private async runExtraAction(name: string, block: AttachmentBlock) {
+    try {
+      const action = this.visibleActions(block).find(item => item.name === name)
+      if (!action) return
+      if (action.onClick) await action.onClick(block, this.doc)
+      else this.options?.onExtraItemClick?.(name, block, this.doc)
+    } catch (error) {
+      this.doc.logger.warn('attachmentActionError', error)
+      if (this._sub && !this._sub.closed) this.doc.messageService.warn('附件操作失败，请重试')
+    }
+  }
+
+  private _getAttachmentFromTarget(target: Element): AttachmentBlock | null {
+    // 嵌套文档拥有独立 block map；禁止外层委托监听解析内层的 ID。
+    if (target.closest('[data-blockcraft-root="true"]') !== this.doc.root.hostElement) return null
+    const id = closetBlockId(target)
+    return id ? this._getLiveAttachmentBlockById(id) : null
   }
 
   /** 附件是否就绪：有 url 且已上传至远端（http(s) 协议） */
@@ -509,6 +606,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
   }
 
   destroy() {
+    this._selectedBlock = null
     this._sub?.unsubscribe()
     this.closeToolbar()
   }

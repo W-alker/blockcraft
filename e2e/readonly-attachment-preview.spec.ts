@@ -32,6 +32,54 @@ test.beforeEach(async ({page}) => {
   });
 });
 
+test('附件在混排及以上选中后保持工具栏，专注轻量只读仅悬停显示', async ({page}) => {
+  const attachment = page.locator('#readonly-attachment-fixture .attachment-block__name');
+  const toolbar = page.locator('.attachment-toolbar');
+  await page.evaluate(() => (window as any).readonlyAttachmentProbe.doc.toggleReadonly(false));
+  for (const [preset, selectionOpen] of [['immersive', false], ['mixed', false], ['mixed', true], ['design', true]] as const) {
+    await page.mouse.move(0, 0);
+    await page.evaluate(({preset, selectionOpen}) => {
+      const {doc, attachmentId} = (window as any).readonlyAttachmentProbe;
+      doc.selection.blur();
+      doc.interaction.configure({preset, overrides: {plugins: {attachmentToolbar: {selectionOpen}}}});
+      doc.selection.selectBlock(attachmentId);
+    }, {preset, selectionOpen});
+    if (selectionOpen) await expect(toolbar).toBeVisible();
+    else {
+      await page.waitForTimeout(300);
+      await expect(toolbar).toHaveCount(0);
+    }
+    await attachment.hover();
+    await expect(toolbar).toBeVisible();
+    await toolbar.locator('[name="preview"]').click({delay: 120});
+    await toolbar.locator('[name="download"]').click();
+    await page.mouse.move(0, 0);
+    await page.waitForTimeout(300);
+    if (selectionOpen) await expect(toolbar).toBeVisible();
+    else await expect(toolbar).toHaveCount(0);
+    await page.evaluate(() => (window as any).readonlyAttachmentProbe.doc.selection.blur());
+    await expect(toolbar).toHaveCount(0);
+  }
+  expect(await page.evaluate(() => {
+    const p = (window as any).readonlyAttachmentProbe;
+    return {previews: p.previews.length, downloads: p.downloads.length, unchanged: p.before === JSON.stringify(p.doc.exportSnapshot())};
+  })).toEqual({previews: 4, downloads: 4, unchanged: true});
+
+  await page.evaluate(() => {
+    const {doc, attachmentId} = (window as any).readonlyAttachmentProbe;
+    doc.interaction.set('design');
+    doc.toggleReadonly(true);
+    doc.selection.selectBlock(attachmentId);
+  });
+  await page.waitForTimeout(300);
+  await expect(toolbar).toHaveCount(0);
+  await attachment.hover();
+  await expect(toolbar).toBeVisible();
+  await expect(toolbar.locator('[name="rename"], [name="delete"]')).toHaveCount(0);
+  await page.mouse.move(0, 0);
+  await expect(toolbar).toHaveCount(0);
+});
+
 test('只读附件可预览和下载，且不允许编辑正文或附件', async ({page}, testInfo) => {
   await page.locator('#readonly-attachment-fixture .attachment-block__name').hover();
   const toolbar = page.locator('.attachment-toolbar');

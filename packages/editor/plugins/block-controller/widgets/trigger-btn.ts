@@ -127,7 +127,7 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
     <div class="drag-handle"
          #menuTrigger="bcOverlayTrigger"
          [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left', 'top-left']"
-         [bcOverlayDisabled]="menuDisabled" (open)="setValidBlockList()" [delay]="500"
+         [bcOverlayDisabled]="menuDisabled" [bcOverlayHover]="hoverMenu" (open)="setValidBlockList()" [delay]="500"
          (close)="onMenuClosed()"
          [withBackdrop]="false" activeClass="active"
          style="touch-action: none;">
@@ -269,6 +269,7 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
   }
 })
 export class TriggerBtn {
+  @Input() hoverMenu = true
   @Input() doc!: BlockCraft.Doc
 
   @ViewChild('menuTrigger', {read: BcOverlayTriggerDirective})

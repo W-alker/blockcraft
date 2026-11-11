@@ -24,6 +24,8 @@ import {
 } from "./types";
 import {fixTable} from "../../blocks/table-block/callback";
 import {BlockAppearancePickerComponent} from "./widgets/block-appearance-picker";
+import {BLOCK_CONTROLLER_INTERACTION} from './interaction-config';
+export {BLOCK_CONTROLLER_INTERACTION} from './interaction-config';
 
 const TABLE_MENU_NAMES = {
   autoWidth: 'table-auto-width',
@@ -49,6 +51,7 @@ const objectLayoutMenuName = (layout: BlockObjectLayout): string => ({
 })[layout]
 
 export class BlockControllerPlugin extends DocPlugin {
+  override readonly interactionConfigs = [BLOCK_CONTROLLER_INTERACTION]
   override name = 'block-controller'
   override version = 1.0
 
@@ -117,7 +120,7 @@ export class BlockControllerPlugin extends DocPlugin {
       fromEvent<MouseEvent>(this.doc.root.hostElement, 'mouseover')
         .pipe(takeUntil(this.doc.onDestroy$))
         .subscribe(e => {
-          if (this.doc.isReadonly || this.doc.interaction?.policy.native.layoutControls === false || this.isHidden || this._cpr.instance.menuPinned) return
+          if (this.doc.isReadonly || !this.controllerEnabled || this.isHidden || this._cpr.instance.menuPinned) return
           this.clearTimer()
 
           const target = e.target as HTMLElement
@@ -145,7 +148,7 @@ export class BlockControllerPlugin extends DocPlugin {
           ) return
 
           this._timer = setTimeout(() => {
-            if (this.isHidden || this._cpr.instance.menuPinned || !this.isBlockAlive(block) || !this.isControllerEligible(block)) {
+            if (!this.controllerEnabled || this.isHidden || this._cpr.instance.menuPinned || !this.isBlockAlive(block) || !this.isControllerEligible(block)) {
               this.clearTimer()
               return
             }
@@ -185,13 +188,23 @@ export class BlockControllerPlugin extends DocPlugin {
         this.syncHidden()
       })
     )
-    this.syncHidden()
+    const syncInteraction = () => {
+      this._cpr.setInput('hoverMenu', this.doc.interaction?.get(BLOCK_CONTROLLER_INTERACTION).hoverMenu !== false)
+      this.syncHidden()
+    }
+    if (this.doc.interaction) this._sub.add(this.doc.interaction.policyChanges$.subscribe(syncInteraction))
+    syncInteraction()
     this.addDraggable()
+  }
+
+  private get controllerEnabled(): boolean {
+    return this.doc.interaction?.policy.native.layoutControls !== false &&
+      this.doc.interaction?.get(BLOCK_CONTROLLER_INTERACTION).enabled !== false
   }
 
   private syncHidden(selection = this.doc.selection.value): boolean {
     const objectSelected = !!this.doc.placement?.isAbsoluteObjectSelection?.(selection)
-    const hidden = this.doc.isReadonly || objectSelected
+    const hidden = this.doc.isReadonly || !this.controllerEnabled || objectSelected
     if (hidden !== this.isHidden) this._cpr.setInput('hidden', this.isHidden = hidden)
     if (hidden) {
       this.clearTimer()
@@ -269,7 +282,7 @@ export class BlockControllerPlugin extends DocPlugin {
           const activeBlock = this._activeBlock
           if (!activeBlock) return
           if (evt.button !== 0) return
-          if (this.doc.isReadonly) return
+          if (this.doc.isReadonly || !this.controllerEnabled) return
           if (!this.isBlockAlive(activeBlock)) {
             this.clearActiveBlock()
             return
@@ -331,7 +344,7 @@ export class BlockControllerPlugin extends DocPlugin {
       if (event.pointerId !== startEvent.pointerId) return
       cancel()
       if (
-        this.doc.isReadonly ||
+        this.doc.isReadonly || !this.controllerEnabled ||
         !this.isBlockAlive(activeBlock) ||
         !this.isControllerEligible(activeBlock) ||
         !(event.target instanceof view.Node) || !host.contains(event.target)

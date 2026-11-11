@@ -7,6 +7,14 @@
 >
 > Last updated: 2026-11-11
 
+## 表格结构工具栏交互策略（未发布）
+
+`TableBlockBinding` 注册 `TABLE_TOOLBAR_INTERACTION`，`TableBlockComponent` 消费 `plugins.tableToolbar.enabled/textFocus`。
+`enabled` 默认 true、immersive 为 false；`textFocus` 默认 true，Playground 轻量档覆盖 false，
+因此轻量仅在行、列、单元格区域选择时显示结构工具栏。未安装该插件的表格保留原有行为。
+普通态 CDK 与全屏内联工具栏共用门控；关闭时取消延迟帧，在测量几何前返回；最终创建 Overlay 前再次检查。
+配置变化只刷新当前表格 UI，保持模型选区、数据、行列抓手与列宽拖动；只读始终优先。
+
 ## 媒体块选中边框与八向抓手（0.12.3）
 
 视频与图片、网页嵌入（含旧 Figma／掘金块）、人员卡片、贴纸共用 `ShapeResizerComponent` 的 8px 圆形八向抓手。

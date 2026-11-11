@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from "@angular/core";
+import { CsTooltipDirective } from '@cses/ui';
 import { BcFloatToolbarComponent, BcFloatToolbarItemComponent } from "../../../components";
 
 export interface IAttachmentToolbarItem {
@@ -16,18 +17,18 @@ export interface IAttachmentToolbarItem {
   template: `
     <bc-float-toolbar (onItemClick)="onItemClick.emit($event)">
       @if (canUse && !isReadonly) {
-        <bc-float-toolbar-item icon="bc_bianji_1" name="rename" title="重命名"></bc-float-toolbar-item>
+        <bc-float-toolbar-item icon="bc_bianji_1" name="rename" csTooltip="重命名" aria-label="重命名"></bc-float-toolbar-item>
       }
       @if (canUse && showPreview) {
-        <bc-float-toolbar-item [icon]="previewIcon" name="preview" [title]="previewLabel"></bc-float-toolbar-item>
+        <bc-float-toolbar-item [icon]="previewIcon" name="preview" [csTooltip]="previewLabel" [attr.aria-label]="previewLabel"></bc-float-toolbar-item>
       }
       @if (canUse) {
-        <bc-float-toolbar-item icon="bc_xiazai" name="download" title="下载文件"></bc-float-toolbar-item>
+        <bc-float-toolbar-item icon="bc_xiazai" name="download" csTooltip="下载文件" aria-label="下载文件"></bc-float-toolbar-item>
       }
 
       @for (item of extraItems; track item.name) {
         @if ((canUse || item.showWhenUnavailable) && (!item.editOnly || !isReadonly)) {
-          <bc-float-toolbar-item [icon]="item.icon" [name]="item.name" [title]="item.label"></bc-float-toolbar-item>
+          <bc-float-toolbar-item [icon]="item.icon" [name]="item.name" [csTooltip]="item.label" [attr.aria-label]="item.label"></bc-float-toolbar-item>
         }
       }
 
@@ -35,13 +36,14 @@ export interface IAttachmentToolbarItem {
         @if (canUse) {
           <span class="bc-float-toolbar__divider"></span>
         }
-        <bc-float-toolbar-item icon="bc_shanchu" name="delete" title="删除"></bc-float-toolbar-item>
+        <bc-float-toolbar-item icon="bc_shanchu" name="delete" csTooltip="删除" aria-label="删除"></bc-float-toolbar-item>
       }
     </bc-float-toolbar>
   `,
   imports: [
     BcFloatToolbarComponent,
-    BcFloatToolbarItemComponent
+    BcFloatToolbarItemComponent,
+    CsTooltipDirective
   ],
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush

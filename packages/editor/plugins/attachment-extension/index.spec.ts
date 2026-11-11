@@ -1,7 +1,7 @@
 import {fakeAsync, flushMicrotasks, tick} from "@angular/core/testing";
 import {Subject} from "rxjs";
 import {ClipboardDataType} from "../../framework";
-import {AttachmentExtensionPlugin} from "./index";
+import {AttachmentExtensionOptions, AttachmentExtensionPlugin} from "./index";
 
 describe("AttachmentExtensionPlugin rename highlight", () => {
   function createHarness() {
@@ -194,11 +194,28 @@ describe("AttachmentExtensionPlugin click hit area", () => {
 });
 
 describe("AttachmentExtensionPlugin delayed toolbar", () => {
-  const makeHarness = () => {
+  const makeHarness = (options?: AttachmentExtensionOptions) => {
     const selection$ = new Subject<any>();
+    const policyChanges$ = new Subject<void>();
+    const readonlyChanges$ = new Subject<void>();
+    const policy = {hoverOpen: true, selectionOpen: true};
+    const root = document.createElement('div');
+    root.setAttribute('data-attachment-hover-test', 'true');
+    root.setAttribute('data-blockcraft-root', 'true');
+    const hostElement = document.createElement('div');
+    hostElement.setAttribute('data-block-id', 'attachment-1');
+    const content = document.createElement('div');
+    content.className = 'attachment-block__info';
+    hostElement.append(content);
+    root.append(hostElement);
+    document.body.append(root);
+    const pointer = (type: string, options: PointerEventInit = {}, target: HTMLElement = content) =>
+      target.dispatchEvent(new PointerEvent(type, {bubbles: true, pointerType: 'mouse', pointerId: 1, isPrimary: true, ...options}));
+    const hover = () => pointer('pointerover');
     const readonlyStateChange$ = new Subject<void>();
     const selectionValue = {current: null as any};
     const attachmentBlock = {
+      hostElement,
       id: "attachment-1",
       flavour: "attachment",
       props: {
@@ -220,6 +237,13 @@ describe("AttachmentExtensionPlugin delayed toolbar", () => {
       firstBlock: attachmentBlock,
     };
     const doc = {
+      root: {hostElement: root},
+      onPropsUpdate$: new Subject<any>(),
+      logger: {warn: jasmine.createSpy("warn")},
+      messageService: {warn: jasmine.createSpy("warn")},
+      ngZone: {run: (fn: () => void) => fn(), runOutsideAngular: (fn: () => void) => fn()},
+      interaction: {get: () => ({...policy}), policyChanges$},
+      subscribeReadonlyChange: (fn: () => void) => readonlyChanges$.subscribe(fn),
       injector: {
         get: jasmine.createSpy("get").and.returnValue({}),
       },
@@ -239,6 +263,7 @@ describe("AttachmentExtensionPlugin delayed toolbar", () => {
           },
           overlayRef: {
             dispose: jasmine.createSpy("dispose"),
+            overlayElement: document.createElement("div"),
           },
         }),
       },
@@ -249,11 +274,11 @@ describe("AttachmentExtensionPlugin delayed toolbar", () => {
         isReadonly: jasmine.createSpy("isReadonly").and.returnValue(false),
       },
     };
-    const plugin = new AttachmentExtensionPlugin();
+    const plugin = new AttachmentExtensionPlugin(options);
     (plugin as any).doc = doc;
     return {
       plugin,
-      doc,
+      doc, policy, policyChanges$, readonlyChanges$, pointer, hover, hostElement,
       selection$,
       readonlyStateChange$,
       selectionValue,
@@ -262,8 +287,11 @@ describe("AttachmentExtensionPlugin delayed toolbar", () => {
     };
   };
 
-  it("rechecks the current selection before opening", fakeAsync(() => {
+  afterEach(() => document.querySelectorAll('[data-attachment-hover-test]').forEach(el => el.remove()));
+
+  it("does not open from selection changes without hover", fakeAsync(() => {
     const {plugin, doc, selection$, selectionValue, attachmentSelection} = makeHarness();
+    (doc.interaction.get as any) = () => ({hoverOpen: true, selectionOpen: false});
     plugin.init();
 
     selectionValue.current = attachmentSelection;
@@ -275,12 +303,12 @@ describe("AttachmentExtensionPlugin delayed toolbar", () => {
     plugin.destroy();
   }));
 
-  it("opens toolbar for selected attachment blocks", fakeAsync(() => {
-    const {plugin, doc, selection$, selectionValue, attachmentSelection} = makeHarness();
+  it("opens toolbar after hovering attachment blocks", fakeAsync(() => {
+    const {plugin, doc, selection$, selectionValue, attachmentSelection, hover} = makeHarness();
     plugin.init();
 
     selectionValue.current = attachmentSelection;
-    selection$.next(attachmentSelection);
+    hover();
     tick(250);
 
     expect(doc.overlayService.createConnectedOverlay).toHaveBeenCalled();
@@ -288,11 +316,11 @@ describe("AttachmentExtensionPlugin delayed toolbar", () => {
   }));
 
   it("does not open delayed toolbar when the selected attachment block is stale", fakeAsync(() => {
-    const {plugin, doc, selection$, selectionValue, attachmentSelection} = makeHarness();
+    const {plugin, doc, selection$, selectionValue, attachmentSelection, hover} = makeHarness();
     plugin.init();
 
     selectionValue.current = attachmentSelection;
-    selection$.next(attachmentSelection);
+    hover();
     doc.getBlockById.and.throwError("missing");
     tick(250);
 
@@ -301,11 +329,11 @@ describe("AttachmentExtensionPlugin delayed toolbar", () => {
   }));
 
   it("does not run toolbar actions when the attachment block becomes stale", fakeAsync(() => {
-    const {plugin, doc, selection$, selectionValue, attachmentSelection} = makeHarness();
+    const {plugin, doc, selection$, selectionValue, attachmentSelection, hover} = makeHarness();
     plugin.init();
 
     selectionValue.current = attachmentSelection;
-    selection$.next(attachmentSelection);
+    hover();
     tick(250);
     const onItemClick = doc.overlayService.createConnectedOverlay.calls.mostRecent()
       .returnValue.componentRef.instance.onItemClick as Subject<any>;
@@ -326,12 +354,12 @@ describe("AttachmentExtensionPlugin delayed toolbar", () => {
       selection$,
       readonlyStateChange$,
       selectionValue,
-      attachmentSelection,
+      attachmentSelection, hover,
     } = makeHarness();
     plugin.init();
 
     selectionValue.current = attachmentSelection;
-    selection$.next(attachmentSelection);
+    hover();
     tick(250);
     const {overlayRef} = doc.overlayService.createConnectedOverlay.calls.mostRecent().returnValue;
 
@@ -348,15 +376,199 @@ describe("AttachmentExtensionPlugin delayed toolbar", () => {
   }));
 
   it("cancels delayed toolbar open on destroy", fakeAsync(() => {
-    const {plugin, doc, selection$, selectionValue, attachmentSelection} = makeHarness();
+    const {plugin, doc, selection$, selectionValue, attachmentSelection, hover} = makeHarness();
     plugin.init();
 
     selectionValue.current = attachmentSelection;
-    selection$.next(attachmentSelection);
+    hover();
     plugin.destroy();
     tick(250);
 
     expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+  }));
+
+  it('shows a selected attachment once and retains it after pointer leave', fakeAsync(() => {
+    const t = makeHarness();
+    t.plugin.init();
+    t.selectionValue.current = t.attachmentSelection;
+    t.selection$.next(t.attachmentSelection);
+    expect(t.doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(1);
+    t.hover();
+    t.pointer('pointerout', {relatedTarget: document.body});
+    tick(250);
+    const overlay = t.doc.overlayService.createConnectedOverlay.calls.mostRecent().returnValue.overlayRef;
+    expect(overlay.dispose).not.toHaveBeenCalled();
+    t.selection$.next(t.attachmentSelection);
+    expect(t.doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(1);
+    t.selectionValue.current = null;
+    t.selection$.next(null);
+    expect(overlay.dispose).toHaveBeenCalled();
+    t.plugin.destroy();
+  }));
+
+  for (const readonly of [false, true]) {
+    it(`only hover opens the toolbar when selection is disabled (readonly=${readonly})`, fakeAsync(() => {
+      const t = makeHarness();
+      t.policy.selectionOpen = readonly;
+      t.doc.isReadonly = readonly;
+      t.plugin.init();
+      t.selectionValue.current = t.attachmentSelection;
+      t.selection$.next(t.attachmentSelection);
+      tick(250);
+      expect(t.doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+      t.hover();
+      tick(250);
+      expect(t.doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(1);
+      t.pointer('pointerout', {relatedTarget: document.body});
+      tick(250);
+      expect(t.doc.overlayService.createConnectedOverlay.calls.mostRecent().returnValue.overlayRef.dispose).toHaveBeenCalled();
+      t.plugin.destroy();
+    }));
+  }
+
+  it('reconciles the existing selection when mode or readonly changes', () => {
+    const t = makeHarness();
+    t.policy.selectionOpen = false;
+    t.plugin.init();
+    t.selectionValue.current = t.attachmentSelection;
+    t.selection$.next(t.attachmentSelection);
+    t.policy.selectionOpen = true;
+    t.policyChanges$.next();
+    expect(t.doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(1);
+    const overlay = t.doc.overlayService.createConnectedOverlay.calls.mostRecent().returnValue.overlayRef;
+    t.policy.selectionOpen = false;
+    t.policyChanges$.next();
+    expect(overlay.dispose).toHaveBeenCalled();
+    t.policy.selectionOpen = true;
+    t.policyChanges$.next();
+    expect(t.doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(2);
+    overlay.dispose.calls.reset();
+    t.doc.isReadonly = true;
+    t.readonlyChanges$.next();
+    expect(overlay.dispose).toHaveBeenCalled();
+    t.plugin.destroy();
+  });
+
+  it('does not show selection tools for a multi-block range', () => {
+    const t = makeHarness();
+    t.plugin.init();
+    t.selectionValue.current = {...t.attachmentSelection, isInSameBlock: false};
+    t.selection$.next(t.selectionValue.current);
+    expect(t.doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+    t.plugin.destroy();
+  });
+
+  it('keeps an actual hover when selection display is switched off', fakeAsync(() => {
+    const t = makeHarness();
+    t.plugin.init();
+    t.hover();
+    t.selectionValue.current = t.attachmentSelection;
+    t.selection$.next(t.attachmentSelection);
+    const overlay = t.doc.overlayService.createConnectedOverlay.calls.mostRecent().returnValue.overlayRef;
+    t.policy.selectionOpen = false;
+    t.policyChanges$.next();
+    expect(overlay.dispose).not.toHaveBeenCalled();
+    t.pointer('pointerout', {relatedTarget: document.body});
+    tick(250);
+    expect(overlay.dispose).toHaveBeenCalled();
+    t.plugin.destroy();
+  }));
+
+  it('does not reopen a dismissed selection toolbar for unrelated policy updates', () => {
+    const t = makeHarness();
+    t.plugin.init();
+    t.selectionValue.current = t.attachmentSelection;
+    t.selection$.next(t.attachmentSelection);
+    t.plugin.closeToolbar();
+    t.policyChanges$.next();
+    expect(t.doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(1);
+    t.plugin.destroy();
+  });
+
+  it('retains touch access when selection opening is disabled', () => {
+    const t = makeHarness();
+    t.policy.selectionOpen = false;
+    t.plugin.init();
+    t.pointer('pointerup', {pointerType: 'touch'});
+    expect(t.doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(1);
+    t.plugin.destroy();
+  });
+
+  it('refreshes an open toolbar after upload without closing it or changing selection', fakeAsync(() => {
+    const t = makeHarness();
+    const block = t.attachmentSelection.firstBlock;
+    block.props.url = 'blob:pending';
+    t.plugin.init(); t.hover(); tick(250);
+    const {componentRef, overlayRef} = t.doc.overlayService.createConnectedOverlay.calls.mostRecent().returnValue;
+    expect(componentRef.setInput).toHaveBeenCalledWith('canUse', false);
+    componentRef.setInput.calls.reset();
+    block.props.url = 'https://example.com/complete.pdf';
+    t.doc.onPropsUpdate$.next({transactions: [{block, changes: new Map([['url', {}]])}]});
+    expect(componentRef.setInput).toHaveBeenCalledWith('canUse', true);
+    expect(overlayRef.dispose).not.toHaveBeenCalled();
+    expect(t.doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(1);
+    expect(t.selectionValue.current).toBeNull();
+    t.plugin.destroy();
+    expect(t.doc.onPropsUpdate$.observed).toBeFalse();
+  }));
+
+  it('keeps item handlers and legacy dispatch compatible and rechecks visibility and permissions', fakeAsync(() => {
+    let visible = true;
+    const click = jasmine.createSpy('click');
+    const legacy = jasmine.createSpy('legacy').and.returnValue(true);
+    const action = {name: 'web', icon: 'bc_wangluo', label: '网页', editOnly: true,
+      visible: () => visible, onClick: click};
+    const t = makeHarness({extraItems: [action, {name: 'old', icon: 'bc_eye-open', label: '旧入口'}], onExtraItemClick: legacy});
+    t.plugin.init(); t.hover(); tick(250);
+    const {componentRef} = t.doc.overlayService.createConnectedOverlay.calls.mostRecent().returnValue;
+    componentRef.instance.onItemClick.next({name: 'web'});
+    expect(click).toHaveBeenCalledOnceWith(t.attachmentSelection.firstBlock as any, t.doc as any);
+    expect(legacy).not.toHaveBeenCalled();
+    componentRef.instance.onItemClick.next({name: 'old'});
+    expect(legacy).toHaveBeenCalledOnceWith('old', t.attachmentSelection.firstBlock as any, t.doc as any);
+    click.calls.reset(); legacy.calls.reset();
+    visible = false;
+    componentRef.instance.onItemClick.next({name: 'web'});
+    expect(click).not.toHaveBeenCalled();
+    visible = true;
+    t.doc.readonlyManager.isReadonly.and.returnValue(true);
+    t.readonlyStateChange$.next();
+    expect(componentRef.setInput).toHaveBeenCalledWith('extraItems', [{name: 'old', icon: 'bc_eye-open', label: '旧入口'}]);
+    componentRef.instance.onItemClick.next({name: 'web'});
+    expect(click).not.toHaveBeenCalled();
+    t.attachmentSelection.firstBlock.props.url = 'blob:pending';
+    componentRef.instance.onItemClick.next({name: 'old'});
+    expect(legacy).not.toHaveBeenCalled();
+    t.plugin.destroy(); flushMicrotasks();
+  }));
+
+  it('handles async action failures and does not notify after destruction', fakeAsync(() => {
+    let reject!: (error: Error) => void;
+    const t = makeHarness({extraItems: [{name: 'fail', icon: 'bc_eye-open', label: '失败',
+      onClick: () => new Promise<void>((_resolve, fail) => reject = fail)}]});
+    t.plugin.init(); t.hover(); tick(250);
+    const {componentRef} = t.doc.overlayService.createConnectedOverlay.calls.mostRecent().returnValue;
+    componentRef.instance.onItemClick.next({name: 'fail'});
+    reject(new Error('failure')); flushMicrotasks();
+    expect(t.doc.messageService.warn).toHaveBeenCalledTimes(1);
+    componentRef.instance.onItemClick.next({name: 'fail'});
+    t.plugin.destroy(); reject(new Error('late failure')); flushMicrotasks();
+    expect(t.doc.messageService.warn).toHaveBeenCalledTimes(1);
+  }));
+
+  it('ignores nested document pointer events before resolving block IDs', fakeAsync(() => {
+    const t = makeHarness();
+    const nested = document.createElement('div');
+    nested.setAttribute('data-blockcraft-root', 'true');
+    nested.setAttribute('data-block-id', 'inner-attachment');
+    t.doc.root.hostElement.append(nested);
+    t.plugin.init(); t.doc.getBlockById.calls.reset();
+    t.pointer('pointerover', {}, nested);
+    t.pointer('pointerup', {pointerType: 'touch'}, nested);
+    tick(250);
+    expect(t.doc.getBlockById).not.toHaveBeenCalled();
+    expect(t.doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+    t.plugin.destroy();
   }));
 
   it("does not open toolbar for attachment gap cursor", fakeAsync(() => {

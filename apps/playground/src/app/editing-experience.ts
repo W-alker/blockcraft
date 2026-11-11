@@ -5,8 +5,8 @@ export const EDITING_EXPERIENCES: ReadonlyArray<{
   label: string; shortLabel: string; description: string; config: EditorInteractionConfig;
 }> = [
   {label: '专注内容', shortLabel: '专注', description: '收起布局控件，让思路留在文字里。', config: {preset: 'immersive'}},
-  {label: '轻量编辑', shortLabel: '轻编', description: '保留文字与对象编辑，收起对象抓手按钮和组合操作。',
-    config: {preset: 'mixed', overrides: {native: {moveExistingBlocks: false, groupOutline: false, objectFloatingHandles: false}, plugins: {groupToolbar: {enabled: false}}}}},
+  {label: '轻量编辑', shortLabel: '轻编', description: '文字选区稍停后显示工具，正文块菜单点击展开。',
+    config: {preset: 'mixed', overrides: {native: {moveExistingBlocks: false, groupOutline: false, objectFloatingHandles: false}, plugins: {groupToolbar: {enabled: false}, blockController: {hoverMenu: false}, textToolbar: {openDelay: 650}, attachmentToolbar: {selectionOpen: false}, tableToolbar: {textFocus: false}}}}},
   {label: '图文混排', shortLabel: '混排', description: '安心写内容，需要时再移动、调整图文。', config: {preset: 'mixed'}},
   {label: '布局调整', shortLabel: '布局', description: '聚焦对象即显示工具栏与抓手，悬停保持安静。',
     config: {preset: 'design', overrides: {native: {hoverControls: false}}}},

@@ -8,6 +8,32 @@
 
 专注（immersive）默认停用已安装的文字、代码标记、对象、图片、内容区域、贴纸、物料及组合浮动工具栏；独立开关由插件声明，保留输入和格式快捷键，详见 `blockcraft-plugins-formatting.md` 与 `blockcraft-plugins-toolbar.md`。
 
+## 表格结构工具栏按档位显示（未发布）
+
+`TableBlockBinding` 导出 `TABLE_TOOLBAR_INTERACTION`，声明 `tableToolbar.enabled/textFocus`。
+专注关闭结构浮动工具栏；Playground 轻量只在选中行、列或单元格区域时显示；混排及以上保持文字聚焦即显示。
+普通态与全屏一致，未安装插件保持原行为；输入、结构选择、列宽调整及顶部固定工具栏不变。
+详见 `blockcraft-plugins-inline.md` 与 `blockcraft-block.md`。
+
+## 附件工具栏按档位触发（未发布）
+
+`AttachmentExtensionPlugin` 导出 `ATTACHMENT_TOOLBAR_INTERACTION`，声明 `attachmentToolbar.hoverOpen/selectionOpen`。
+各档位保留悬停；混排/布局/设计另外支持单个附件整体选中时显示并保留工具栏。
+专注与 Playground 轻量档关闭选中触发，整篇只读也只保留原悬停/触屏入口。
+操作权限与固定工具栏不变。详见 `blockcraft-plugins-toolbar.md`。
+
+## 文字浮动工具栏按档位延迟（未发布）
+
+`textToolbar.openDelay` 配置选区停止变化后自动显示浮层的等待时间（0–2000ms，默认 350ms）。
+Playground 轻量档为 650ms，专注仍关闭浮层；切换本插件配置取消旧任务，固定工具栏与快捷键保持不变。
+详见 `blockcraft-plugins-formatting.md`。
+
+## 正文块操作按档位配置（未发布）
+
+`BlockControllerPlugin` 通过 `BLOCK_CONTROLLER_INTERACTION` 声明 `plugins.blockController.enabled/hoverMenu`。
+专注预设关闭入口；Playground 轻量档保留点击菜单、关闭自动 hover 菜单，其他档位沿用原行为。
+配置不改变固定工具栏、块间光标输入、快捷键和文档数据。详见 `blockcraft-plugins-block.md`；共享浮层的可选自动打开开关见 `blockcraft-toolbar.md`。
+
 ## 迷你对象工具栏（未发布）
 
 对象格式、整组、块级图片和内容区域浮动工具栏采用紧凑快捷条与圆形展开/收起按钮。
