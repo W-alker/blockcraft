@@ -1,3 +1,5 @@
+import {NgZone} from '@angular/core';
+import {positionObjectToolbar} from './object-toolbar-position';
 import {OBJECT_TOOLBAR_INTERACTION, GROUP_TOOLBAR_INTERACTION} from './interaction-config'
 export {OBJECT_TOOLBAR_INTERACTION, GROUP_TOOLBAR_INTERACTION} from './interaction-config'
 import {FloatingToolbarState, type FloatingToolbarOptions} from '../../components/floating-toolbar';
@@ -95,7 +97,6 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   get collapsed(): boolean { return this.toolbarState.collapsed(); }
   setCollapsed(collapsed: boolean): void { this.toolbarState.setCollapsed(collapsed); }
 
-  private panelResizeObserver?: ResizeObserver;
   private updateToolbarPosition?: () => void;
   private readonly subscription = new Subscription();
   private readonly close$ = new Subject<void>();
@@ -204,8 +205,6 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
 
   close = (): void => {
     this.finishPointEditing();
-    this.panelResizeObserver?.disconnect();
-    this.panelResizeObserver = undefined;
     this.activeWordArtHost?.classList.remove("word-art-block--object-selected");
     this.activeWordArtHost = undefined;
     this.editingContents = false;
@@ -312,7 +311,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     const options = {
       target: surface,
       component: ObjectFormatToolbarComponent,
-      fitToAvailableSpace: true,
+      fitToAvailableSpace: false,
       positions: [
         getPositionWithOffset("right-top", TOOLBAR_GAP, 0),
         getPositionWithOffset("left-top", TOOLBAR_GAP, 0),
@@ -355,18 +354,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
           : this.doc.scrollContainer ?? undefined;
         this.scheduleToolbarPositionUpdate();
       });
-    const strategy = toolbar.overlayRef.getConfig().positionStrategy;
-    if (strategy instanceof FlexibleConnectedPositionStrategy) {
-      strategy.positionChanges
-        .pipe(takeUntil(this.close$))
-        .subscribe((change) => {
-          const side =
-            change.connectionPair.originX === "start" ? "left" : "right";
-          toolbar.componentRef.setInput("side", side);
-        });
-    }
-    this.panelResizeObserver = new ResizeObserver(() => this.scheduleToolbarPositionUpdate());
-    this.panelResizeObserver.observe(toolbar.overlayRef.overlayElement);
+    this.updateToolbarPosition = positionObjectToolbar({zone: this.doc.injector.get(NgZone), ...toolbar, origin: surface, boundary: this.doc.scrollContainer ?? undefined, close$: this.close$, gap: TOOLBAR_GAP});
     this.watchProps(state.blockIds);
   }
 
@@ -848,7 +836,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       this.toolbarKind === "group" &&
       this.toolbarKey === key
     ) {
-      this.overlayRef.updatePosition();
+      this.updateToolbarPosition?.();
       return;
     }
     this.close();
@@ -857,7 +845,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
         {
           target: state.anchor,
           component: ObjectGroupToolbarComponent,
-          fitToAvailableSpace: true,
+          fitToAvailableSpace: state.mode !== 'ungroup',
           positions: [
             getPositionWithOffset("right-top", TOOLBAR_GAP, 0),
             getPositionWithOffset("left-top", TOOLBAR_GAP, 0),
@@ -886,14 +874,18 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     toolbar.componentRef.instance.panelChange
       .pipe(takeUntil(this.close$))
       .subscribe(() => this.scheduleToolbarPositionUpdate());
-    const strategy = toolbar.overlayRef.getConfig().positionStrategy;
-    if (strategy instanceof FlexibleConnectedPositionStrategy) {
-      strategy.positionChanges.pipe(takeUntil(this.close$)).subscribe(change => {
-        toolbar.componentRef.setInput("side", change.connectionPair.originX === "start" ? "left" : "right");
-      });
+    if (state.mode === 'ungroup') {
+      this.updateToolbarPosition = positionObjectToolbar({zone: this.doc.injector.get(NgZone), ...toolbar,
+        origin: state.anchor, boundary: this.doc.scrollContainer ?? undefined, close$: this.close$, gap: TOOLBAR_GAP});
+      this.watchProps(state.blockIds);
+    } else {
+      const strategy = toolbar.overlayRef.getConfig().positionStrategy;
+      if (strategy instanceof FlexibleConnectedPositionStrategy) {
+        strategy.positionChanges.pipe(takeUntil(this.close$)).subscribe(change => {
+          toolbar.componentRef.setInput('side', change.connectionPair.originX === 'start' ? 'left' : 'right');
+        });
+      }
     }
-    this.panelResizeObserver = new ResizeObserver(() => this.scheduleToolbarPositionUpdate());
-    this.panelResizeObserver.observe(toolbar.overlayRef.overlayElement);
   }
 
   private handleGroupAction(

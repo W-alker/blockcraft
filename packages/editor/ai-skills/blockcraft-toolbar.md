@@ -54,7 +54,7 @@ subscription.unsubscribe();
 展开/收起与页签变化后，宿主通过既有合并 rAF 请求 Overlay.updatePosition，展开也需刷新一次以解除旧尺寸限制。
 高度预算监听只随浮层存活，不增加全局滚轮拦截；设置面板保留唯一的正文滚动容器。
 桌面侧条宽 34px、快捷按钮 26px、图标 14px；圆形收起按钮 20px，命中范围 24px，与快捷条间距 3px。
-浮层以对象顶部为锚点，快捷条与设置面板顶部对齐；面板使用锚点下方可用空间，展开、收起与切换页签保留顶部入口位置。触摸主指针下侧条与快捷按钮放大至 42px/34px。
+迷你对象菜单优先放在对象右侧，再依次尝试左、上、下；以上下放置时快捷条与加减按钮横向排列。快捷条与二级设置卡分别适配编辑滚动区和可视视口的交集，面板优先沿菜单所在方向展开，放不下时换方向并限制内部滚动高度；普通页签和面板开关不再参与快捷条尺寸计算，展开收起保留起始锚点。触摸主指针下侧条与快捷按钮放大至 42px/34px。
 常规设置卡宽 240px、布局菜单宽 176px、内容区域设置卡宽 208px，桌面输入控件高 24px；触摸环境保留较大操作尺寸。
 
 ## 可滚动弹窗避让锚点
@@ -511,8 +511,8 @@ connected Overlay for the rail and secondary card, then click-switch local
 panel state without recreating the overlay or writing document data.
 `ObjectFormatToolbarComponent` is the bundled reference for this two-level
 pattern: it preserves the established side-aware 34px iconfont rail, 240px
-format card, compact 176px layout card, top-aligned connected positions and
-RAF panel repositioning. Secondary cards omit redundant title/description
+format card, compact 176px layout card, four-side connected positions and
+RAF-coalesced rail/card fitting. Secondary cards omit redundant title/description
 headers. Layout modes use one vertical list: each 28px row has an icon, a single-line
 label and the existing iconfont selected check on the right. The 176px layout
 card keeps alignment/stack commands in compact footer groups separated by a thin
@@ -523,8 +523,7 @@ selection bypasses this format rail and uses the restored compact horizontal
 group toolbar, anchored at the object top on the available side, for alignment, distribution and grouping; a selected group uses the mini two-entry rail: **布局** opens the compact
 secondary card for existing layout and hierarchy commands; **解除组合** executes
 the existing ungroup command directly and is omitted when unavailable. It reuses `FloatingToolbarState` and
-`ObjectFormatPopupState`, closes the card on collapse, and preserves top-side
-anchoring and left/right flipping. Block images use the same mini rail and
+`ObjectFormatPopupState`, closes the card on collapse, and uses shared four-side placement with a horizontal rail above/below the object and an independently fitted settings card. Block images use the same mini rail and
 secondary layout card, retaining caption/download/copy/custom quick actions.
 Flow-only alignment lives in that layout card; floating and grouped images
 omit it. Inline-image Embed controls keep their existing interaction. Preserve the historical group

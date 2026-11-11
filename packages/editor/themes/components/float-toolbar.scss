@@ -243,3 +243,8 @@ bc-virtual-float-toolbar {
     }
   }
 }
+
+// Mini object rails fit their secondary cards independently of the CDK pane.
+.cdk-overlay-pane[data-bc-object-toolbar-overlay] {
+  overflow: visible !important;
+}

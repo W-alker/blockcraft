@@ -1,8 +1,10 @@
+import {NgZone} from '@angular/core';
+import {positionObjectToolbar} from '../object-format-toolbar/object-toolbar-position';
 import {REGION_TOOLBAR_INTERACTION} from './interaction-config'
 export {REGION_TOOLBAR_INTERACTION} from './interaction-config'
 import {FloatingToolbarState, type FloatingToolbarOptions} from '../../components/floating-toolbar';
 import { DocPlugin, getPositionWithOffset } from "../../framework";
-import { fromEvent, Subject, Subscription, takeUntil } from "rxjs";
+import { fromEvent, Subject, Subscription, takeUntil, type Observable } from "rxjs";
 import { OverlayRef } from "@angular/cdk/overlay";
 import { CalloutBlockToolbar } from "./widgets/callout.toolbar";
 import { RenderUnitToolbar } from "./widgets/render-unit.toolbar";
@@ -150,7 +152,7 @@ export class CalloutToolbarPlugin extends DocPlugin {
 
     const component = containerBlock.flavour === 'render-unit'
       ? RenderUnitToolbar : CalloutBlockToolbar
-    const { componentRef, overlayRef } = this.doc.overlayService.createConnectedOverlay<CalloutBlockToolbar | RenderUnitToolbar>({
+    const { componentRef, overlayRef, updatePosition } = this.doc.overlayService.createConnectedOverlay<CalloutBlockToolbar | RenderUnitToolbar>({
       target: containerBlock,
       component,
       positions: containerBlock.flavour === 'render-unit'
@@ -163,6 +165,10 @@ export class CalloutToolbarPlugin extends DocPlugin {
     if (containerBlock.flavour === 'render-unit') componentRef.setInput('toolbarState', this.toolbarState)
     componentRef.setInput('containerBlock', containerBlock)
     this._overlayRef = overlayRef
+    if (containerBlock.flavour === 'render-unit') {
+      const positionToolbar = positionObjectToolbar({zone: this.doc.injector.get(NgZone), overlayRef, updatePosition, origin: containerBlock.hostElement, boundary: this.doc.scrollContainer ?? undefined, close$: this._closeToolbar$})
+      ;(containerBlock.onPropsChange as Observable<unknown>).pipe(takeUntil(this._closeToolbar$)).subscribe(positionToolbar)
+    }
 
     containerBlock.onDestroy$?.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
       this.closeToolbar()

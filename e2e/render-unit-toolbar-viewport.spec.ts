@@ -1,12 +1,19 @@
 import {expect, test} from '@playwright/test'
 
 test('expanded region border settings remain inside a short viewport', async ({page}) => {
+  await page.routeWebSocket('**', socket => socket.close())
   await page.goto('/template')
   await page.getByRole('button', {name: '内容区域', exact: true}).click()
-  await page.getByRole('button', {name: '选中内容区域', exact: true}).click({force: true})
+  await page.getByRole('button', {name: '选中内容区域并拖动', exact: true}).click({force: true})
   await expect(page.locator('[data-bc-region-format-toolbar]')).toBeVisible()
 
   await page.setViewportSize({width: 400, height: 300})
+  // Keep the editor's own scroll area visible instead of moving it behind the demo sidebar.
+  await page.locator('render-unit-toolbar').evaluate(element => {
+    const doc = (window as any).ng.getComponent(element).containerBlock.doc
+    doc.scrollContainer.style.cssText += ';position:fixed;left:0;top:0;width:400px;height:300px;z-index:25;box-sizing:border-box'
+    doc.scrollContainer.dispatchEvent(new Event('scroll'))
+  })
   await page.getByRole('button', {name: '外观选项'}).click()
   const toolbar = page.locator('[data-bc-region-format-toolbar]')
   const railTop = await toolbar.locator('.object-format__rail').evaluate(element => element.getBoundingClientRect().top)
@@ -15,7 +22,7 @@ test('expanded region border settings remain inside a short viewport', async ({p
 
   await expect.poll(() => toolbar.locator('.object-format__panel').evaluate(element => {
     const rect = element.getBoundingClientRect()
-    return rect.top >= 11 && rect.bottom <= window.innerHeight - 11 &&
+    return rect.top >= 7 && rect.bottom <= window.innerHeight - 7 &&
       rect.left >= 0 && rect.right <= window.innerWidth
   })).toBe(true)
   expect(await toolbar.locator('.object-format__rail').evaluate(element => element.getBoundingClientRect().top))

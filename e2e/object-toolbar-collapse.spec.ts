@@ -329,7 +329,7 @@ async function expectToggleNearRail(page: Page) {
 
 for (const flavour of ['text-box', 'word-art', 'shape']) {
   for (const nearBottom of [false, true]) {
-    test(`${flavour}: top anchor stays fixed through collapse and tab changes${nearBottom ? ' near viewport bottom' : ''}`, async ({page}) => {
+    test(`${flavour}: rail start stays fixed through collapse and tab changes${nearBottom ? ' near viewport bottom' : ''}`, async ({page}) => {
       const {first} = await setup(page, false, flavour)
       if (nearBottom) {
         await page.evaluate(() => {
@@ -342,11 +342,19 @@ for (const flavour of ['text-box', 'word-art', 'shape']) {
       const toolbar = page.locator('[data-bc-object-format-toolbar]')
       const shell = page.locator('bc-object-format-toolbar bc-floating-toolbar')
       const surface = page.locator(`[data-block-id="${first}"] [data-bc-object-surface]`).first()
+      await expect(shell).toHaveAttribute('data-bc-toolbar-placement', /right|left|top|bottom/)
+      await expect.poll(() => shell.evaluate(element => {
+        const r = element.getBoundingClientRect()
+        const {doc} = (window as any).__toolbarFixture
+        const b = doc.scrollContainer.getBoundingClientRect()
+        return r.top >= b.top + 8 && r.bottom <= Math.min(b.bottom, innerHeight) - 7
+      })).toBe(true)
+      const start = (await shell.locator('.floating-toolbar__toggle').boundingBox())!
+      if (!nearBottom) expect(Math.abs(start.y - (await surface.boundingBox())!.y)).toBeLessThan(1)
       const expectTop = async () => {
         await expect.poll(async () => {
-          const anchor = await surface.boundingBox()
           const toggle = await shell.locator('.floating-toolbar__toggle').boundingBox()
-          return anchor && toggle ? Math.abs(toggle.y - anchor.y) : Infinity
+          return toggle ? Math.max(Math.abs(toggle.y - start.y), Math.abs(toggle.x - start.x)) : Infinity
         }).toBeLessThan(1)
       }
       await expectTop()

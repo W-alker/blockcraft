@@ -60,5 +60,9 @@ export const OBJECT_FORMAT_POPUP_STYLES = `
   .object-format--anchored{position:relative;width:34px;max-width:none}
   .object-format--anchored .object-format__panel{position:absolute;top:0;right:calc(100% + 8px);max-width:none}
   .object-format--anchored.object-format--left .object-format__panel{right:auto;left:calc(100% + 8px)}
+  :host ::ng-deep bc-floating-toolbar[data-bc-toolbar-placement] .object-format{position:relative;width:max-content;max-width:none}
+  :host ::ng-deep bc-floating-toolbar[data-bc-toolbar-placement] .object-format__panel{position:absolute;max-width:none}
+  .object-format[data-bc-toolbar-horizontal] .object-format__rail{flex-direction:row;width:max-content;max-width:100%;overflow-x:auto;overflow-y:hidden}
+  .object-format[data-bc-toolbar-horizontal] .object-format__rail-divider{width:1px;height:20px}
   @media(pointer:coarse){.object-format__panel{--cs-sem-size-interactive-sm:var(--cs-sem-size-min-tap-target);--cs-sem-size-interactive-xs:var(--cs-sem-size-min-tap-target)}.object-format__rail{width:42px}.object-format__rail button{width:34px;min-width:34px;height:34px;min-height:34px}.object-format--anchored{width:42px}}
 `

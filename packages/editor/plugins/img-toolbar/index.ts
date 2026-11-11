@@ -1,3 +1,4 @@
+import {positionObjectToolbar} from '../object-format-toolbar/object-toolbar-position';
 import {IMAGE_TOOLBAR_INTERACTION} from './interaction-config'
 export {IMAGE_TOOLBAR_INTERACTION} from './interaction-config'
 import {FloatingToolbarState, type FloatingToolbarOptions} from '../../components/floating-toolbar';
@@ -33,7 +34,7 @@ import {
   getImageExt,
   nextTick,
 } from "../../global";
-import { FlexibleConnectedPositionStrategy, OverlayRef } from "@angular/cdk/overlay";
+import { OverlayRef } from "@angular/cdk/overlay";
 import {isSelectionAlive} from "../../framework/modules/selection/liveness";
 import {imageBlockSnapshotToInlineParagraph} from "./inline-image-conversion";
 import {
@@ -340,7 +341,7 @@ export class ImgToolbarPlugin extends DocPlugin {
                 getPositionWithOffset("right-top", 6, 0),
                 getPositionWithOffset("left-top", 6, 0),
               ],
-              fitToAvailableSpace: true,
+              fitToAvailableSpace: false,
               clampTo: this.doc.scrollContainer ?? undefined,
               component: ImageToolbar,
             },
@@ -353,29 +354,9 @@ export class ImgToolbarPlugin extends DocPlugin {
           BlockCraft.IBlockComponents["image"];
         componentRef.setInput("imgBlock", imgBlock);
         componentRef.setInput("toolbarState", this.toolbarState);
-        const view = imgEle.ownerDocument.defaultView!;
-        let positionFrame: number | null = null;
-        const schedulePosition = () => {
-          if (positionFrame !== null) return;
-          positionFrame = view.requestAnimationFrame(() => {
-            positionFrame = null;
-            if (this._toolbarRef === overlayRef) updatePosition();
-          });
-        };
-        componentRef.instance.panelChange.pipe(takeUntil(this._closeToolbar$)).subscribe(schedulePosition);
-        const strategy = overlayRef.getConfig().positionStrategy;
-        if (strategy instanceof FlexibleConnectedPositionStrategy) {
-          strategy.positionChanges.pipe(takeUntil(this._closeToolbar$)).subscribe(change => {
-            componentRef.setInput("side", change.connectionPair.originX === "start" ? "left" : "right");
-          });
-        }
-        const resizeObserver = new ResizeObserver(schedulePosition);
-        this.doc.injector.get(NgZone).runOutsideAngular(() => resizeObserver.observe(overlayRef.overlayElement));
-        this._closeToolbar$.pipe(take(1)).subscribe(() => {
-          resizeObserver.disconnect();
-          if (positionFrame !== null) view.cancelAnimationFrame(positionFrame);
-          positionFrame = null;
-        });
+        const positionToolbar = positionObjectToolbar({zone: this.doc.injector.get(NgZone), overlayRef, updatePosition, origin: imgEle,
+          getOriginRect: () => this.imageToolbarOriginRect(imgBlock, imgEle),
+          boundary: this.doc.scrollContainer ?? undefined, close$: this._closeToolbar$, gap: 6});
 
         if (this.options?.extraItems?.length) {
           componentRef.setInput("extraItems", this.options.extraItems);
@@ -394,7 +375,7 @@ export class ImgToolbarPlugin extends DocPlugin {
           .subscribe((v) => {
             componentRef?.instance.cdr.markForCheck();
             nextTick().then(() => {
-              if (this._toolbarRef === overlayRef) updatePosition();
+              if (this._toolbarRef === overlayRef) positionToolbar();
             });
           });
 

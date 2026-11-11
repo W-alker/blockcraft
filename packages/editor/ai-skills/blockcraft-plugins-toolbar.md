@@ -6,6 +6,13 @@
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
+## 迷你对象菜单四向避让（0.12.7）
+
+对象格式、整组、块级图片与内容区域菜单共享内部定位器；按右、左、上、下优先寻找完整落点，均不足时使用可见比例最大的一侧。
+上/下落点改为横向快捷条；设置卡独立选择四个方向并限制可用宽高，内部滚动保留，开关或切换面板不移动快捷条。
+滚动、窗口/视口尺寸变化及目标尺寸变化按帧合并重算；仅观察当前目标的样式投影，覆盖模型通知早于 DOM 平移/旋转落地的情况。关闭时清理观察器、监听与待执行帧。
+状态与插件构造参数不变，不写文档或 Undo；行内图片、普通 Callout、多对象水平排列工具条沿用既有交互。
+
 ## 工具栏交互声明（未发布）
 
 `ObjectFormatToolbarPlugin.interactionConfigs` 注册 `OBJECT_TOOLBAR_INTERACTION`（objectToolbar）与 `GROUP_TOOLBAR_INTERACTION`（groupToolbar）；`ImgToolbarPlugin` 注册 `IMAGE_TOOLBAR_INTERACTION`（imageToolbar）；`CalloutToolbarPlugin` 注册 `REGION_TOOLBAR_INTERACTION`（regionToolbar）。声明位于各自目录 `interaction-config.ts`，由插件入口导出，默认值与三模式覆盖由插件拥有。
@@ -373,9 +380,7 @@ const plugins = [new ObjectFormatToolbarPlugin(), new ObjectDragPlugin()];
 The connected quick rail reuses the established TextBox/WordArt two-level
 shell: a side-aware 34px rail opens a responsive 240px format card or compact
 176px layout card, both viewport-clamped and without redundant panel-title
-descriptions. It uses top-aligned right/left positioning, flips the rail
-when the Overlay changes side, and preserves toolbar/CSES sub-overlay focus
-ownership during pointer-to-focus handoff. Expanded panels use the available space below the anchor, keeping the top entry stable while collapsing or switching tabs. The mixed-selection command strip and selected-group rail use the same top-aligned side anchors. The panel keeps one scroll owner and switches
+descriptions. It chooses right/left/top/bottom positions inside the scroller and viewport intersection; top/bottom positions use a horizontal rail. Secondary cards fit independently, preserving the rail start through collapse and tab changes, and retain toolbar/CSES sub-overlay focus ownership during pointer-to-focus handoff. The mixed-selection horizontal command strip retains its existing positioning. The panel keeps one scroll owner and switches
 among layout, Shape and text sections without disposing its Overlay. The size
 and rotation fields remain in the object-format domain but currently have no
 rail entry. It reads

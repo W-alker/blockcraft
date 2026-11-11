@@ -4,6 +4,11 @@
 >
 > Last updated: 2026-11-11
 
+## 迷你对象菜单四向定位（0.12.7）
+
+对象格式、整组、块级图片和内容区域的 CDK pane 使用内部 `data-bc-object-toolbar-overlay` 标记，保留可见溢出以承载独立避让的绝对定位设置卡；卡片本身限制宽高并在内部滚动。
+上/下落点的 `bc-floating-toolbar` 与 `.object-format` 使用内部 `data-bc-toolbar-horizontal` 标记切为横向，继续复用现有尺寸、颜色和阴影变量。宿主不应覆盖内部定位属性，普通浮层不受此标记影响。
+
 ## 媒体块交互边框统一（0.12.3）
 
 `media-object-resizer.scss` 和 `object-interaction-chrome.scss` 将图片、视频、网页嵌入及旧平台卡片、人员卡片与贴纸

@@ -1,5 +1,5 @@
 import {FloatingToolbarComponent, FloatingToolbarState} from '../../../components/floating-toolbar'
-import {ChangeDetectionStrategy, Component, ElementRef, Input, ViewChild, signal} from '@angular/core'
+import {ChangeDetectionStrategy, Component, Input, signal} from '@angular/core'
 import {Subscription} from 'rxjs'
 import {FormsModule} from '@angular/forms'
 import {CsButtonComponent, CsColorPickerComponent, CsInputNumberComponent, CsOptionComponent, CsSegmentedComponent, CsSelectComponent, CsSliderComponent, CsTooltipDirective, type CsSliderValue} from '@cses/ui'
@@ -14,7 +14,6 @@ type AppearanceTab = 'fill' | 'outline'
 type TextTab = 'padding' | 'text'
 type BorderStyle = 'solid' | 'dashed' | 'dotted' | 'double'
 const SIDES = ['top', 'right', 'bottom', 'left'] as const
-const PANEL_MAX_HEIGHT = 520
 
 @Component({
   selector: 'render-unit-toolbar',
@@ -215,79 +214,6 @@ export class RenderUnitToolbar {
   @Input() containerBlock!: BlockCraft.IBlockComponents['render-unit']
   readonly hasFixedHeight = signal(false)
   private sizeSubscription?: Subscription
-  @ViewChild('rail') private rail?: ElementRef<HTMLElement>
-  @ViewChild('panel') set panel(ref: ElementRef<HTMLElement> | undefined) {
-    this.disconnectPanelPositioning()
-    const panel = ref?.nativeElement
-    if (!panel) return
-    this.panelElement = panel
-    const view = panel.ownerDocument.defaultView
-    if (!view) return
-    this.panelView = view
-    this.panelObserver = new ResizeObserver(this.schedulePanelPosition)
-    this.panelObserver.observe(panel)
-    panel.ownerDocument.addEventListener('scroll', this.onViewportScroll, true)
-    view.addEventListener('resize', this.schedulePanelPosition)
-    view.visualViewport?.addEventListener('resize', this.schedulePanelPosition)
-    view.visualViewport?.addEventListener('scroll', this.schedulePanelPosition)
-    this.schedulePanelPosition()
-  }
-
-  private panelElement?: HTMLElement
-  private panelView?: Window
-  private panelObserver?: ResizeObserver
-  private panelFrame?: number
-
-  private readonly onViewportScroll = (event: Event) => {
-    if (event.target instanceof Node && this.panelElement?.contains(event.target)) return
-    this.schedulePanelPosition()
-  }
-
-  private readonly schedulePanelPosition = () => {
-    if (!this.panelView || this.panelFrame !== undefined) return
-    this.panelFrame = this.panelView.requestAnimationFrame(() => {
-      this.panelFrame = undefined
-      this.positionPanel()
-    })
-  }
-
-  private positionPanel() {
-    const panel = this.panelElement
-    const rail = this.rail?.nativeElement
-    const view = this.panelView
-    if (!panel?.isConnected || !rail?.isConnected || !view) return
-
-    const viewport = view.visualViewport
-    const viewportTop = viewport?.offsetTop ?? 0
-    const viewportBottom = viewportTop + (viewport?.height ?? panel.ownerDocument.documentElement.clientHeight)
-    const minTop = viewportTop + 12
-    const maxBottom = viewportBottom - 12
-    // The panel is absolutely positioned, so CDK only measures the rail.
-    // Keep the rail anchored while fitting the panel inside the visible viewport.
-    panel.style.maxHeight = `${Math.max(0, Math.min(PANEL_MAX_HEIGHT, maxBottom - minTop))}px`
-    const railTop = rail.getBoundingClientRect().top
-    const panelHeight = panel.getBoundingClientRect().height
-    const offset = Math.max(minTop - railTop, Math.min(0, maxBottom - railTop - panelHeight))
-    panel.style.top = `${offset}px`
-  }
-
-  private disconnectPanelPositioning() {
-    this.panelObserver?.disconnect()
-    this.panelObserver = undefined
-    const panel = this.panelElement
-    const view = this.panelView
-    if (panel) panel.ownerDocument.removeEventListener('scroll', this.onViewportScroll, true)
-    if (view) {
-      view.removeEventListener('resize', this.schedulePanelPosition)
-      view.visualViewport?.removeEventListener('resize', this.schedulePanelPosition)
-      view.visualViewport?.removeEventListener('scroll', this.schedulePanelPosition)
-      if (this.panelFrame !== undefined) view.cancelAnimationFrame(this.panelFrame)
-    }
-    this.panelFrame = undefined
-    this.panelElement = undefined
-    this.panelView = undefined
-  }
-
   private readonly popup = new ObjectFormatPopupState<RegionPanel>()
   get activePanel(): RegionPanel | null { return this.popup.activePanel }
   panelSide: 'left' | 'right' = 'left'
@@ -382,16 +308,6 @@ export class RenderUnitToolbar {
   }
 
   togglePanel(panel: RegionPanel) {
-    if (this.activePanel === null) {
-      const railRect = this.rail?.nativeElement.getBoundingClientRect()
-      const boundary = this.containerBlock.doc?.scrollContainer?.getBoundingClientRect()
-        ?? document.documentElement.getBoundingClientRect()
-      if (railRect) {
-        const leftSpace = railRect.left - boundary.left - 8
-        const rightSpace = boundary.right - railRect.right - 8
-        this.panelSide = rightSpace >= 208 || rightSpace > leftSpace ? 'right' : 'left'
-      }
-    }
     this.popup.toggle(panel)
   }
 
@@ -440,7 +356,6 @@ export class RenderUnitToolbar {
 
   ngOnDestroy() {
     this.sizeSubscription?.unsubscribe()
-    this.disconnectPanelPositioning()
     if (!this.opacityPending) return
     const opacity = this.containerBlock.props.backOpacity
     if (opacity == null) this.containerBlock.hostElement?.style.removeProperty('--bc-render-unit-background-opacity')

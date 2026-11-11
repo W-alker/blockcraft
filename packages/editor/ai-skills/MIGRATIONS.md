@@ -4,6 +4,14 @@
 >
 > Last updated: 2026-11-11 | Tracks `@ccc/blockcraft` npm releases.
 
+## 0.12.7 — 迷你对象菜单四向避让（2026-11-11）
+
+- Severity: patch。
+- What changed / Why: 对象格式、整组、块级图片与内容区域菜单按右/左/上/下寻找可用落点；上下采用横向快捷条。二级设置卡独立避让，避免右侧裁剪和展开导致入口跳动。
+- Behavior Changes: 快捷条只以自身占位参与 CDK 定位，卡片仍处于原浮层 DOM 与焦点归属内，空间不足时限制卡片内部滚动。关闭时回收定位观察器与事件监听。
+- Migration Recipe: 无 API 或文档数据迁移；宿主应移除假定菜单永远纵向或弹窗永远向右的私有样式覆盖。通用 Overlay 服务和未接入此模式的工具条保持既有行为。
+- Affected ai-skills files: `blockcraft-toolbar.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-theme.md`。
+
 ## 0.12.6 — 官方五档体验统一到 editor 包（2026-11-11）
 
 - Severity: patch（按本次发布要求；新增可选五档 API，旧三模式与自定义配置保持兼容）。

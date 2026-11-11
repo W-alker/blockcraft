@@ -65,6 +65,8 @@ export class FloatingToolbarState {
     .floating-toolbar--constrained{max-height:inherit;min-height:0}
     .floating-toolbar--constrained .floating-toolbar__content{min-height:0}
     .floating-toolbar__content[hidden]{display:none}
+    :host([data-bc-toolbar-horizontal]) .floating-toolbar{flex-direction:row;align-items:center;width:max-content}
+    :host([data-bc-toolbar-horizontal]) .floating-toolbar__toggle{margin:5px 0}
     @media(pointer:coarse){.floating-toolbar{gap:3px}.floating-toolbar__toggle{width:34px;height:34px;margin:0}.floating-toolbar__toggle::before{inset:0}}
   `,
 })
