@@ -278,10 +278,13 @@ export const tableCellBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
 
       walkerContext.openNode(cellObj, 'children')
 
-      if (!o.node.children.length) return
-
-      if (HastUtils.hasTextContent(o.node)) {
-        walkerContext.openNode(ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node)))).closeNode()
+      // Only skip traversal after consuming the entire cell. Mixed content must
+      // keep its block children and the direct text on either side of them.
+      if (o.node.children.length && o.node.children.every(child =>
+        child.type === 'text' || child.type === 'comment' ||
+        (HastUtils.isElement(child) && HastUtils.isElementInline(child))
+      )) {
+        walkerContext.openNode(ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(o.node))).closeNode()
         walkerContext.skipAllChildren()
         walkerContext.closeNode()
       }

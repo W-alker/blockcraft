@@ -165,7 +165,7 @@ export const htmlLinkElementToDeltaMatcher: HtmlASTToDeltaMatcher = {
     }
     const href = ast.properties?.['href'];
     if (typeof href !== 'string') {
-      return [];
+      return ast.children.flatMap(child => context.toDelta(child, {trim: false}));
     }
     const { configs } = context;
     // const baseUrl = configs.get('docLinkBaseUrl') ?? '';

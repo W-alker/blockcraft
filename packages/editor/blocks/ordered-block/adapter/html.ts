@@ -84,13 +84,11 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
 
       walkerContext.openNode(openNode, 'children')
 
-      if (!o.node.children?.length) return
-
-      const firChild = o.node.children[0]
-      if (HastUtils.isElement(firChild) && HastUtils.isTagInline(firChild.tagName)) {
-        walkerContext.skipAllChildren()
-      }
-
+      // These direct inline children are already in the item delta. Visit only
+      // the remaining blocks, including nested lists after an inline first child.
+      o.node.children = o.node.children.filter(child =>
+        child.type !== 'text' && !(HastUtils.isElement(child) && HastUtils.isElementInline(child))
+      )
       walkerContext.setNodeContext('list:parent', o.node)
     },
     leave: (o, context) => {

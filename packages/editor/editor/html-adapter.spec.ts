@@ -7,6 +7,7 @@ import {
   DEFAULT_OBJECT_TEXT_STYLE,
   DocAttachmentInfo,
   DocFileService,
+  DeltaInsert,
   IBlockSnapshot,
   normalizeObjectPaint,
   normalizeObjectTextFrame,
@@ -122,6 +123,131 @@ describe('HtmlAdapter', () => {
     new Map(),
     BUNDLED_ADAPTER_REGISTRY,
   );
+
+  describe('paste text preservation', () => {
+    const text = (block: IBlockSnapshot): string => (block.children as DeltaInsert[])
+      .map(child => typeof child.insert === 'string' ? child.insert : '').join('');
+
+    it('keeps text before and after block children in a mixed wrapper', async () => {
+      const root = await adapter.toBlockSnapshot('<div>前文<p>段落</p>后文</div>');
+      expect((root.children as IBlockSnapshot[]).map(text)).toEqual(['前文', '段落', '后文']);
+    });
+
+    it('keeps adjacent formatted text in semantic wrappers without duplication', async () => {
+      const root = await adapter.toBlockSnapshot(
+        '<article><section>前文 <strong>加粗</strong> <a href="https://example.com">链接</a> 后文</section></article>',
+      );
+      const blocks = root.children as IBlockSnapshot[];
+      expect(blocks.map(text)).toEqual(['前文 加粗 链接 后文']);
+      expect(blocks[0]?.children).toContain(jasmine.objectContaining({
+        insert: '加粗', attributes: jasmine.objectContaining({'a:bold': true}),
+      }));
+      expect(blocks[0]?.children).toContain(jasmine.objectContaining({
+        insert: '链接', attributes: jasmine.objectContaining({'a:link': 'https://example.com'}),
+      }));
+    });
+
+    it('keeps nested lists after an inline first child', async () => {
+      const root = await adapter.toBlockSnapshot(
+        '<ul><li><span>父项</span><ul><li>子项</li></ul></li><li>末项</li></ul>',
+      );
+      const blocks = root.children as IBlockSnapshot[];
+      expect(blocks.map(text)).toEqual(['父项', '子项', '末项']);
+      expect(blocks.map(block => block.flavour)).toEqual(['bullet', 'bullet', 'bullet']);
+      expect(blocks.map(block => block.props.depth)).toEqual([0, 1, 0]);
+    });
+
+    it('keeps task-list text wrapped after a separate checkbox span', async () => {
+      const items = ['第一项任务', '第二项任务', '第三项任务'].map((label, index) =>
+        `<li data-task-list-item="true" data-checked="${index === 1}">` +
+        '<span class="task-list-item-checkbox" contenteditable="false">' +
+        `<input type="checkbox" tabindex="-1"${index === 1 ? ' checked' : ''}></span>` +
+        `<div class="task-list-item-content"><p><span>${label}</span>` +
+        '<span data-appearance="inline-mention" contenteditable="false">' +
+        '<span class="mention-icon"></span><span>任务讨论</span></span></p></div></li>',
+      );
+      const root = await adapter.toBlockSnapshot(`<ul data-spread="true">${items.join('')}</ul>`);
+      const blocks = root.children as IBlockSnapshot[];
+      expect(blocks.map(block => block.flavour)).toEqual(['todo', 'todo', 'todo']);
+      expect(blocks.map(block => block.props['checked'])).toEqual([false, true, false]);
+      expect(blocks.map(text)).toEqual(['第一项任务任务讨论', '第二项任务任务讨论', '第三项任务任务讨论']);
+    });
+
+    it('does not duplicate inline content while visiting a list item paragraph', async () => {
+      const root = await adapter.toBlockSnapshot('<ul><li>前文<strong>加粗</strong><p>末段</p></li></ul>');
+      expect((root.children as IBlockSnapshot[]).map(text)).toEqual(['前文加粗末段']);
+    });
+
+    it('keeps mixed direct text and paragraphs inside a table cell', async () => {
+      const root = await adapter.toBlockSnapshot(
+        '<table><tr><td>前文<p>段落</p>后文</td><td><strong>加粗</strong>尾文</td></tr></table>',
+      );
+      const table = root.children[0] as IBlockSnapshot;
+      const row = table.children[0] as IBlockSnapshot;
+      expect(((row.children[0] as IBlockSnapshot).children as IBlockSnapshot[]).map(text))
+        .toEqual(['前文', '段落', '后文']);
+      expect(((row.children[1] as IBlockSnapshot).children as IBlockSnapshot[]).map(text))
+        .toEqual(['加粗尾文']);
+    });
+
+    it('keeps lists inside flex wrappers instead of flattening them away', async () => {
+      const root = await adapter.toBlockSnapshot(
+        '<div style="display:flex"><p>前文</p><ul><li>列表</li></ul><p>后文</p></div>',
+      );
+      const blocks = root.children as IBlockSnapshot[];
+      expect(blocks.map(text)).toEqual(['前文', '列表', '后文']);
+      expect(blocks.map(block => block.flavour)).toEqual(['paragraph', 'bullet', 'paragraph']);
+    });
+
+    it('keeps anchor text when the source link has no href', async () => {
+      const root = await adapter.toBlockSnapshot('<p>前文<a name="bookmark"><strong>锚点正文</strong></a>后文</p>');
+      const blocks = root.children as IBlockSnapshot[];
+      expect(blocks.map(text)).toEqual(['前文锚点正文后文']);
+      expect(blocks[0].children).toContain(jasmine.objectContaining({
+        insert: '锚点正文', attributes: jasmine.objectContaining({'a:bold': true}),
+      }));
+    });
+
+    it('keeps collapsed newline whitespace between adjacent inline elements', async () => {
+      const root = await adapter.toBlockSnapshot('<section><strong>前文</strong>\n<em>后文</em></section>');
+      expect((root.children as IBlockSnapshot[]).map(text)).toEqual(['前文 后文']);
+    });
+
+    it('keeps inline images inside a list paragraph', async () => {
+      const root = await adapter.toBlockSnapshot(
+        '<ul><li><p>前文<img src="https://example.com/image.png">后文</p></li></ul>',
+      );
+      const blocks = root.children as IBlockSnapshot[];
+      expect(blocks.map(text)).toEqual(['前文后文']);
+      expect(blocks[0].flavour).toBe('bullet');
+      expect(blocks[0].children).toContain({insert: {image: 'https://example.com/image.png'}});
+    });
+
+    it('ignores document metadata and layout whitespace around unwrapped content', async () => {
+      const root = await adapter.toBlockSnapshot(
+        '<html><head><title>标题</title><style>.x { color:red }</style></head>' +
+        '<body>\n<article>\n前文<strong>加粗</strong>后文\n</article>\n' +
+        '<script>ignored()</script><p>末段</p></body></html>',
+      );
+      expect((root.children as IBlockSnapshot[]).map(text)).toEqual([' 前文加粗后文 ', '末段']);
+    });
+
+    it('leaves media fallback content to the media matcher', async () => {
+      const root = await adapter.toBlockSnapshot(
+        '<article><video src="https://example.com/video.mp4">视频后备文字</video>' +
+        '<audio src="https://example.com/audio.mp3">音频后备文字</audio></article>',
+      );
+      expect((root.children as IBlockSnapshot[]).map(block => block.flavour)).toEqual(['video', 'audio']);
+    });
+
+    it('does not insert anonymous paragraphs into structural table nodes', async () => {
+      const root = await adapter.toBlockSnapshot('<table><caption>表格标题</caption><tr><td>正文</td></tr></table>');
+      const table = root.children[0] as IBlockSnapshot;
+      expect((table.children as IBlockSnapshot[]).map(block => block.flavour)).toEqual(['table-row']);
+      const cell = (table.children[0] as IBlockSnapshot).children[0] as IBlockSnapshot;
+      expect((cell.children as IBlockSnapshot[]).map(text)).toEqual(['正文']);
+    });
+  });
 
   it('exports html without blockcraft-json metadata on the root element', async () => {
     const html = await adapter.toHtml(createRootSnapshot([]));

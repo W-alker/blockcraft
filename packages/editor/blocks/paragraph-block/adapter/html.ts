@@ -10,6 +10,7 @@ import {
   editableTypographyFromHtml,
   editableTypographyToHtmlProperties,
 } from '../../../adapters/html-adapter/typography';
+import type {HtmlAST} from '../../../adapters/types';
 
 function paragraphPropsFromHtml(node: Element) {
   const decoration = normalizeParagraphDecoration(decodeAdapterProps(node.properties?.['dataBcDecoration']))
@@ -54,23 +55,62 @@ const hasInlineContent = (node: Parameters<typeof HastUtils.hasTextContent>[0]) 
     node.children.some(child => HastUtils.isElement(child) && child.tagName === 'img')
   )
 
-// TODO 优化paragraph matcher
+const ignoredContentTags = new Set(['head', 'script', 'style', 'template'])
+const resourceTags = new Set(['audio', 'video', 'embed', 'object', 'picture'])
+const isInlineContentNode = (node: HtmlAST | null | undefined): boolean => !!node && (
+  node.type === 'text' ||
+  (HastUtils.isElement(node) && HastUtils.isElementInline(node) &&
+    !ignoredContentTags.has(node.tagName) && !resourceTags.has(node.tagName))
+)
+const hasOnlyInlineChildren = (node: Element): boolean =>
+  node.children.every(child => child.type === 'comment' || isInlineContentNode(child))
+
 export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   toMatch: o =>
-    (o.node.type === 'text' && o.node.value !== '\n') ||
-    (HastUtils.isElement(o.node) && paragraphBlockMatchTags.includes(o.node.tagName)),
+    isInlineContentNode(o.node) ||
+    (HastUtils.isElement(o.node) && (
+      paragraphBlockMatchTags.includes(o.node.tagName) || ignoredContentTags.has(o.node.tagName)
+    )),
   fromMatch: o => o.node.flavour === 'paragraph' || o.node.flavour === 'blockquote',
   toBlockSnapshot: {
     enter: (o, context) => {
-
-      if (!HastUtils.isElement(o.node)) {
-        return;
-      }
       const {walkerContext, deltaConverter} = context;
-
       const currentNode = walkerContext.currentNode()
 
-      if (currentNode?.nodeType === 'editable') {
+      if (HastUtils.isElement(o.node) && ignoredContentTags.has(o.node.tagName)) {
+        walkerContext.skipAllChildren()
+        return
+      }
+
+      // Collect unwrapped phrasing content in source order. Explicit paragraphs
+      // still consume their own inline tree; list items now visit it only once.
+      if (isInlineContentNode(o.node)) {
+        // Structural table nodes and media own their child grammar; anonymous
+        // paragraphs cannot be inserted directly into these snapshots.
+        if (currentNode?.nodeType === BlockNodeType.void ||
+          ['table', 'table-row', 'image', 'columns'].includes(currentNode?.flavour)) return
+        const deltas = deltaConverter.astToDelta(o.node, {trim: false})
+        const layoutWhitespace = o.node.type === 'text' && !o.node.value.trim() && (
+          currentNode?.nodeType !== 'editable' ||
+          (!currentNode.children.length && /[\n\r]/.test(o.node.value))
+        )
+        if (!layoutWhitespace && deltas.length) {
+          if (currentNode?.nodeType !== 'editable') {
+            walkerContext.openNode(ParagraphBlockSchema.createSnapshot(), 'children')
+            walkerContext.setNodeContext('paragraph:implicit', true)
+          }
+          (walkerContext.currentNode()!.children as DeltaInsert[]).push(...deltas)
+        }
+        if (walkerContext.getNodeContext('paragraph:implicit') && !isInlineContentNode(o.next)) {
+          walkerContext.closeNode()
+        }
+        walkerContext.skipAllChildren()
+        return
+      }
+
+      if (!HastUtils.isElement(o.node)) return
+
+      if (currentNode?.nodeType === 'editable' && (o.node.tagName === 'p' || hasOnlyInlineChildren(o.node))) {
         // @ts-ignore
         currentNode?.children.push(...deltaConverter.astToDelta(o.node))
         walkerContext.skipAllChildren()
@@ -83,7 +123,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         case 'div':
         case 'footer': {
           if (isMediaContainerHtmlNode(o.node)) return;
-          if (!HastUtils.isParagraphLike(o.node)) return;
+          if (!hasOnlyInlineChildren(o.node)) return;
           if (o.parent?.node.type === 'element' && !['li', 'p'].includes(o.parent.node.tagName)) {
             const p = ParagraphBlockSchema.createSnapshot()
             // Body typography belongs to the document root. A fallback
