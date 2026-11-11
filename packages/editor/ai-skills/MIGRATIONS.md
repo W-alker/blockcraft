@@ -4,45 +4,46 @@
 >
 > Last updated: 2026-11-11 | Tracks `@ccc/blockcraft` npm releases.
 
-## 未发布 — 表格结构工具栏按档位显示（2026-11-11）
+## 0.12.5 — 编辑档位插件策略与附件动作（2026-11-11）
 
-- Severity: minor；本次不调整包版本。
+- Severity: patch（按本次发布要求；新增配置和附件动作扩展保持既有 API 兼容）。
+- 宿主升级说明：三种框架 preset 自动采用插件默认策略；五档产品中的轻量组合由宿主维护，需要追加 `blockController.hoverMenu=false`、`textToolbar.openDelay=650`、`attachmentToolbar.selectionOpen=false`、`tableToolbar.textFocus=false`，并按已注册命名空间过滤。无需迁移文档或个性化设置数据。
+- 顶部固定工具栏不受本次档位扩展影响。
+
+### 表格结构工具栏按档位显示
+
 - What changed / Why: 表格插件注册结构工具栏的显示策略，轻量编辑时在单元格内写字不会持续展示行列操作。
 - New APIs: `TABLE_TOOLBAR_INTERACTION`；`plugins.tableToolbar.enabled/textFocus`，默认均为 true，immersive 的 enabled 为 false。
 - Behavior Changes: 专注关闭表格结构工具栏，Playground 轻量覆盖 textFocus=false，仅行/列/单元格区域选择显示；其余档位保持原行为。普通态和全屏一致，延迟 Overlay 创建前重新检查策略。输入、剪贴板、结构选择、列宽拖动、权限和顶部固定工具栏不变。
 - Migration Recipe: 无必需迁移。需要轻量规则可调用 `doc.interaction.configure({preset: 'mixed', overrides: {plugins: {tableToolbar: {textFocus: false}}}})`；configure 替换完整配置。先安装 TableBlockBinding 才能设置此命名空间；未安装时表格保持原有显示行为。
 - Affected ai-skills files: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-inline.md`。
 
-## 未发布 — 附件按钮配置与状态刷新（2026-11-11）
+### 附件按钮配置与状态刷新
 
-- Severity: minor；版本号由发布者决定，本次不调整包版本。
 - What changed / Why: 附件插件负责工具栏状态更新与嵌套文档事件隔离，宿主只提供业务动作，避免通过改选区刷新按钮。
 - New APIs: `AttachmentToolbarAction`，`extraItems` 中可选 `visible(block, doc)` 与 `onClick(block, doc): void | Promise<void>`。
 - Behavior Changes: 已打开浮层在当前附件属性和只读状态变化时原位刷新；不改变选区。自定义动作执行前重新校验显示条件、就绪状态与 editOnly；异步回调失败统一提示。嵌套文档 hover/touch 不由外层解析。
 - Migration Recipe: 旧 `extraItems` 与 `onExtraItemClick` 无需迁移；新按钮可把名称分发改为同项 `onClick`（优先执行，不再转发旧回调），显示限制写入 `visible`。宿主可移除用于上传刷新和重选附件的补丁，保留业务转换前的有效性检查。客户端迁移须与包含本能力的框架包一起交付。
 - Affected ai-skills files: `blockcraft-plugins-toolbar.md`。
 
-## 未发布 — 附件工具栏按档位触发（2026-11-11）
+### 附件工具栏按档位触发
 
-- Severity: minor；本次不调整包版本。
 - What changed / Why: 附件工具栏复用插件交互注册表，按档位选择悬停显示或同时支持整块选中显示。
 - New APIs: `ATTACHMENT_TOOLBAR_INTERACTION`；`plugins.attachmentToolbar.hoverOpen` 默认 true；`selectionOpen` 默认 true，immersive 为 false。
 - Behavior Changes: 专注与 Playground 轻量档仅悬停；混排/布局/设计支持悬停或单个附件整体选中，选中后移开鼠标不关闭。跨块/gap 选区不触发。整篇只读仅保留原悬停/触屏方式。切换配置重新判断当前选区；固定工具栏、文件操作和授权规则不变。
 - Migration Recipe: 无必需迁移。通过 `doc.interaction.configure({preset: 'mixed', overrides: {plugins: {attachmentToolbar: {selectionOpen: false}}}})` 保留仅悬停方式；configure 替换完整配置。
 - Affected ai-skills files: `blockcraft.md`、`blockcraft-plugins-toolbar.md`。
 
-## 未发布 — 文字浮动工具栏选区停留时间（2026-11-11）
+### 文字浮动工具栏选区停留时间
 
-- Severity: minor；版本号由发布者决定，本次不调整包版本。
 - What changed / Why: 文字浮层的自动显示延迟由插件声明配置，轻量编辑减少短暂划选时弹出工具的干扰。
 - New APIs: `TEXT_TOOLBAR_INTERACTION` 增加 `plugins.textToolbar.openDelay`，0–2000 的整数毫秒，默认 350。
 - Behavior Changes: Playground 轻量档使用 650ms；其他档位默认延迟保持不变，专注仍关闭浮层。切换文字浮层开关或延迟、调用 `setEnabled(false)` 会取消未执行的自动显示；新配置等待下一次选区变化。显式 `openToolbar()`、固定工具栏、快捷键与只读自定义动作授权不变。
 - Migration Recipe: 无必需迁移。可使用 `doc.interaction.configure({preset: 'mixed', overrides: {plugins: {textToolbar: {openDelay: 650}}}})`；configure 替换完整配置。不改变文档数据。
 - Affected ai-skills files: `blockcraft.md`、`blockcraft-plugins-formatting.md`。
 
-## 未发布 — 正文块操作入口与悬停菜单配置（2026-11-11）
+### 正文块操作入口与悬停菜单配置
 
-- Severity: minor；版本号由发布者决定，本次不调整包版本。
 - What changed / Why: 正文块操作复用插件交互声明注册表，支持隐藏入口、仅点击展开菜单，让编辑档位控制界面干扰而不关闭正文输入。
 - New APIs: `BLOCK_CONTROLLER_INTERACTION`，`plugins.blockController.enabled/hoverMenu`；`BcOverlayTriggerDirective` 的 `[bcOverlayHover]` 输入（默认 true）。
 - Behavior Changes: immersive 的入口配置默认关闭；mixed/design 保持原行为。Playground 轻量档设置 hoverMenu=false。关闭入口清理现有菜单和延迟任务；关闭 hover 仍允许显式点击打开。只读和 native.layoutControls 总开关优先，移动授权不变。固定工具栏及块间光标输入不变。
