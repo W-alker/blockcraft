@@ -4,21 +4,28 @@ import {
   EventListen, getPositionWithOffset,
   resolveBlockGapSide,
 } from "../../framework";
-import { merge, Subject, Subscription, takeUntil } from "rxjs";
+import { Subject, Subscription, takeUntil } from "rxjs";
 import { OverlayRef } from "@angular/cdk/overlay";
 import { DividerStylePopupComponent } from "./widgets/divider-style-popup.component";
 import {isSelectionAlive} from "../../framework/modules/selection/liveness";
+import {DIVIDER_TOOLBAR_INTERACTION} from './interaction-config';
+export {DIVIDER_TOOLBAR_INTERACTION} from './interaction-config';
 
 export class DividerExtensionPlugin extends DocPlugin {
+  override readonly interactionConfigs = [DIVIDER_TOOLBAR_INTERACTION]
   override name = "divider-extension";
 
-  private _sub?: Subscription
+  private _sub = new Subscription()
   private _timer: number | null = null
   private _toolbarRef?: OverlayRef
 
   private _closeToolbar$ = new Subject<void>()
 
   private _activeBlock: BlockCraft.IBlockComponents['divider'] | null = null
+
+  private get _toolbarEnabled(): boolean {
+    return !this.doc.isReadonly && this.doc.interaction.get(DIVIDER_TOOLBAR_INTERACTION).enabled
+  }
 
   @EventListen('mouseDown', {flavour: 'divider'})
   private _handleDividerMouseDown(context: BlockCraft.EventStateContext) {
@@ -45,8 +52,17 @@ export class DividerExtensionPlugin extends DocPlugin {
   }
 
   init() {
-    this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
+    const closeIfDisabled = () => {
+      if (!this._toolbarEnabled) this.closeToolbar()
+    }
+    this._sub.add(this.doc.interaction.policyChanges$.subscribe(closeIfDisabled))
+    this._sub.add(this.doc.subscribeReadonlyChange(closeIfDisabled))
+    this._sub.add(this.doc.selection.selectionChange$.subscribe(selection => {
       this.clearTimer()
+      if (!this._toolbarEnabled) {
+        this.closeToolbar()
+        return
+      }
 
       // Focusing an overlay input can temporarily clear the editor selection.
       // Retain the toolbar only for that null-selection transition. A concrete
@@ -78,6 +94,7 @@ export class DividerExtensionPlugin extends DocPlugin {
         if (this._toolbarRef && this._activeBlock === dividerBlock) return;
         const currentSelection = this.doc.selection.value
         if (
+          !this._toolbarEnabled ||
           !currentSelection ||
           !isSelectionAlive(currentSelection as any, this.doc) ||
           !currentSelection.isInSameBlock ||
@@ -111,7 +128,7 @@ export class DividerExtensionPlugin extends DocPlugin {
         })
       }, 200)
 
-    })
+    }))
   }
 
   clearTimer() {

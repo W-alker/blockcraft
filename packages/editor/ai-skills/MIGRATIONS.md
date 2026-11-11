@@ -4,6 +4,16 @@
 >
 > Last updated: 2026-11-11 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 分割线工具栏按档位显示（2026-11-11）
+
+- Severity: minor（新增可选插件配置；发布版本号待定）。
+- What changed / Why: 分割线插件自行注册面板开关，让专注和轻量体验不弹出样式面板；混排/布局/设计沿用原来的整块选中触发。
+- New APIs: `DIVIDER_TOOLBAR_INTERACTION`；`plugins.dividerToolbar.enabled`，默认 true，immersive/focus 和官方 light 体验为 false。
+- Behavior Changes: 关闭配置立即收起面板并取消待打开任务，恢复后等待下一次选中；延迟回调重新校验配置、只读、选区与块存活。分割线选中、块间输入、样式数据与顶部固定工具栏保持原行为。
+- Deprecations: 无。
+- Migration Recipe: 无数据迁移。五档 experience 自动继承；若需专注中保留原面板，将 `interaction: {experience: 'focus'}` 改为 `interaction: {experience: 'focus', overrides: {plugins: {dividerToolbar: {enabled: true}}}}`。只有已安装 DividerExtensionPlugin 的文档可覆盖此命名空间，只读不能被开关绕过。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-plugins-toolbar.md`。
+
 ## 0.12.7 — 迷你对象菜单四向避让（2026-11-11）
 
 - Severity: patch。

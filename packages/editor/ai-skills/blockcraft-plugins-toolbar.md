@@ -982,10 +982,15 @@ Shows a `DividerStylePopupComponent` when a divider block is selected, allowing 
 
 ### Configuration
 
-No configuration options.
+构造器无参数。插件注册并导出 `DIVIDER_TOOLBAR_INTERACTION`，声明 `plugins.dividerToolbar.enabled`：默认 true，immersive/focus 和官方 light 体验为 false；mixed/layout/design 保留整块选中后延迟 200ms 显示。
+关闭配置会取消待打开任务、收起面板并移除其临时高亮；恢复开关后等待下一次选中，不主动抢焦点。延迟回调重新检查配置、选区、只读和块实例存活。顶部固定工具栏、分割线选中、块间输入与样式数据保持原行为。
 
 ```typescript
 new DividerExtensionPlugin();
+// 已安装插件后，可在专注体验中独立开启分割线面板（只读仍不可用）。
+doc.interaction.configure({experience: 'focus', overrides: {
+  plugins: {dividerToolbar: {enabled: true}},
+}});
 ```
 
 ---

@@ -6,9 +6,10 @@ import {TEXT_TOOLBAR_INTERACTION} from '../../plugins/float-text-toolbar/interac
 import {ATTACHMENT_TOOLBAR_INTERACTION} from '../../plugins/attachment-extension/interaction-config'
 import {TABLE_TOOLBAR_INTERACTION} from '../../blocks/table-block/interaction-config'
 import {GROUP_TOOLBAR_INTERACTION} from '../../plugins/object-format-toolbar/interaction-config'
+import {DIVIDER_TOOLBAR_INTERACTION} from '../../plugins/divider-toolbar/interaction-config'
 
 const definitions = [BLOCK_CONTROLLER_INTERACTION, TEXT_TOOLBAR_INTERACTION,
-  ATTACHMENT_TOOLBAR_INTERACTION, TABLE_TOOLBAR_INTERACTION, GROUP_TOOLBAR_INTERACTION]
+  ATTACHMENT_TOOLBAR_INTERACTION, TABLE_TOOLBAR_INTERACTION, GROUP_TOOLBAR_INTERACTION, DIVIDER_TOOLBAR_INTERACTION]
 
 describe('official editing experiences', () => {
   it('preserves the five existing combinations using installed declarations', () => {
@@ -35,6 +36,7 @@ describe('official editing experiences', () => {
       expect(plugins['tableToolbar']!['enabled']).toBe(i > 0)
       expect(plugins['tableToolbar']!['textFocus']).toBe(i !== 1)
       expect(plugins['groupToolbar']!['enabled']).toBe(i >= 2)
+      expect(plugins['dividerToolbar']!['enabled']).toBe(i >= 2)
     }
   })
 
@@ -46,6 +48,15 @@ describe('official editing experiences', () => {
     expect(() => registry.resolve({experience: 'light', overrides: {plugins: {missing: {enabled: false}}}})).toThrowError(/Unregistered/)
     expect(() => registry.resolve({experience: 'typo'} as any)).toThrowError(/experience/)
     expect(() => registry.resolve({experience: 'light', preset: 'design'})).toThrowError(/conflict/)
+  })
+
+  it('allows an explicit divider toolbar override in focus and light modes', () => {
+    const registry = new EditorInteractionRegistry(definitions)
+    for (const experience of ['focus', 'light'] as const) {
+      expect(registry.resolve({experience, overrides: {
+        plugins: {dividerToolbar: {enabled: true}},
+      }}).policy.plugins['dividerToolbar']!['enabled']).toBeTrue()
+    }
   })
 
   it('applies host overrides last and keeps legacy presets independent of experience defaults', () => {

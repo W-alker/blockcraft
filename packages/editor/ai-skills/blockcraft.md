@@ -15,6 +15,12 @@
 插件注册表按已安装能力解析，后装插件继承当前档位；显式用户覆盖最后生效。Playground 不再维护独立组合。
 旧三模式 API 保持兼容；宿主仍负责 UI、偏好保存和业务覆盖。完整用法见 `blockcraft-app.md`、声明方式见 `blockcraft-plugin.md`。
 
+## 分割线工具栏按档位显示（未发布）
+
+`DividerExtensionPlugin` 导出 `DIVIDER_TOOLBAR_INTERACTION`，声明 `dividerToolbar.enabled`。
+专注和轻量关闭设置面板，混排/布局/设计保留整块选中后延迟 200ms 显示；关闭配置取消待打开任务并收起面板。
+分割线选中、块间输入和顶部固定工具栏不变，详见 `blockcraft-plugins-toolbar.md`。
+
 ## 表格结构工具栏按档位显示（未发布）
 
 `TableBlockBinding` 导出 `TABLE_TOOLBAR_INTERACTION`，声明 `tableToolbar.enabled/textFocus`。

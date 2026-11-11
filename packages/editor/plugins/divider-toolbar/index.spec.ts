@@ -6,6 +6,9 @@ import {DividerExtensionPlugin} from "./index";
 describe("DividerExtensionPlugin delayed toolbar", () => {
   const makeHarness = () => {
     const selection$ = new Subject<any>();
+    const policyChanges$ = new Subject<void>();
+    const readonlyChanges$ = new Subject<void>();
+    const config = {enabled: true};
     const selectionValue = {current: null as any};
     const hostElement = document.createElement("div");
     hostElement.setAttribute("data-block-id", "divider-1");
@@ -22,6 +25,9 @@ describe("DividerExtensionPlugin delayed toolbar", () => {
       firstBlock: dividerBlock,
     };
     const doc = {
+      isReadonly: false,
+      interaction: {get: () => config, policyChanges$},
+      subscribeReadonlyChange: (callback: () => void) => readonlyChanges$.subscribe(callback),
       selection: {
         selectionChange$: selection$,
         selectBlock: jasmine.createSpy("selectBlock"),
@@ -36,7 +42,8 @@ describe("DividerExtensionPlugin delayed toolbar", () => {
     };
     const plugin = new DividerExtensionPlugin();
     (plugin as any).doc = doc;
-    return {plugin, doc, selection$, selectionValue, hostElement, dividerBlock, dividerSelection};
+    return {plugin, doc, selection$, selectionValue, hostElement, dividerBlock, dividerSelection,
+      config, policyChanges$, readonlyChanges$};
   };
 
   const attachOpenToolbar = (plugin: DividerExtensionPlugin, dividerBlock: any) => {
@@ -267,5 +274,56 @@ describe("DividerExtensionPlugin delayed toolbar", () => {
     tick(250);
 
     expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+  }));
+
+  it("cancels a pending open when disabled and waits for a new selection after re-enabling", fakeAsync(() => {
+    const {plugin, doc, selection$, selectionValue, dividerSelection, config, policyChanges$} = makeHarness();
+    plugin.init();
+    selectionValue.current = dividerSelection;
+    selection$.next(dividerSelection);
+    tick(100);
+    config.enabled = false;
+    policyChanges$.next();
+    config.enabled = true;
+    policyChanges$.next();
+    tick(250);
+    expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+    plugin.destroy();
+  }));
+
+  it("disabling closes a focused toolbar and removes its active appearance", () => {
+    const {plugin, dividerBlock, hostElement, config, policyChanges$} = makeHarness();
+    const {dispose} = attachOpenToolbar(plugin, dividerBlock);
+    plugin.init();
+    config.enabled = false;
+    policyChanges$.next();
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(hostElement.classList.contains('divider-toolbar-active')).toBeFalse();
+    plugin.destroy();
+  });
+
+  it("rechecks the policy before opening even without a policy event", fakeAsync(() => {
+    const {plugin, doc, selection$, selectionValue, dividerSelection, config} = makeHarness();
+    plugin.init();
+    selectionValue.current = dividerSelection;
+    selection$.next(dividerSelection);
+    config.enabled = false;
+    tick(250);
+    expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+    plugin.destroy();
+  }));
+
+  it("readonly cancels pending work and cannot be bypassed by the enabled override", fakeAsync(() => {
+    const {plugin, doc, selection$, selectionValue, dividerSelection, readonlyChanges$} = makeHarness();
+    plugin.init();
+    selectionValue.current = dividerSelection;
+    selection$.next(dividerSelection);
+    doc.isReadonly = true;
+    readonlyChanges$.next();
+    tick(250);
+    selection$.next(dividerSelection);
+    tick(250);
+    expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+    plugin.destroy();
   }));
 });
