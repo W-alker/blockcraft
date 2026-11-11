@@ -108,6 +108,37 @@ test('live API closes settings, returns focus to the toggle and never writes doc
   })).toBe(before)
 })
 
+test('an empty layout group leaves no leading divider and ordinary groups keep their dividers', async ({page}) => {
+  const {first} = await setup(page, false)
+  await page.evaluate(() => {
+    const {doc, first, second} = (window as any).__toolbarFixture
+    for (const [index, id] of [first, second].entries()) {
+      doc.placement.setObjectLayout(id, 'over')
+      doc.placement.updateAbsolute(id, {x: 100 + index * 300, y: 120})
+    }
+    const group = doc.placement.group([first, second])
+    if (!group) throw new Error('Cannot group fixture')
+    doc.selection.selectBlock(first)
+  })
+  const toolbar = page.locator('bc-object-format-toolbar')
+  await expect.poll(() => toolbar.evaluate(element => (window as any).ng.getComponent(element).state.blockIds)).toEqual([first])
+  await toolbar.getByRole('button', {name: '布局与排列', exact: true}).click()
+  const align = toolbar.locator('section[aria-label="页面对齐"] .object-layout-tools')
+  await expect(toolbar.locator('section[aria-label="布局与排列"]')).toHaveCount(0)
+  await expect(align).toHaveCSS('border-top-width', '0px')
+  await expect(align).toHaveCSS('margin-top', '0px')
+  await expect(align).toHaveCSS('padding-top', '0px')
+  await expect(toolbar.locator('section[aria-label="层级"] .object-layout-tools')).toHaveCSS('border-top-width', '1px')
+  await toolbar.screenshot({path: `/tmp/blockcraft-layout-first-group-${test.info().project.name}.png`})
+  await page.evaluate(() => {
+    const {doc, first} = (window as any).__toolbarFixture
+    doc.placement.ungroup(doc.model.getParentId(first))
+    doc.selection.selectBlock(first)
+  })
+  await expect(toolbar.locator('.object-layout-option')).not.toHaveCount(0)
+  await expect(align).toHaveCSS('border-top-width', '1px')
+})
+
 test('multi-selection keeps horizontal commands before opening the group mini rail', async ({page}) => {
   await setup(page, false)
   await page.evaluate(() => {

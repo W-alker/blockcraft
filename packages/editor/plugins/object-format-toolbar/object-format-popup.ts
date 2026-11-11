@@ -50,6 +50,7 @@ export const OBJECT_FORMAT_POPUP_STYLES = `
   .object-layout-segmented{grid-template-columns:repeat(3,minmax(0,1fr))}
   .object-layout-segmented .object-layout-action>span{display:none}
   .object-layout-panel section{gap:0;padding:0;border:0}
+  .object-layout-panel .object-format__scroll>section:first-child>.object-layout-tools{margin-top:0;padding-top:0;border-top:0}
   @media(pointer:coarse){.object-layout-panel .object-layout-option,.object-layout-panel .object-layout-action{min-height:34px;height:34px}}
   .object-format__scroll{box-sizing:border-box;min-width:0;min-height:0;max-width:100%;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
   .object-format__tabs{display:block;margin-bottom:6px;--cs-color-bg-light:transparent;--cs-color-bg-lighter:transparent;--cs-color-bg:color-mix(in srgb,var(--bc-active-color,#4857e2) 8%,transparent);--cs-color-text:var(--bc-active-color,#4857e2)}

@@ -5,7 +5,17 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-11-10
+> Last updated: 2026-11-11
+
+## 媒体块选中边框与八向抓手（0.12.3）
+
+视频与图片、网页嵌入（含旧 Figma／掘金块）、人员卡片、贴纸共用 `ShapeResizerComponent` 的 8px 圆形八向抓手。
+统一为 1px 边框、2px 外偏移，悬停／内部聚焦为淡虚线，整块选中为实线，位置保持不变。
+mixed 预设不显示未选中对象的悬停控件；design 显示，immersive、只读与打印继续隐藏。
+视频的八个抓手均保持原始比例，复用原 `wr/ar` 写入与播放 DOM，取消不写入、完成支持 Undo；
+网页嵌入保留四角等比、四边独立调宽高以及 iframe 防抢事件和状态保持逻辑；人员卡片的角缩放内容、边调整排版规则保留。
+视频和网页嵌入不新增旋转能力。网页卡片可编辑时只由抓手画选中框，保留原透明边框尺寸；
+无抓手的只读卡片保留原选中提示。
 
 ## 表格：持续自动列宽（未发布）
 

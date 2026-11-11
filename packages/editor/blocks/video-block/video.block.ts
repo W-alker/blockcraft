@@ -1,4 +1,4 @@
-import {ChangeDetectionStrategy, Component, inject} from '@angular/core';
+import {ChangeDetectionStrategy, Component, ElementRef, inject, ViewChild} from '@angular/core';
 import {AsyncPipe} from '@angular/common';
 import {DomSanitizer, SafeHtml, SafeResourceUrl} from '@angular/platform-browser';
 import {
@@ -9,7 +9,8 @@ import {
 } from '../../framework';
 import {VideoBlockModel} from './index';
 // Avoid the components barrel: snapshot-viewer imports the block registry back.
-import {ResizeContainerComponent} from '../../components/block-resizer/resize-container';
+import {ShapeResizerComponent, type ShapeResizeBox, type ShapeResizeCalculator, type ShapeResizeCommit} from '../shape-block/shape-resizer.component';
+import {calculateImageResize} from '../image-block/image-resize';
 import type {BlockResizeCommit} from '../../components/block-resizer/resize-container';
 import {BcResourcePlaceholderDirective} from '../../components/resource-placeholder/resource-placeholder.directive';
 import type {ResourceIntrinsicSize} from '@ccc/blockcraft/global/resource-placeholder';
@@ -37,6 +38,7 @@ import {getLocalVideoUpload} from './local-video-upload';
       </div>
     } @else {
       <div class="video-block__wrapper resizable-container" contenteditable="false"
+           data-bc-resize-preview-anchor="layout"
            bcResourcePlaceholder
            [resourceKey]="resourcePreviewUrl"
            (resourceIntrinsicSize)="onResourceIntrinsicSize($event)"
@@ -88,12 +90,12 @@ import {getLocalVideoUpload} from './local-video-upload';
         </div>
 
         @if (!isReadonly) {
-          <block-resizer [container]="resizeContainer"
+          <shape-resizer data-bc-selection-interaction-ignore
+                         [target]="resizeContainer" [rotatable]="false"
                          [maxWidthContainer]="sizingContainer"
-                         [maxWidth]="rootContentWidth || undefined"
-                         [referenceWidth]="rootContentWidth || undefined"
-                         (resizeCommit)="onResized($event)"
-                         (resizeStart)="resizeContainer.classList.add('is-resizing')"
+                         [maxWidthResolver]="resizeMaxWidth" [resizeCalculator]="resizeCalculator"
+                         (resizeCommit)="onShapeResized($event)"
+                         (resizeStart)="onResizeStart()"
                          (resizeEnd)="resizeContainer.classList.remove('is-resizing')"/>
         }
       </div>
@@ -101,10 +103,40 @@ import {getLocalVideoUpload} from './local-video-upload';
   `,
   standalone: true,
   styleUrls: ['./video-block.scss'],
-  imports: [AsyncPipe, ResizeContainerComponent, BcResourcePlaceholderDirective],
+  imports: [AsyncPipe, ShapeResizerComponent, BcResourcePlaceholderDirective],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
+  @ViewChild('resizeContainer', {read: ElementRef}) private resizeContainer?: ElementRef<HTMLElement>;
+  private resizeStartBox: ShapeResizeBox | null = null;
+  private resizeBasisWidth = 0;
+  protected readonly resizeMaxWidth = () => {
+    this.resizeBasisWidth = this.rootContentWidth;
+    const style = getComputedStyle(this.resizeContainer!.nativeElement);
+    this.resizeStartBox = {width: parseFloat(style.width), height: parseFloat(style.height), offsetX: 0, offsetY: 0};
+    return Math.min(this.resizeBasisWidth || Infinity, this.sizingContainer.clientWidth || Infinity);
+  };
+  protected readonly resizeCalculator: ShapeResizeCalculator = (handle, start, dx, dy, maxWidth) => {
+    start = this.resizeStartBox ?? start;
+    const box = calculateImageResize(handle, start, dx, dy, maxWidth);
+    // All video grips retain the original proportional-sizing policy.
+    const width = handle === 'north' || handle === 'south'
+      ? Math.min(maxWidth ?? Infinity, Math.max(30, box.height * start.width / start.height)) : box.width;
+    return {...box, width, height: width * start.height / start.width};
+  };
+  protected onResizeStart(): void {
+    this.resizeContainer!.nativeElement.classList.add('is-resizing');
+    this.doc.selection.selectBlock(this);
+  }
+  protected onShapeResized(event: ShapeResizeCommit): void {
+    this.resizeContainer!.nativeElement.style.height = '';
+    const start = this.resizeStartBox;
+    if (start && Math.abs(event.width - start.width) < .01 && Math.abs(event.height - start.height) < .01) {
+      this.resizeContainer!.nativeElement.style.width = this.renderedWidth == null ? '' : `${this.renderedWidth}px`;
+      return;
+    }
+    this.doc.crud.undoManager.captureUndoItem(() => this.onResized({...event, basisWidth: this.resizeBasisWidth}));
+  }
   protected uploadProgress = 100;
   protected sanitizedEmbedCode: SafeHtml = '';
   protected embedUrl: SafeResourceUrl = '';

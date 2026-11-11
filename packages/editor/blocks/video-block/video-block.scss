@@ -11,6 +11,10 @@
   }
 }
 
+@media print {
+  shape-resizer { display: none !important; }
+}
+
 .upload-hint {
   display: flex;
   flex-direction: column;

@@ -2,7 +2,16 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-11-10 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-11-11 | Tracks `@ccc/blockcraft` npm releases.
+
+## 0.12.3 — 媒体块交互边框与抓手统一（2026-11-11）
+
+- Severity: patch（交互样式一致性修复）。
+- What changed / Why: 视频从旧左右缩放条改为复用图片的八向圆形抓手；网页嵌入及旧平台卡片、人员卡片、贴纸复用相同的细边框几何，并移除网页卡片与抓手重复的选中高亮。
+- Behavior Changes: 8px 圆点、1px 轮廓、2px 外偏移；淡虚线提示与整块选中实线位置一致。mixed 悬停隐藏，design 显示，immersive／只读／打印仍隐藏。视频八向缩放保持比例，原尺寸格式、播放 DOM、取消和撤销保留；网页嵌入原缩放及 iframe 事件、尺寸与状态保持逻辑不变。无视频／网页旋转能力新增。
+- Migration Recipe: 无数据或构造 API 迁移。依赖旧视频 `.block-resizer__bar` 的自定义测试／主题改为 `shape-resizer [data-handle]`；通用 `ResizeContainerComponent` 及其他调用方保持不变。
+- Other fixes: 布局菜单不再渲染空选项分组，首个可见工具分组不显示顶部分隔线，后续分组之间的分隔保留。
+- Affected ai-skills files: `blockcraft-block.md`、`blockcraft-theme.md`。
 
 ## 0.12.2 — 对象右键直接操作菜单（2026-11-10）
 

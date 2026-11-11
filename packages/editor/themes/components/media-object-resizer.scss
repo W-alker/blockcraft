@@ -1,4 +1,4 @@
-// Images and stickers use the same handles and hover/focus affordance.
+// Media surfaces use the same handles and hover/focus affordance.
 [data-blockcraft-root="true"] {
   // The transformed surface owns sticker selection chrome. The layout host
   // must not paint the generic block fill at its unrotated dimensions.
@@ -9,6 +9,15 @@
   div.image-block.selected > .image-block__container > .img-wrapper > shape-resizer,
   &:not([data-bc-interaction-hover-controls='false']) div.image-block .img-wrapper:hover > shape-resizer,
   div.image-block .img-wrapper > shape-resizer:focus-within,
+  div.video-block.selected > .video-block__wrapper > shape-resizer,
+  &:not([data-bc-interaction-hover-controls='false']) div.video-block .video-block__wrapper:hover > shape-resizer,
+  div.video-block .video-block__wrapper:focus-within > shape-resizer,
+  div.embed-frame-block.selected > embed-frame-card > shape-resizer,
+  &:not([data-bc-interaction-hover-controls='false']) div.embed-frame-block embed-frame-card:hover > shape-resizer,
+  div.embed-frame-block embed-frame-card:focus-within > shape-resizer,
+  div.person-card-block.selected > .tpl-person-card > shape-resizer,
+  &:not([data-bc-interaction-hover-controls='false']) div.person-card-block .tpl-person-card:hover > shape-resizer,
+  div.person-card-block .tpl-person-card:focus-within > shape-resizer,
   div.sticker-block.selected > .sticker-block__surface > shape-resizer,
   &:not([data-bc-interaction-hover-controls='false']) div.sticker-block .sticker-block__surface:hover > shape-resizer,
   div.sticker-block .sticker-block__surface > shape-resizer:focus-within {

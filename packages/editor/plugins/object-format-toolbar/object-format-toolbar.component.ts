@@ -205,6 +205,7 @@ export type ObjectFormatToolbarAction =
               <bc-object-animation-settings [doc]="doc" [blockIds]="state.blockIds" [embedded]="true" (dismiss)="dismissAnimation($event)"/>
             }
             @if (panel === "layout") {
+              @if (layoutOptions.length) {
               <section aria-label="布局与排列">
                 <div class="object-layout-list">
                   @for (item of layoutOptions; track item.value) {
@@ -229,6 +230,7 @@ export type ObjectFormatToolbarAction =
                   }
                 </div>
               </section>
+              }
               @if (showsAbsoluteLayoutTools) {
                 <section aria-label="页面对齐">
                   <div

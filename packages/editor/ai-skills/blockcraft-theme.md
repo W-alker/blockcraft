@@ -2,7 +2,14 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-11-10
+> Last updated: 2026-11-11
+
+## 媒体块交互边框统一（0.12.3）
+
+`media-object-resizer.scss` 和 `object-interaction-chrome.scss` 将图片、视频、网页嵌入及旧平台卡片、人员卡片与贴纸
+的抓手呈现统一为 8px 圆点、1px 边框与 2px 外偏移。悬停／内部聚焦使用活跃色 35% 淡虚线，
+整块选中只切换为活跃色实线；沿用根交互策略与打印隐藏规则。网页嵌入含抓手时不再叠加
+卡片的彩色边框／阴影，原 1px 透明边框仍占位，无抓手的只读提示不变。
 
 ## 对象浮动抓手按钮的交互投影（未发布）
 

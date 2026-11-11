@@ -211,6 +211,10 @@ export function calculateShapeResize(
         outline-offset: 2px;
       }
 
+      @media print {
+        :host { display: none !important; }
+      }
+
       .shape-resizer__handle {
         position: absolute;
         z-index: 2;

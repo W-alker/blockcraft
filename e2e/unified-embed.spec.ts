@@ -613,7 +613,7 @@ test('eight handles, integer pixel commits, scaling, responsive dimensions and c
   const block = page.locator(`[data-block-id="${id}"]`), card = block.locator('embed-frame-card')
   await expect(card).toBeVisible()
   const original = await frameProps(page, id)
-  // Hover reveals only the default border; selection reveals the resize frame.
+  // Mixed-mode hover stays quiet; selection reveals only the shared resize frame.
   await page.evaluate(id => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.navigateToBlock(id), id)
   await page.evaluate(() => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.selection.blur())
   await page.mouse.move(0, 0)
@@ -623,7 +623,7 @@ test('eight handles, integer pixel commits, scaling, responsive dimensions and c
   await expect(block).not.toHaveClass(/selected/)
   await expect(card.locator('shape-resizer')).toBeHidden()
   await expect.poll(() => card.evaluate(el => getComputedStyle(el).boxShadow)).toBe('none')
-  await expect.poll(() => card.evaluate(el => getComputedStyle(el).borderColor)).not.toBe('rgba(0, 0, 0, 0)')
+  await expect.poll(() => card.evaluate(el => getComputedStyle(el).borderColor)).toBe('rgba(0, 0, 0, 0)')
   expect(await frameBox(card)).toEqual(unhoveredBox)
   expect(await frameProps(page, id)).toEqual(original)
   if (test.info().project.name === 'chromium') await card.screenshot({path: '/tmp/blockcraft-embed-hover-border.png'})
@@ -834,7 +834,7 @@ test('embed block hit area and selection chrome follow the resized card instead 
     })
     expect(chrome.hostShadow).toBe('none')
     expect(chrome.hostBackground).toBe('rgba(0, 0, 0, 0)')
-    expect(chrome.cardShadow).not.toBe('none')
+    expect(chrome.cardShadow).toBe('none')
     expect(chrome.cardWidth).toBeCloseTo(chrome.rowWidth, 0)
     expect(chrome.resizerWidth).toBeCloseTo(chrome.cardWidth - 2, 0)
     await dragHandle(page, card, 'east', 35, 0)

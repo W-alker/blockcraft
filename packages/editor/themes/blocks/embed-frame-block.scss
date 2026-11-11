@@ -17,7 +17,7 @@
     &[data-block-id].selected {
       background: unset;
 
-      embed-frame-card {
+      embed-frame-card:not(:has(> shape-resizer)) {
         border: 1px solid var(--bc-active-color);
         box-shadow: 0 0 4px var(--bc-active-color-light);
       }
@@ -42,7 +42,7 @@
       border: 1px solid transparent;
       transition: border 0.2s ease-in-out, box-shadow 0.2s ease-in-out, background 0.2s ease-in-out;
 
-      &:hover {
+      &:not(:has(> shape-resizer)):hover {
         border-color: var(--bc-border-color);
       }
     }

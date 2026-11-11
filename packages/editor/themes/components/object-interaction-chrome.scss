@@ -31,7 +31,11 @@
     .shape-block > .shape-block__shell > shape-resizer > .shape-resizer__frame {
       @include object-selection-frame(0px);
     }
-    .image-block > .image-block__container > .img-wrapper > shape-resizer > .shape-resizer__frame {
+    .image-block > .image-block__container > .img-wrapper > shape-resizer > .shape-resizer__frame,
+    .video-block > .video-block__wrapper > shape-resizer > .shape-resizer__frame,
+    .embed-frame-block > embed-frame-card > shape-resizer > .shape-resizer__frame,
+    .person-card-block > .tpl-person-card > shape-resizer > .shape-resizer__frame,
+    .sticker-block > .sticker-block__surface > shape-resizer > .shape-resizer__frame {
       @include object-selection-frame(2px);
     }
 
@@ -53,7 +57,11 @@
     .text-box-block:not(.selected) > .text-box-block__surface > shape-resizer > .shape-resizer__frame,
     .word-art-block:not(.word-art-block--object-selected) > .word-art-block__surface > shape-resizer > .shape-resizer__frame,
     .shape-block:not(.selected) > .shape-block__shell > shape-resizer > .shape-resizer__frame,
-    .image-block:not(.selected) > .image-block__container > .img-wrapper > shape-resizer > .shape-resizer__frame {
+    .image-block:not(.selected) > .image-block__container > .img-wrapper > shape-resizer > .shape-resizer__frame,
+    .video-block:not(.selected) > .video-block__wrapper > shape-resizer > .shape-resizer__frame,
+    .embed-frame-block:not(.selected) > embed-frame-card > shape-resizer > .shape-resizer__frame,
+    .person-card-block:not(.selected) > .tpl-person-card > shape-resizer > .shape-resizer__frame,
+    .sticker-block:not(.selected) > .sticker-block__surface > shape-resizer > .shape-resizer__frame {
       outline: 1px dashed color-mix(in srgb, var(--bc-active-color) 35%, transparent);
     }
 
