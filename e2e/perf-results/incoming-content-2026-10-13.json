@@ -1,0 +1,1324 @@
+{
+  "measuredAt": "2026-10-13T06:56:17.539Z",
+  "url": "http://127.0.0.1:8081",
+  "methodology": "Current development Playground, headless desktop browsers, 1280x900, sequential. Gate: 3 warmups + 20 samples; paste/import: 1 warmup + 3 samples, root virtualization enabled. Import times File.text + adapter + gate + CRUD + two frames; excludes file picker interaction. Two-frame duration includes display-frame waiting and is not time-to-idle. No before-change baseline. Long Tasks API reported only where available.",
+  "results": [
+    {
+      "browser": "chromium",
+      "phase": "gate",
+      "label": "纯文本 10 KiB",
+      "bytes": 10260,
+      "accepted": true,
+      "samples": [
+        0.39999961853027344,
+        0.19999980926513672,
+        0.09999990463256836,
+        0.2999997138977051,
+        0.2999997138977051,
+        0.2999997138977051,
+        0.20000028610229492,
+        0.09999990463256836,
+        0.19999980926513672,
+        0.20000028610229492,
+        0.19999980926513672,
+        0.2999997138977051,
+        0.19999980926513672,
+        0.3000001907348633,
+        0.20000028610229492,
+        0.39999961853027344,
+        0.10000038146972656,
+        0.2999997138977051,
+        0.3000001907348633,
+        0.40000009536743164
+      ]
+    },
+    {
+      "browser": "chromium",
+      "phase": "gate",
+      "label": "纯文本 1.4 MiB",
+      "bytes": 1468027,
+      "accepted": true,
+      "samples": [
+        6,
+        8,
+        7.099999904632568,
+        6.599999904632568,
+        5.599999904632568,
+        9.400000095367432,
+        7.900000095367432,
+        5.600000381469727,
+        7.300000190734863,
+        6.199999809265137,
+        6,
+        6.200000286102295,
+        7.900000095367432,
+        5.5,
+        6.5,
+        8.099999904632568,
+        6.5,
+        6.199999809265137,
+        6.400000095367432,
+        7.299999713897705
+      ]
+    },
+    {
+      "browser": "chromium",
+      "phase": "gate",
+      "label": "中文超限 1.6 MiB",
+      "bytes": 1677744,
+      "accepted": false,
+      "samples": [
+        5.699999809265137,
+        11.399999618530273,
+        10.399999618530273,
+        5.099999904632568,
+        9.600000381469727,
+        7,
+        6.5,
+        9.600000381469727,
+        9.300000190734863,
+        5.600000381469727,
+        8.5,
+        7.699999809265137,
+        6.800000190734863,
+        8.900000095367432,
+        8.099999904632568,
+        7.800000190734863,
+        6.799999713897705,
+        6.800000190734863,
+        6.699999809265137,
+        6.400000095367432
+      ]
+    },
+    {
+      "browser": "chromium",
+      "phase": "gate",
+      "label": "2000 个短段落",
+      "bytes": 445197,
+      "accepted": true,
+      "samples": [
+        26.300000190734863,
+        23.300000190734863,
+        25.700000286102295,
+        33.700000286102295,
+        36.19999980926514,
+        32.799999713897705,
+        38.80000019073486,
+        26.699999809265137,
+        23.09999990463257,
+        18.199999809265137,
+        29.5,
+        26.09999990463257,
+        24.09999990463257,
+        26.5,
+        28.59999990463257,
+        26.40000009536743,
+        26.5,
+        22.59999990463257,
+        20.59999990463257,
+        23.09999990463257
+      ]
+    },
+    {
+      "browser": "chromium",
+      "phase": "gate",
+      "label": "100×20 表格",
+      "bytes": 908832,
+      "accepted": true,
+      "samples": [
+        50,
+        47.799999713897705,
+        46.59999990463257,
+        59.40000009536743,
+        45.89999961853027,
+        48.40000009536743,
+        54.40000009536743,
+        45.69999980926514,
+        44.30000019073486,
+        56.39999961853027,
+        51.5,
+        78.7999997138977,
+        37,
+        35.59999990463257,
+        49.5,
+        43.5,
+        41.09999990463257,
+        42.30000019073486,
+        53.299999713897705,
+        60.09999990463257
+      ]
+    },
+    {
+      "browser": "chromium",
+      "phase": "gate",
+      "label": "100×40 超限表格",
+      "bytes": 1808912,
+      "accepted": false,
+      "samples": [
+        76.7000002861023,
+        79.69999980926514,
+        83.7000002861023,
+        77.5,
+        95.59999990463257,
+        128.09999990463257,
+        90.7999997138977,
+        90.10000038146973,
+        88.80000019073486,
+        119.30000019073486,
+        79.90000009536743,
+        89.7999997138977,
+        99.59999990463257,
+        85,
+        74.40000009536743,
+        80.10000038146973,
+        87.40000009536743,
+        89.80000019073486,
+        87.5,
+        79.59999990463257
+      ]
+    },
+    {
+      "browser": "chromium",
+      "phase": "paste",
+      "label": "10 KiB 粘贴／空文档",
+      "sourceBytes": 10240,
+      "existingParagraphs": 1,
+      "samples": [
+        {
+          "dispatchMs": 1.799999713897705,
+          "twoFramesMs": 31,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": [],
+          "mountedBlocks": 2
+        },
+        {
+          "dispatchMs": 1.6999998092651367,
+          "twoFramesMs": 32.5,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": [],
+          "mountedBlocks": 2
+        },
+        {
+          "dispatchMs": 1.5999999046325684,
+          "twoFramesMs": 32.30000019073486,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": [],
+          "mountedBlocks": 2
+        }
+      ]
+    },
+    {
+      "browser": "chromium",
+      "phase": "paste",
+      "label": "10 KiB 粘贴／5000 段文档",
+      "sourceBytes": 10240,
+      "existingParagraphs": 5000,
+      "samples": [
+        {
+          "dispatchMs": 2,
+          "twoFramesMs": 23.899999618530273,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": [],
+          "mountedBlocks": 18
+        },
+        {
+          "dispatchMs": 2.299999713897705,
+          "twoFramesMs": 23.199999809265137,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": [],
+          "mountedBlocks": 18
+        },
+        {
+          "dispatchMs": 2.0999999046325684,
+          "twoFramesMs": 36.90000009536743,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": [],
+          "mountedBlocks": 18
+        }
+      ]
+    },
+    {
+      "browser": "chromium",
+      "phase": "paste",
+      "label": "1.4 MiB 单段粘贴",
+      "sourceBytes": 1468006,
+      "existingParagraphs": 1,
+      "samples": [
+        {
+          "dispatchMs": 124.69999980926514,
+          "twoFramesMs": 179,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": [
+            169
+          ],
+          "mountedBlocks": 2
+        },
+        {
+          "dispatchMs": 132.59999990463257,
+          "twoFramesMs": 193.39999961853027,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": [
+            179
+          ],
+          "mountedBlocks": 2
+        },
+        {
+          "dispatchMs": 144.19999980926514,
+          "twoFramesMs": 210,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": [
+            195
+          ],
+          "mountedBlocks": 2
+        }
+      ]
+    },
+    {
+      "browser": "chromium",
+      "phase": "paste",
+      "label": "1000 段纯文本粘贴",
+      "sourceBytes": 600999,
+      "existingParagraphs": 1,
+      "samples": [
+        {
+          "dispatchMs": 106.2999997138977,
+          "twoFramesMs": 134.2999997138977,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": [
+            120
+          ],
+          "mountedBlocks": 34
+        },
+        {
+          "dispatchMs": 119.90000009536743,
+          "twoFramesMs": 150.90000009536743,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": [
+            134
+          ],
+          "mountedBlocks": 34
+        },
+        {
+          "dispatchMs": 104.5,
+          "twoFramesMs": 132.40000009536743,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": [
+            114
+          ],
+          "mountedBlocks": 34
+        }
+      ]
+    },
+    {
+      "browser": "chromium",
+      "phase": "paste",
+      "label": "1.6 MiB 中文超限拒绝",
+      "sourceBytes": 1677723,
+      "existingParagraphs": 1,
+      "samples": [
+        {
+          "dispatchMs": 8.400000095367432,
+          "twoFramesMs": 34.5,
+          "rejected": true,
+          "updates": 0,
+          "longTasks": [],
+          "mountedBlocks": 2
+        },
+        {
+          "dispatchMs": 9.400000095367432,
+          "twoFramesMs": 33.40000009536743,
+          "rejected": true,
+          "updates": 0,
+          "longTasks": [],
+          "mountedBlocks": 2
+        },
+        {
+          "dispatchMs": 7.599999904632568,
+          "twoFramesMs": 31.799999713897705,
+          "rejected": true,
+          "updates": 0,
+          "longTasks": [],
+          "mountedBlocks": 2
+        }
+      ]
+    },
+    {
+      "browser": "chromium",
+      "phase": "import",
+      "label": "HTML 100 段／约 1 MiB",
+      "sourceBytes": 1050700,
+      "samples": [
+        {
+          "accepted": true,
+          "parseMs": 30.5,
+          "gateMs": 7.400000095367432,
+          "writeMs": 2,
+          "twoFramesMs": 106.30000019073486,
+          "mountedBlocks": 5
+        },
+        {
+          "accepted": true,
+          "parseMs": 30.200000286102295,
+          "gateMs": 5.900000095367432,
+          "writeMs": 0.8999996185302734,
+          "twoFramesMs": 99.40000009536743,
+          "mountedBlocks": 5
+        },
+        {
+          "accepted": true,
+          "parseMs": 28.799999713897705,
+          "gateMs": 5.5,
+          "writeMs": 1.0999999046325684,
+          "twoFramesMs": 94.7999997138977,
+          "mountedBlocks": 5
+        }
+      ]
+    },
+    {
+      "browser": "chromium",
+      "phase": "import",
+      "label": "Markdown 100 段／约 1 MiB",
+      "sourceBytes": 1050200,
+      "samples": [
+        {
+          "accepted": true,
+          "parseMs": 89.59999990463257,
+          "gateMs": 6.099999904632568,
+          "writeMs": 1.0999999046325684,
+          "twoFramesMs": 152.19999980926514,
+          "mountedBlocks": 5
+        },
+        {
+          "accepted": true,
+          "parseMs": 76.59999990463257,
+          "gateMs": 7.900000095367432,
+          "writeMs": 1.299999713897705,
+          "twoFramesMs": 154.2999997138977,
+          "mountedBlocks": 5
+        },
+        {
+          "accepted": true,
+          "parseMs": 75,
+          "gateMs": 6,
+          "writeMs": 1.200000286102295,
+          "twoFramesMs": 153.40000009536743,
+          "mountedBlocks": 5
+        }
+      ]
+    },
+    {
+      "browser": "chromium",
+      "phase": "import",
+      "label": "HTML 超限／1.6 MiB",
+      "sourceBytes": 1677730,
+      "samples": [
+        {
+          "accepted": false,
+          "parseMs": 24.09999990463257,
+          "gateMs": 6.700000286102295,
+          "writeMs": 0,
+          "twoFramesMs": 61.5,
+          "mountedBlocks": 2
+        },
+        {
+          "accepted": false,
+          "parseMs": 23.700000286102295,
+          "gateMs": 5.900000095367432,
+          "writeMs": 0,
+          "twoFramesMs": 45.80000019073486,
+          "mountedBlocks": 2
+        },
+        {
+          "accepted": false,
+          "parseMs": 25.5,
+          "gateMs": 7.299999713897705,
+          "writeMs": 0,
+          "twoFramesMs": 61.89999961853027,
+          "mountedBlocks": 2
+        }
+      ]
+    },
+    {
+      "browser": "firefox",
+      "phase": "gate",
+      "label": "纯文本 10 KiB",
+      "bytes": 10260,
+      "accepted": true,
+      "samples": [
+        0,
+        1,
+        0,
+        0,
+        1,
+        1,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        1,
+        0,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1
+      ]
+    },
+    {
+      "browser": "firefox",
+      "phase": "gate",
+      "label": "纯文本 1.4 MiB",
+      "bytes": 1468027,
+      "accepted": true,
+      "samples": [
+        15,
+        13,
+        9,
+        5,
+        5,
+        6,
+        5,
+        4,
+        5,
+        5,
+        5,
+        5,
+        5,
+        7,
+        5,
+        4,
+        6,
+        4,
+        7,
+        6
+      ]
+    },
+    {
+      "browser": "firefox",
+      "phase": "gate",
+      "label": "中文超限 1.6 MiB",
+      "bytes": 1677744,
+      "accepted": false,
+      "samples": [
+        7,
+        5,
+        6,
+        6,
+        6,
+        6,
+        5,
+        5,
+        5,
+        5,
+        6,
+        6,
+        5,
+        10,
+        18,
+        5,
+        5,
+        6,
+        5,
+        5
+      ]
+    },
+    {
+      "browser": "firefox",
+      "phase": "gate",
+      "label": "2000 个短段落",
+      "bytes": 445197,
+      "accepted": true,
+      "samples": [
+        21,
+        47,
+        34,
+        52,
+        31,
+        45,
+        57,
+        49,
+        42,
+        34,
+        34,
+        39,
+        41,
+        30,
+        40,
+        29,
+        46,
+        55,
+        59,
+        52
+      ]
+    },
+    {
+      "browser": "firefox",
+      "phase": "gate",
+      "label": "100×20 表格",
+      "bytes": 908832,
+      "accepted": true,
+      "samples": [
+        76,
+        108,
+        66,
+        58,
+        59,
+        57,
+        56,
+        114,
+        93,
+        63,
+        61,
+        85,
+        76,
+        81,
+        67,
+        61,
+        57,
+        66,
+        53,
+        77
+      ]
+    },
+    {
+      "browser": "firefox",
+      "phase": "gate",
+      "label": "100×40 超限表格",
+      "bytes": 1808912,
+      "accepted": false,
+      "samples": [
+        126,
+        130,
+        164,
+        189,
+        150,
+        161,
+        167,
+        202,
+        145,
+        154,
+        155,
+        118,
+        179,
+        148,
+        144,
+        202,
+        162,
+        156,
+        159,
+        208
+      ]
+    },
+    {
+      "browser": "firefox",
+      "phase": "paste",
+      "label": "10 KiB 粘贴／空文档",
+      "sourceBytes": 10240,
+      "existingParagraphs": 1,
+      "samples": [
+        {
+          "dispatchMs": 3,
+          "twoFramesMs": 58,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 2
+        },
+        {
+          "dispatchMs": 2,
+          "twoFramesMs": 52,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 2
+        },
+        {
+          "dispatchMs": 3,
+          "twoFramesMs": 59,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 2
+        }
+      ]
+    },
+    {
+      "browser": "firefox",
+      "phase": "paste",
+      "label": "10 KiB 粘贴／5000 段文档",
+      "sourceBytes": 10240,
+      "existingParagraphs": 5000,
+      "samples": [
+        {
+          "dispatchMs": 2,
+          "twoFramesMs": 82,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 18
+        },
+        {
+          "dispatchMs": 1,
+          "twoFramesMs": 74,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 18
+        },
+        {
+          "dispatchMs": 3,
+          "twoFramesMs": 73,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 18
+        }
+      ]
+    },
+    {
+      "browser": "firefox",
+      "phase": "paste",
+      "label": "1.4 MiB 单段粘贴",
+      "sourceBytes": 1468006,
+      "existingParagraphs": 1,
+      "samples": [
+        {
+          "dispatchMs": 38,
+          "twoFramesMs": 300,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 2
+        },
+        {
+          "dispatchMs": 34,
+          "twoFramesMs": 301,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 2
+        },
+        {
+          "dispatchMs": 29,
+          "twoFramesMs": 320,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 2
+        }
+      ]
+    },
+    {
+      "browser": "firefox",
+      "phase": "paste",
+      "label": "1000 段纯文本粘贴",
+      "sourceBytes": 600999,
+      "existingParagraphs": 1,
+      "samples": [
+        {
+          "dispatchMs": 366,
+          "twoFramesMs": 434,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 34
+        },
+        {
+          "dispatchMs": 257,
+          "twoFramesMs": 327,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 34
+        },
+        {
+          "dispatchMs": 337,
+          "twoFramesMs": 424,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 34
+        }
+      ]
+    },
+    {
+      "browser": "firefox",
+      "phase": "paste",
+      "label": "1.6 MiB 中文超限拒绝",
+      "sourceBytes": 1677723,
+      "existingParagraphs": 1,
+      "samples": [
+        {
+          "dispatchMs": 7,
+          "twoFramesMs": 30,
+          "rejected": true,
+          "updates": 0,
+          "longTasks": null,
+          "mountedBlocks": 2
+        },
+        {
+          "dispatchMs": 6,
+          "twoFramesMs": 31,
+          "rejected": true,
+          "updates": 0,
+          "longTasks": null,
+          "mountedBlocks": 2
+        },
+        {
+          "dispatchMs": 7,
+          "twoFramesMs": 39,
+          "rejected": true,
+          "updates": 0,
+          "longTasks": null,
+          "mountedBlocks": 2
+        }
+      ]
+    },
+    {
+      "browser": "firefox",
+      "phase": "import",
+      "label": "HTML 100 段／约 1 MiB",
+      "sourceBytes": 1050700,
+      "samples": [
+        {
+          "accepted": true,
+          "parseMs": 37,
+          "gateMs": 10,
+          "writeMs": 3,
+          "twoFramesMs": 152,
+          "mountedBlocks": 5
+        },
+        {
+          "accepted": true,
+          "parseMs": 51,
+          "gateMs": 12,
+          "writeMs": 4,
+          "twoFramesMs": 163,
+          "mountedBlocks": 5
+        },
+        {
+          "accepted": true,
+          "parseMs": 48,
+          "gateMs": 10,
+          "writeMs": 3,
+          "twoFramesMs": 131,
+          "mountedBlocks": 5
+        }
+      ]
+    },
+    {
+      "browser": "firefox",
+      "phase": "import",
+      "label": "Markdown 100 段／约 1 MiB",
+      "sourceBytes": 1050200,
+      "samples": [
+        {
+          "accepted": true,
+          "parseMs": 242,
+          "gateMs": 13,
+          "writeMs": 3,
+          "twoFramesMs": 386,
+          "mountedBlocks": 5
+        },
+        {
+          "accepted": true,
+          "parseMs": 203,
+          "gateMs": 9,
+          "writeMs": 2,
+          "twoFramesMs": 290,
+          "mountedBlocks": 5
+        },
+        {
+          "accepted": true,
+          "parseMs": 240,
+          "gateMs": 11,
+          "writeMs": 1,
+          "twoFramesMs": 335,
+          "mountedBlocks": 5
+        }
+      ]
+    },
+    {
+      "browser": "firefox",
+      "phase": "import",
+      "label": "HTML 超限／1.6 MiB",
+      "sourceBytes": 1677730,
+      "samples": [
+        {
+          "accepted": false,
+          "parseMs": 50,
+          "gateMs": 5,
+          "writeMs": 0,
+          "twoFramesMs": 64,
+          "mountedBlocks": 2
+        },
+        {
+          "accepted": false,
+          "parseMs": 67,
+          "gateMs": 4,
+          "writeMs": 0,
+          "twoFramesMs": 75,
+          "mountedBlocks": 2
+        },
+        {
+          "accepted": false,
+          "parseMs": 43,
+          "gateMs": 3,
+          "writeMs": 0,
+          "twoFramesMs": 63,
+          "mountedBlocks": 2
+        }
+      ]
+    },
+    {
+      "browser": "webkit",
+      "phase": "gate",
+      "label": "纯文本 10 KiB",
+      "bytes": 10260,
+      "accepted": true,
+      "samples": [
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "browser": "webkit",
+      "phase": "gate",
+      "label": "纯文本 1.4 MiB",
+      "bytes": 1468027,
+      "accepted": true,
+      "samples": [
+        4,
+        7,
+        3,
+        3,
+        3,
+        3,
+        4,
+        4,
+        3,
+        5,
+        5,
+        6,
+        5,
+        6,
+        6,
+        5,
+        3,
+        3,
+        3,
+        4
+      ]
+    },
+    {
+      "browser": "webkit",
+      "phase": "gate",
+      "label": "中文超限 1.6 MiB",
+      "bytes": 1677744,
+      "accepted": false,
+      "samples": [
+        4,
+        4,
+        2,
+        3,
+        2,
+        3,
+        2,
+        2,
+        3,
+        3,
+        2,
+        2,
+        3,
+        2,
+        2,
+        3,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "browser": "webkit",
+      "phase": "gate",
+      "label": "2000 个短段落",
+      "bytes": 445197,
+      "accepted": true,
+      "samples": [
+        19,
+        12,
+        20,
+        29,
+        30,
+        14,
+        15,
+        13,
+        17,
+        28,
+        25,
+        13,
+        12,
+        12,
+        13,
+        13,
+        15,
+        32,
+        22,
+        29
+      ]
+    },
+    {
+      "browser": "webkit",
+      "phase": "gate",
+      "label": "100×20 表格",
+      "bytes": 908832,
+      "accepted": true,
+      "samples": [
+        24,
+        28,
+        51,
+        31,
+        29,
+        28,
+        27,
+        66,
+        25,
+        20,
+        24,
+        26,
+        39,
+        37,
+        24,
+        25,
+        21,
+        29,
+        40,
+        28
+      ]
+    },
+    {
+      "browser": "webkit",
+      "phase": "gate",
+      "label": "100×40 超限表格",
+      "bytes": 1808912,
+      "accepted": false,
+      "samples": [
+        66,
+        63,
+        46,
+        96,
+        63,
+        42,
+        64,
+        65,
+        71,
+        103,
+        82,
+        44,
+        59,
+        54,
+        57,
+        56,
+        61,
+        53,
+        63,
+        47
+      ]
+    },
+    {
+      "browser": "webkit",
+      "phase": "paste",
+      "label": "10 KiB 粘贴／空文档",
+      "sourceBytes": 10240,
+      "existingParagraphs": 1,
+      "samples": [
+        {
+          "dispatchMs": 2,
+          "twoFramesMs": 35,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 2
+        },
+        {
+          "dispatchMs": 3,
+          "twoFramesMs": 30,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 2
+        },
+        {
+          "dispatchMs": 1,
+          "twoFramesMs": 32,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 2
+        }
+      ]
+    },
+    {
+      "browser": "webkit",
+      "phase": "paste",
+      "label": "10 KiB 粘贴／5000 段文档",
+      "sourceBytes": 10240,
+      "existingParagraphs": 5000,
+      "samples": [
+        {
+          "dispatchMs": 4,
+          "twoFramesMs": 36,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 18
+        },
+        {
+          "dispatchMs": 2,
+          "twoFramesMs": 50,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 18
+        },
+        {
+          "dispatchMs": 2,
+          "twoFramesMs": 31,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 18
+        }
+      ]
+    },
+    {
+      "browser": "webkit",
+      "phase": "paste",
+      "label": "1.4 MiB 单段粘贴",
+      "sourceBytes": 1468006,
+      "existingParagraphs": 1,
+      "samples": [
+        {
+          "dispatchMs": 17,
+          "twoFramesMs": 3299,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 2
+        },
+        {
+          "dispatchMs": 17,
+          "twoFramesMs": 3198,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 2
+        },
+        {
+          "dispatchMs": 14,
+          "twoFramesMs": 3453,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 2
+        }
+      ]
+    },
+    {
+      "browser": "webkit",
+      "phase": "paste",
+      "label": "1000 段纯文本粘贴",
+      "sourceBytes": 600999,
+      "existingParagraphs": 1,
+      "samples": [
+        {
+          "dispatchMs": 194,
+          "twoFramesMs": 258,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 34
+        },
+        {
+          "dispatchMs": 171,
+          "twoFramesMs": 277,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 34
+        },
+        {
+          "dispatchMs": 189,
+          "twoFramesMs": 255,
+          "rejected": false,
+          "updates": 1,
+          "longTasks": null,
+          "mountedBlocks": 34
+        }
+      ]
+    },
+    {
+      "browser": "webkit",
+      "phase": "paste",
+      "label": "1.6 MiB 中文超限拒绝",
+      "sourceBytes": 1677723,
+      "existingParagraphs": 1,
+      "samples": [
+        {
+          "dispatchMs": 4,
+          "twoFramesMs": 30,
+          "rejected": true,
+          "updates": 0,
+          "longTasks": null,
+          "mountedBlocks": 2
+        },
+        {
+          "dispatchMs": 6,
+          "twoFramesMs": 25,
+          "rejected": true,
+          "updates": 0,
+          "longTasks": null,
+          "mountedBlocks": 2
+        },
+        {
+          "dispatchMs": 4,
+          "twoFramesMs": 31,
+          "rejected": true,
+          "updates": 0,
+          "longTasks": null,
+          "mountedBlocks": 2
+        }
+      ]
+    },
+    {
+      "browser": "webkit",
+      "phase": "import",
+      "label": "HTML 100 段／约 1 MiB",
+      "sourceBytes": 1050700,
+      "samples": [
+        {
+          "accepted": true,
+          "parseMs": 31,
+          "gateMs": 4,
+          "writeMs": 2,
+          "twoFramesMs": 118,
+          "mountedBlocks": 5
+        },
+        {
+          "accepted": true,
+          "parseMs": 35,
+          "gateMs": 5,
+          "writeMs": 1,
+          "twoFramesMs": 132,
+          "mountedBlocks": 5
+        },
+        {
+          "accepted": true,
+          "parseMs": 27,
+          "gateMs": 6,
+          "writeMs": 1,
+          "twoFramesMs": 122,
+          "mountedBlocks": 5
+        }
+      ]
+    },
+    {
+      "browser": "webkit",
+      "phase": "import",
+      "label": "Markdown 100 段／约 1 MiB",
+      "sourceBytes": 1050200,
+      "samples": [
+        {
+          "accepted": true,
+          "parseMs": 122,
+          "gateMs": 5,
+          "writeMs": 2,
+          "twoFramesMs": 209,
+          "mountedBlocks": 5
+        },
+        {
+          "accepted": true,
+          "parseMs": 138,
+          "gateMs": 6,
+          "writeMs": 2,
+          "twoFramesMs": 221,
+          "mountedBlocks": 5
+        },
+        {
+          "accepted": true,
+          "parseMs": 117,
+          "gateMs": 6,
+          "writeMs": 3,
+          "twoFramesMs": 227,
+          "mountedBlocks": 5
+        }
+      ]
+    },
+    {
+      "browser": "webkit",
+      "phase": "import",
+      "label": "HTML 超限／1.6 MiB",
+      "sourceBytes": 1677730,
+      "samples": [
+        {
+          "accepted": false,
+          "parseMs": 27,
+          "gateMs": 2,
+          "writeMs": 0,
+          "twoFramesMs": 31,
+          "mountedBlocks": 2
+        },
+        {
+          "accepted": false,
+          "parseMs": 63,
+          "gateMs": 3,
+          "writeMs": 0,
+          "twoFramesMs": 69,
+          "mountedBlocks": 2
+        },
+        {
+          "accepted": false,
+          "parseMs": 47,
+          "gateMs": 3,
+          "writeMs": 0,
+          "twoFramesMs": 66,
+          "mountedBlocks": 2
+        }
+      ]
+    }
+  ]
+}

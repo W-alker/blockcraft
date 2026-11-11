@@ -2,7 +2,15 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying event dispatch or handling.
 >
-> Last updated: 2026-04-13
+> Last updated: 2026-11-10
+
+## 编辑模式前置协调（未发布）
+
+Doc 自动装配 `DocumentInteraction`，在 ownerDocument 捕获阶段跟踪所属文档的指针会话，
+当 `policy.native.layoutControls` 为 false 时消费对象控制点的 pointerdown/click；始终保留文字输入路径。
+监听在 Angular zone 外注册，Doc 销毁时移除。模式 UI 由根级属性和已有选区投影驱动。
+InputTransformer/CompositionSession、事件名、payload 和原三级分发契约不变；
+输入、按住指针或拖动期间拒绝切换预设或覆盖。`policyChanges$` 用于有效配置变化，`changes$` 仅表示预设标签。
 
 ## Architecture Overview
 
@@ -52,6 +60,14 @@ The root dispatcher and event controls treat native form controls as **input isl
 - custom widgets can opt into the same behavior with `data-bc-native-input`
 
 This keeps block-local forms from accidentally triggering document commands such as Enter-to-split, Backspace merge, mention trigger detection, or slash transforms.
+
+## Selection-Sourced Events Without A Model Selection
+
+Selection-sourced events normally route from `doc.selection.value.commonParent`, then bubble through the block tree and finally run global handlers. If `doc.selection.value` is `null`, the dispatcher now still runs **global** handlers (`@EventListen('beforeInput')`, `@EventListen('compositionStart')`, etc. with no `flavour` / `blockId`) instead of dropping the event.
+
+This is intentional for fail-closed input control: a native browser selection may exist inside the editor even when BlockCraft cannot normalize it into `BlockSelection`. Global input handlers must still get a chance to `preventDefault()` so the browser cannot mutate DOM outside Yjs.
+
+Model-only table-cell selections are the special case: because their `commonParent` is the table block while the actionable focus is the anchor/head cells, selection-sourced events start from the anchor/head cell ids and then bubble to rows/table/root. This lets `{flavour: 'table-cell'}` keyboard handlers consume Arrow keys even when `document.getSelection()` has no native focus node.
 
 ## Three-Tier Scope Routing
 

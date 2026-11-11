@@ -9,19 +9,43 @@ import {
   OnDestroy,
   Output
 } from "@angular/core";
-import {fromEvent, Subscription, take, throttleTime} from "rxjs";
+
+export interface BlockResizeCommit {
+  width: number
+  height: number
+  offsetX: number
+  basisWidth: number
+}
+
+interface ResizeGesture {
+  pointerId: number
+  side: 'left' | 'right'
+  handle: HTMLElement
+  ownerWindow: Window
+  startX: number
+  startWidth: number
+  minWidth: number
+  maxWidth: number
+  basisWidth: number
+  width: number
+  offsetX: number
+  originalWidth: string
+  originalTransform: string
+  pendingClientX: number
+  frame: number | null
+}
 
 @Component({
   selector: 'block-resizer',
   template: `
     <div class="block-resizer__bar block-resizer__bar--left"
          (click)="$event.stopPropagation()" contenteditable="false"
-         (mousedown)="onHandleMouseDown($event, 'left')">
+         (pointerdown)="onHandlePointerDown($event, 'left')">
       <div class="block-resizer__bar-inner"></div>
     </div>
     <div class="block-resizer__bar block-resizer__bar--right"
          (click)="$event.stopPropagation()" contenteditable="false"
-         (mousedown)="onHandleMouseDown($event, 'right')">
+         (pointerdown)="onHandlePointerDown($event, 'right')">
       <div class="block-resizer__bar-inner"></div>
     </div>
   `,
@@ -43,6 +67,7 @@ import {fromEvent, Subscription, take, throttleTime} from "rxjs";
       justify-content: center;
       pointer-events: auto;
       cursor: col-resize;
+      touch-action: none;
       z-index: 10;
       opacity: 0;
       transition: opacity 0.2s ease;
@@ -95,10 +120,22 @@ export class ResizeContainerComponent implements AfterViewInit, OnDestroy {
   maxWidthContainer?: HTMLElement
 
   @Input()
+  maxWidth?: number
+
+  @Input()
+  referenceWidth?: number
+
+  @Input()
   minWidth = 30
+
+  @Input()
+  preserveRightEdge = false
 
   @Output()
   widthChange = new EventEmitter<number>()
+
+  @Output()
+  resizeCommit = new EventEmitter<BlockResizeCommit>()
 
   @Output()
   resizeStart = new EventEmitter<void>()
@@ -106,8 +143,7 @@ export class ResizeContainerComponent implements AfterViewInit, OnDestroy {
   @Output()
   resizeEnd = new EventEmitter<void>()
 
-  private _startPoint?: { x: number; side: string }
-  private _mouseMove$?: Subscription
+  private _gesture: ResizeGesture | null = null
   private _hoverEnter?: () => void
   private _hoverLeave?: () => void
 
@@ -119,7 +155,7 @@ export class ResizeContainerComponent implements AfterViewInit, OnDestroy {
 
     this._hoverEnter = () => host.classList.add('visible');
     this._hoverLeave = () => {
-      if (!this._startPoint) host.classList.remove('visible');
+      if (!this._gesture) host.classList.remove('visible');
     };
 
     parent.addEventListener('mouseenter', this._hoverEnter);
@@ -127,50 +163,173 @@ export class ResizeContainerComponent implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy() {
-    this._mouseMove$?.unsubscribe();
+    this.finishGesture(false, false);
     const parent = this.container?.parentElement ?? this.container;
     if (this._hoverEnter) parent.removeEventListener('mouseenter', this._hoverEnter);
     if (this._hoverLeave) parent.removeEventListener('mouseleave', this._hoverLeave);
   }
 
-  onHandleMouseDown(event: MouseEvent, side: 'left' | 'right') {
+  onHandlePointerDown(event: PointerEvent, side: 'left' | 'right') {
+    if (!event.isPrimary || event.button !== 0) return
     event.preventDefault();
     event.stopPropagation();
 
-    let width = this.container.clientWidth;
+    this.finishGesture(false, false)
+    const handle = event.currentTarget as HTMLElement
+    const ownerWindow =
+      this.container.ownerDocument.defaultView ?? window
+    const startWidth =
+      this.container.getBoundingClientRect().width ||
+      this.container.clientWidth
     const maxWidthEl = this.maxWidthContainer ?? this.container.parentElement;
-    const maxWidth = maxWidthEl ? maxWidthEl.clientWidth : Infinity;
+    const configuredMaxWidth =
+      Number.isFinite(this.maxWidth) && (this.maxWidth ?? 0) > 0
+        ? this.maxWidth!
+        : (maxWidthEl?.clientWidth ?? Number.POSITIVE_INFINITY)
+    const maxWidth = Math.max(1, configuredMaxWidth)
+    const basisWidth =
+      Number.isFinite(this.referenceWidth) && (this.referenceWidth ?? 0) > 0
+        ? this.referenceWidth!
+        : (Number.isFinite(maxWidth) ? maxWidth : startWidth)
+    const minWidth = Math.min(
+      maxWidth,
+      Math.max(1, Number.isFinite(this.minWidth) ? this.minWidth : 30),
+    )
 
     this.resizeStart.emit();
 
     this.ngZone.runOutsideAngular(() => {
-      this._mouseMove$?.unsubscribe();
-      this._startPoint = {x: event.clientX, side};
-
-      this._mouseMove$ = fromEvent<MouseEvent>(document, 'mousemove', {capture: true})
-        .pipe(throttleTime(16))
-        .subscribe((e) => {
-          const deltaX = e.clientX - this._startPoint!.x;
-          this._startPoint!.x = e.clientX;
-
-          width += this._startPoint!.side === 'left' ? -deltaX : deltaX;
-
-          if (width > maxWidth || width < this.minWidth) return;
-
-          this.container.style.width = `${width}px`;
-        });
-
-      fromEvent<MouseEvent>(document, 'mouseup', {capture: true})
-        .pipe(take(1))
-        .subscribe(() => {
-          this._startPoint = undefined;
-          this._mouseMove$?.unsubscribe();
-          this.elRef.nativeElement.classList.remove('visible');
-          this.ngZone.run(() => {
-            this.widthChange.emit(Math.round(width));
-            this.resizeEnd.emit();
-          });
-        });
+      this._gesture = {
+        pointerId: event.pointerId,
+        side,
+        handle,
+        ownerWindow,
+        startX: event.clientX,
+        startWidth,
+        minWidth,
+        maxWidth,
+        basisWidth,
+        width: startWidth,
+        offsetX: 0,
+        originalWidth: this.container.style.width,
+        originalTransform: this.container.style.transform,
+        pendingClientX: event.clientX,
+        frame: null,
+      }
+      handle.setPointerCapture?.(event.pointerId)
+      ownerWindow.addEventListener('pointermove', this.onPointerMove, true)
+      ownerWindow.addEventListener('pointerup', this.onPointerUp, true)
+      ownerWindow.addEventListener('pointercancel', this.onPointerCancel, true)
+      ownerWindow.addEventListener('keydown', this.onKeyDown, true)
+      ownerWindow.addEventListener('blur', this.onWindowBlur)
     });
+  }
+
+  private readonly onPointerMove = (event: PointerEvent) => {
+    const gesture = this._gesture
+    if (!gesture || event.pointerId !== gesture.pointerId) return
+    event.preventDefault()
+    gesture.pendingClientX = event.clientX
+    if (gesture.frame !== null) return
+    gesture.frame = gesture.ownerWindow.requestAnimationFrame(() => {
+      gesture.frame = null
+      this.applyPreview(gesture.pendingClientX)
+    })
+  }
+
+  private readonly onPointerUp = (event: PointerEvent) => {
+    const gesture = this._gesture
+    if (!gesture || event.pointerId !== gesture.pointerId) return
+    event.preventDefault()
+    gesture.pendingClientX = event.clientX
+    this.finishGesture(true, true)
+  }
+
+  private readonly onPointerCancel = (event: PointerEvent) => {
+    if (!this._gesture || event.pointerId !== this._gesture.pointerId) return
+    this.finishGesture(false, true)
+  }
+
+  private readonly onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || !this._gesture) return
+    event.preventDefault()
+    this.finishGesture(false, true)
+  }
+
+  private readonly onWindowBlur = () => {
+    if (this._gesture) this.finishGesture(false, true)
+  }
+
+  private applyPreview(clientX: number): void {
+    const gesture = this._gesture
+    if (!gesture) return
+    const delta = clientX - gesture.startX
+    const requestedWidth =
+      gesture.startWidth + (gesture.side === 'left' ? -delta : delta)
+    gesture.width = Math.min(
+      gesture.maxWidth,
+      Math.max(gesture.minWidth, requestedWidth),
+    )
+    gesture.offsetX =
+      this.preserveRightEdge && gesture.side === 'left'
+        ? gesture.startWidth - gesture.width
+        : 0
+    this.container.style.width = `${gesture.width}px`
+    this.container.style.transform = gesture.offsetX === 0
+      ? gesture.originalTransform
+      : `translateX(${gesture.offsetX}px)${gesture.originalTransform
+        ? ` ${gesture.originalTransform}`
+        : ''}`
+  }
+
+  private finishGesture(commit: boolean, emitEnd: boolean): void {
+    const gesture = this._gesture
+    if (!gesture) return
+    this._gesture = null
+    if (gesture.frame !== null) {
+      gesture.ownerWindow.cancelAnimationFrame(gesture.frame)
+      gesture.frame = null
+    }
+    this.removeGestureListeners(gesture)
+    try {
+      gesture.handle.releasePointerCapture?.(gesture.pointerId)
+    } catch {}
+
+    if (!commit) {
+      this.container.style.width = gesture.originalWidth
+      this.container.style.transform = gesture.originalTransform
+      this.elRef.nativeElement.classList.remove('visible')
+      if (emitEnd) {
+        this.ngZone.run(() => this.resizeEnd.emit())
+      }
+      return
+    }
+
+    // Pointerup owns the final coordinates even if the last RAF has not run.
+    this._gesture = gesture
+    this.applyPreview(gesture.pendingClientX)
+    this._gesture = null
+    const rect = this.container.getBoundingClientRect()
+    const result: BlockResizeCommit = {
+      width: Math.round(gesture.width),
+      height: Math.max(1, Math.round(rect.height)),
+      offsetX: gesture.offsetX,
+      basisWidth: gesture.basisWidth,
+    }
+    this.ngZone.run(() => {
+      this.widthChange.emit(result.width)
+      this.resizeCommit.emit(result)
+      this.resizeEnd.emit()
+    })
+    this.container.style.transform = gesture.originalTransform
+    this.elRef.nativeElement.classList.remove('visible')
+  }
+
+  private removeGestureListeners(gesture: ResizeGesture): void {
+    gesture.ownerWindow.removeEventListener('pointermove', this.onPointerMove, true)
+    gesture.ownerWindow.removeEventListener('pointerup', this.onPointerUp, true)
+    gesture.ownerWindow.removeEventListener('pointercancel', this.onPointerCancel, true)
+    gesture.ownerWindow.removeEventListener('keydown', this.onKeyDown, true)
+    gesture.ownerWindow.removeEventListener('blur', this.onWindowBlur)
   }
 }

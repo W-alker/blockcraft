@@ -2,6 +2,8 @@ import {generateId, NoEditableBlockNative} from "../../framework";
 import {BlockNodeType, IBlockSchemaOptions} from "../../framework";
 import {FormulaBlockComponent} from "./formula.block";
 
+export * from './agent'
+
 export interface FormulaBlockModel extends NoEditableBlockNative {
   flavour: 'formula',
   nodeType: BlockNodeType.void,
@@ -29,6 +31,7 @@ export const FormulaBlockSchema: IBlockSchemaOptions<FormulaBlockModel> = {
   metadata: {
     version: 1,
     label: "公式",
+    description: "插入独立展示的数学公式",
     icon: "bc_icon bc_gongshi"
   }
 }

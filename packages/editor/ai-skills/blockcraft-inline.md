@@ -2,13 +2,32 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying the inline editing system.
 >
-> Last updated: 2026-06-15
+> Last updated: 2026-11-06
+
+行内图片数据协议及归一化位于 `framework/block-std/inline/image-data.ts`，数值辅助实现位于
+`image-numbers.ts`。浮动排版和虚拟化只依赖数据规则；DOM converter 与资源控制器仍在
+`embeds/image/`，原导出转发同一份数据函数，不再由行内核心反向加载 converter。
+
+## 正文字重与加粗
+
+正文的独立数值字重使用已有通用样式键 `s:fontWeight`（数字字符串），无需改动 Y.Text 或快照结构。
+`normalizeInlineFontWeight` 接受 1–1000 的整数及 `normal` / `bold`；UI 提供 100–900 的百位预设，导入的其他合法整数可回显。
+`readInlineFontWeight` 优先读取数值，兼容 `s:font-weight`，旧 `a:bold` 映射为 700；没有覆盖值返回 null（继承）。
+`normalizeInlineFontWeightPatch` 将显式字重与 `a:bold` 同步（600 及以上为粗体），清理连字符别名；独立的加粗命令清除旧数值覆盖。
+`TextToolbarHelper.formatText` / `formatTypography` 统一使用该规则；`getCurrentCommonAttrs().fontWeight` 为 null（继承）、number 或 undefined（混合）。
+段落 `textDefaults` 保留数值字重，光标输入及删除到空段落继续复用原输入状态机制。Live renderer 与 Snapshot Viewer 均复用通用样式投影。
 
 ## Architecture Overview
 
+`InlineModel`、Delta 操作、行内属性、`InlineNodeType` 和持久化排版标识统一归属
+`framework/model/`，公共入口为 `@ccc/blockcraft/framework/model`。
+`block-std/types/inline.type.ts`、`delta.type.ts` 继续兼容转导出。模型不依赖排版实现；
+字体目录、格式规范化和 DOM 应用由 typography 能力提供，行内运行时继续负责渲染与编辑。
+模板样式索引、字体 ID 集合和 `null` 清除格式语义不变。
+
 ```
 Y.Text (Yjs, source of truth)
-  → toDelta() → DeltaInsert[]
+  → toDelta() → RevisionAttributionAdapter view projection → DeltaInsert[]
   → InlineRuntime.render(deltas) or applyDelta(ops)
   → ScrollBlot tree (runtime middle layer)
   → DOM (<div.edit-container> with <c-element>/<c-text> tags)
@@ -19,7 +38,15 @@ Y.Text (Yjs, source of truth)
 | File | Purpose |
 |------|---------|
 | `framework/block-std/inline/index.ts` | `InlineManager` (static utils) + `EmbedConverter` type |
+| `embeds/index.ts` | Central public barrel for built-in Embed converters, keys, helpers, and Agent declarations |
+| `embeds/<embed-key>/index.ts` | One Embed's canonical converter/value contract; the old scattered `*-embed.ts` files are removed |
+| `embeds/<embed-key>/agent/index.ts` | Optional AI semantic contract and explicit insert grant for that Embed key |
+| `framework/block-std/agent/index.ts` | Runtime-independent Block and Inline Embed Agent capability types/helpers |
 | `framework/block-std/inline/runtime/` | `InlineRuntime` — per-block blot coordinator |
+| `framework/block-std/inline/runtime/inline-float-layout.ts` | Wrapped-image geometry, controller and single-side fallback |
+| `framework/block-std/inline/runtime/inline-fragment-layout.ts` | Range measurement, grapheme-safe planner and reversible dual-side projection |
+| `framework/block-std/inline/runtime/inline-pagination-access.ts` | Package-internal access registry; keeps pagination off the public InlineRuntime API |
+| `framework/block-std/inline/runtime/inline-pagination-projection.ts` | Zero-model-length text-line gaps for oversized table-cell pagination |
 | `framework/block-std/inline/blot/scroll-blot.ts` | `ScrollBlot` — root container blot |
 | `framework/block-std/inline/blot/text-blot.ts` | `TextBlot` — renders text with attributes |
 | `framework/block-std/inline/blot/embed-blot.ts` | `EmbedBlot` — renders inline embeds (length=1) |
@@ -27,6 +54,80 @@ Y.Text (Yjs, source of truth)
 | `framework/block-std/inline/blot/cursor-blot.ts` | `CursorBlot` — temporary IME blot (length=0) |
 | `framework/block-std/inline/position/` | `InlinePositionMapper` — model ↔ DOM position |
 | `framework/block-std/inline/const.ts` | Constants, attribute helpers |
+| `framework/revision/attribution-adapter.ts` | Package-internal Yjs 13 relative-position and temporary revision-attribute boundary |
+
+## Revision Projection
+
+Revision metadata is not stored as one competing Y.Text format value. Before a
+full inline render, `DocumentRevisionManager.projectInlineDeltas()` splits the
+current delta at active relative ranges and injects temporary
+`data-bc-revision-ids`, `data-bc-revision-kind`, and
+`data-bc-revision-state` attributes. Overlapping inline changes therefore keep
+all attribution IDs and can apply dependency-aware projection without last
+writer wins.
+
+The same projection covers object Deltas. An inline Embed has model length one,
+so its insertion/deletion range decorates the outer `c-element` rendered by
+`EmbedBlot`. A semantic attribute update is stored non-destructively as the old
+Embed plus a replacement Embed in one Revision group; final projection chooses
+the correct object from the group's decisions. No converter-specific Revision
+wrapper or shell style is required.
+
+Blocks with text revisions currently take the guarded full-render path so the
+temporary attribution stays exact after local or remote changes. Blocks without
+text revisions keep the normal incremental `InlineRuntime.applyDelta()` fast
+path. The package-internal `RevisionAttributionAdapter` isolates this Yjs 13
+implementation so a later Yjs renderer can replace it without changing public
+Revision records.
+
+`CodeInlineRuntime` is a second full-render owner because Shiki rebuilds token
+runs asynchronously. Its model/Shiki merge must preserve the temporary
+revision IDs, kind, state and hidden display attribute in addition to user
+foreground/background colors; otherwise syntax highlighting would erase the
+revision presentation after the initial synchronous render. While a token is
+`pending` or `conflict`, the merge omits its competing Shiki/user foreground
+and background inline styles so the `--bc-revision-*` theme wins; the next
+unmarked/final projection restores normal syntax colors.
+
+### 代码块的逻辑行缓存与 c-line（未发布）
+
+`CodeInlineRuntime` 在 Code 领域内部按逻辑行缓存 Shiki tokens 和语法检查点。
+首次按 64 行批次解析并保存段尾状态；编辑从最近检查点逐行解析，同时细化行状态缓存，
+至文本和已知语法状态收敛后复用后缀；多行注释/字符串仍可能影响整块。
+未变 token 行同时复用派生 Delta、行文本与指纹；只有没有模型展示覆盖的结果才使用预计算行。
+纯文本无需初始化高亮器；Mermaid 保留原有完整解析与围栏兼容策略。
+缓存不包含用户颜色或修订归因，这些展示属性仍从当前模型按有序区间线性合并。
+
+公开 `InlineModel`、一个块一个 `Y.Text`、扁平 Blot 所有权和块内 UTF-16 选区坐标不变。
+代码块在 `InlineRuntime` / `ScrollBlot` 的内部选项中启用 `lineContainerTag:'c-line'`，
+由 `LogicalLineDom` 持久包裹每个显示逻辑行；普通段落及 `withLineBreak:false` 的 Mermaid 保持平面 DOM。
+LF 保留为真实文本，不再生成 `d:lineBreak` / `data-line-break` 行号标记。
+首个零长 gap 位于第一行，终止 BreakBlot 位于最后一行；空内容和末尾 LF 均有对应空行。
+隐藏修订 LF 保留模型长度但不拆开显示行。行号由 `c-line` 上的 CSS counter 产生，不写入文本或模型。
+增量输入及高亮保留未改变的行节点；canonical mutation 和分页撤销识别已注册的行容器，
+不能把它们拆平。代码块仍不可跨页拆分。本选项属于包内实现，宿主不应直接创建或修改行容器。
+`spliceLeaves` 批量更新叶子数组并保留零长 Cursor/Break，大片语法传播不再逐叶执行数组 splice。
+行模式另由 Inline 维护派生的源逻辑行索引；源行按所有 LF 分段，不能与按可见 LF 分段的显示行混用。
+单源行且不改变换行结构的输入和 token 替换，仅更新该行索引及对应显示行；跨行和布局变更保留完整路径。
+包内 `logical-line-access.ts` 为 Mapper、Code 和一致性检查提供可信叶子位置、源行及纯文本投影，
+不属于宿主扩展点，也不写入 Yjs。访问前同步消费 MutationObserver 待处理记录；未知原生文本、属性或结构
+变动使缓存失效并恢复扫描路径，规范恢复后重新建立基线。高亮比较复用可信行文本，原生 IME 完整性恢复仍检查实际 DOM。
+EditableBlock 的一致性检查仍严格比较当前完整 Y.Text 与实际投影全文；纯文本行缓存只减少逐叶读取 DOM，
+不能以相同长度或局部 delta 一致替代全文校验。平面段落、embed 和修订重建沿用原有路径。
+同步模型更新及语言/主题变化会立即使在途高亮任务失效；写回前检查 IME 和生命周期并读取最新双端选区。
+代码块 IME 提交/取消时，若已有语法引擎及行基线，同步 `render()` 按完整模型快照恢复变化范围，
+保留前后未变行和叶子；后续帧检查原生尾部输入，不重复全量重建。复用还要求叶子结构和展示属性一致，
+不能只比较语法指纹；原生拆分文本、多余节点和被移除的修订属性由 Code 内部完整性检查修复。
+初次加载、语言/主题失效或结构无法恢复时仍走完整投影，Mermaid 平面路径保持。
+销毁清理词法缓存，异步旧结果不得重新建立 DOM。输入、协同、Undo 和修订仍由原有模型路径负责。
+这不是块内虚拟化，也未消除模型读取、展示投影与 Blot 对比的全部线性扫描。
+
+包内 `InlineRuntime.acquireCompositionCaret(offset)` 默认返回 null；`CodeInlineRuntime` 只在可见 LF 后的
+逻辑行首提供零模型长度的 `CursorBlot` 及幂等释放函数，原生光标位于零宽前缀之后。
+该前缀将 Chromium 多轮候选替换限制在当前行；候选 DOM 由浏览器维护，不能纳入 Y.Text、高亮或源行长度。
+`CompositionSession` 捕获相对锚点后获取租约，在 prepareCommit 解析位置后、模型重渲前释放；
+取消/reset/abort/删除和 runtime 销毁也必须清理。普通段落、行中、隐藏 LF 和 Mermaid 平面渲染保持原路径。
+当前插入/移除 Cursor 使用受控 Blot 变更，在组合输入首尾同步行结构；每次候选更新不扫描或重建行。
 
 ## Blot Tree Structure
 
@@ -68,6 +169,10 @@ class InlineRuntime {
   domPointToModel(node: Node, offset: number); // DOM → char offset
 
   getLength(): number;                     // Total text length
+
+  // Package-internal IME/pointer coordination; host plugins should not call it.
+  acquireFloatLayoutFreeze(): () => void;
+
 }
 ```
 
@@ -76,20 +181,30 @@ class InlineRuntime {
 ```typescript
 // DeltaInsert (from Y.Text.toDelta())
 { insert: "text" }                                    // Plain text
-{ insert: "text", attributes: { bold: true } }       // Formatted text
+{ insert: "text", attributes: { "a:bold": true } }   // Formatted text
 { insert: { mention: "Alice" }, attributes: { ... } } // Embed
 
 // DeltaOperation (for applyDelta)
 { retain: 5 }                          // Skip 5 characters
-{ retain: 3, attributes: { bold: true } } // Format 3 chars
+{ retain: 3, attributes: { "a:bold": true } } // Format 3 chars
 { insert: "new" }                      // Insert text
 { insert: { embed: "val" } }           // Insert embed
 { delete: 2 }                          // Delete 2 characters
 ```
 
+An Embed insert object has exactly one non-empty key and primitive value;
+optional attributes are also primitive. Its Blot/model length is always one.
+The key names a canonical value/attributes contract, so replacing a converter
+under the same key may change rendering but must not change the persisted data
+shape.
+
 ## InlinePositionMapper
 
 Converts between character offsets (model space) and DOM nodes (DOM space):
+
+代码块允许端点落在已注册 `c-line` 的子节点边界，按行前模型长度及行内叶子长度解析。
+根容器 childOffset 计的是整行，不是 token；offset 0 使用 ScrollBlot 持有的真实 leading gap。
+LF 之后的模型位置定位到下一显示行；未注册的浏览器 wrapper 不获得新的映射语义。
 
 ```
 Model: "Hello |world" (offset=6)
@@ -111,6 +226,162 @@ The mapper walks the blot tree, accumulating lengths, to find the target positio
 | `applyDelta(ops)` | Incremental edits | O(delta) — patches existing DOM |
 
 After every `applyDelta`, the system performs a **consistency check**: it compares the blot tree against `yText.toDelta()`. If there's a mismatch, it falls back to full `render()`.
+
+## Inline Embed Agent Boundary
+
+The Inline runtime and document Agent have separate registration boundaries:
+
+- `DocConfig.embeds` registers a converter and makes existing Delta renderable.
+- `InlineEmbedAgentCapabilityDefinition` adds optional semantics for one
+  `embedKey`.
+- its optional `insert` member is the explicit Agent generation grant, with
+  complete JSON Schemas for the primitive value and attributes object.
+
+The runtime capability directory includes an Inline Embed declaration only
+when the host has also installed a converter with that key. An external Embed
+that needs AI support should own an optional
+`embeds/<embed-key>/agent/index.ts`, export its declaration, and require the
+host to compose it into a `DocumentAgentHostExtension`. Without that
+declaration, the Embed still renders and its raw Delta remains visible in Agent
+document context, but the Agent cannot generate it. A declaration without
+`insert` is understanding-only; built-in `mention`, `shape`, and `word-art`
+use this mode by default.
+
+Agent-authored `apply-text-delta` validates every object insert against both
+the installed key and its capability schemas. `retain + attributes` accepts
+only canonical general text formatting, never Embed-semantic attributes. To
+change Embed semantics, delete its exact one-offset range and insert a newly
+validated Embed. Generic range deletion may still remove an undeclared or
+understanding-only Embed; the absence of an insert grant does not make content
+undeletable.
+
+This boundary does not add an Agent dependency to `InlineRuntime`,
+`EmbedBlot`, or a converter. The declarations are data-only editor exports;
+`blockcraft-agent` consumes them at the host boundary.
+
+## Embed Lifecycle and Default Inline Images
+
+`EmbedConverter.onDestroy(element, delta)` is the teardown boundary for
+DOM-owned listeners/controllers. `EmbedBlot.detach()` invokes it, and a
+semantic attribute update invokes it for the old view before replacing that
+view with `converter.toView(nextDelta)`. A converter that allocates resources
+must make `onDestroy` idempotent.
+
+The built-in `image` converter wraps its `<img>` in
+`.bc-inline-image-shell > .bc-inline-image-frame`, reserves persisted
+`width/height`, and falls back to `320 × 240` (4:3) when either dimension is
+missing. The frame owns the visible resource and its loading/error/retry
+controller; the outer shell remains the atomic one-length Embed. On the first
+successful load it emits an internal bubbling size event; `ImgToolbarPlugin`
+resolves the embed's current model offset and fills only missing
+`width/height` attributes inside `ORIGIN_NO_RECORD`. The model remains the
+source of truth, including while the editable block is offscreen. The renderer
+sets the real `<img>` to `draggable="false"`; the shell also capture-cancels
+residual native `dragstart` and removes that listener through the same
+idempotent `onDestroy()` boundary. Inline-image position changes consequently
+cannot fall through to browser `deleteByDrag` / `insertFromDrop` DOM edits.
+
+When an image Delta has `wrap: true`, the shell projects
+`data-bc-inline-float` and persisted `side/x/gap` data. Each
+`InlineRuntime` owns one package-internal `InlineFloatLayoutController`.
+The same float controller recognizes bundled Shape/WordArt shells through the
+generic `data-bc-inline-float-layout`, `data-bc-inline-float-frame`, size,
+side, x and gap dataset contract. Shape and WordArt Delta do not persist
+`side`; their converters always project the internal side as `auto` and ignore
+incoming values. Images retain their generic programmatic side metadata, but
+the bundled toolbar exposes only the automatic wrapping product behavior.
+Image-specific attributes remain supported for backward compatibility.
+`side: 'auto'` produces dual-side geometry only when both text intervals are
+at least 96 CSS pixels; explicit `left/right` and unsafe auto positions keep
+the contained CSS-float fallback. Dual mode measures browser Range geometry,
+splits TextBlots only at grapheme-safe model offsets, and moves the real Blot
+nodes into local inline row spans in left-then-right model order. The right
+fragment uses a measured `margin-inline-start` so both sides share one browser
+line box without relying on CSS Grid. 对齐新模式下，两侧片段分别使用既有几何区间的固定宽度和
+`inline-block`，间隔取图片排除区；各片段单独撑满，避免字距把文字推入图片。
+段末／软换行前的末片段在 `justify` 下不拉伸，`distributed` 下继续拉伸。
+CSS 内部变量在普通左／中／右模式回退为原来的 inline + measured margin；
+不会增加对齐专用逐字 DOM 或额外布局测量。Layout wrappers have zero model length
+and never serialize. Multiple anchors are processed in Delta order; block-flow
+fragment groups push a later overlapping exclusion band below the previous one.
+
+Before `render()` or `applyDelta()`, the controller revokes its projection,
+restores direct canonical Blot DOM, and merges only the TextBlot splits recorded
+by that projection. The normal Y.Text patch then runs and a fresh projection is
+built. Any measurement/projection failure falls back view-only to the contained
+single-side float. Content and owner-resize reconciliation are animation-frame
+batched and never read layout from a scroll handler; runtime destroy revokes fragments,
+observers, frames and leases so virtual reattach rebuilds from the latest Delta.
+
+Caret/selection mapping still uses real Blots. SelectionManager suppresses
+native recalculation during a projection rewrite and restores the unchanged
+anchor/head Range afterward. CompositionSession, native pointer selection and
+wrapped-image dragging hold ref-counted layout leases; while frozen,
+invalidations only mark the controller dirty.
+
+Oversized top-level text and table-cell pagination use a second reversible
+layout projection. A top-level text Block remains atomic while its natural
+stride is at most one regular content page; only an oversized Block requests
+visual-line anchors. Pagination keeps an internal plan pairing each block-top
+layout offset with the corresponding Y.Text UTF-16 offset, so the pure engine
+sees only pixels while the live view can insert at a stable model position.
+The package-internal `inline-pagination-access.ts` seam measures complete
+visual-line boundaries as revision-scoped Y.Text UTF-16 offsets and applies
+gaps without adding methods to the public `InlineRuntime` contract. The
+projection splits only real TextBlots at those offsets and inserts block-like markers carrying
+`data-bc-inline-pagination-gap`; markers have zero model length, are ignored by
+DOM/model mapping, selection and serialization, and are merged away by
+projection cleanup. They are transparent layout spacers: the table-level mask,
+not each cell-local text anchor, paints the shared sheet/background bands.
+Wrapped paragraphs use one composed owner for float fragment groups, their
+layout-only TextBlot splits and pagination markers. A wrapped object plus the
+painted shell/group exclusion band is atomic, while visual-line anchors before
+and after that band remain eligible continuation points. Single-side shell
+height includes the configured wrap gap; dual-side mode includes the projected
+fragment group and transformed frame. `render()`, `applyDelta()` and `destroy()`
+restore canonical DOM once, so stale anchors cannot survive a model mutation or
+component teardown. Selection projection guards preserve the current
+anchor/head. Pointer, wrapped-object and IME leases keep the previous stable
+projection in place; pagination retries only after the refreshed float plan is
+writable again.
+
+Bundled custom renderers enter the same package-internal canonical mutation
+boundary. When a synchronous or asynchronous rebuild revokes live page gaps,
+`inline-pagination-access.ts` notifies the pagination owner and cached Y.Text
+anchors are replayed on its next coalesced frame. Code and Mermaid Shiki passes
+therefore cannot leave projection bookkeeping ahead of the actual Blot DOM.
+
+Before natural text geometry is read again, the pagination owner synchronously
+revokes its previous inline gaps. It batches all natural DOM reads before
+applying the new gaps and registers the final host heights as pagination-owned
+ResizeObserver output. A stale content/context revision or a replaced Runtime
+clears the projection and schedules a fresh plan; offsets are never clamped and
+reused across revisions.
+
+`ImgToolbarPlugin` changes `wrap/x/gap` through one Embed `formatText()`
+transaction and normalizes the internal side to `auto`. Wrapped-image drag
+leaves the committed frame and
+fragment boundaries unchanged while a fixed, inert proxy follows x/y outside
+contenteditable. Pointerup maps proxy x to normalized `x` and pointer y to a
+model anchor, then performs one same-block or cross-block Yjs transaction.
+The exact one-length Embed payload and non-position attributes are preserved;
+no pixel `y` is serialized. Pointercancel, Escape, detach, editor-external drop
+and readonly transitions remove the proxy and restore model-derived geometry
+without mutation. A resize/wrap change is a semantic Embed replacement while
+Revision tracking is active; anchor movement intentionally remains an
+untracked move rather than an insert/delete Diff.
+
+Bundled inline Shape/WordArt use the same frozen-layout Pointer Events gesture
+for both plain inline and wrapped modes. The inert
+`.bc-inline-object-drag-proxy` preserves the object's visual transform while
+moving outside contenteditable. Release moves the exact one-length Embed Delta
+to the resolved same- or cross-editable-block anchor in one transaction. A
+plain inline object preserves its attributes without adding float coordinates;
+a wrapped object additionally recalculates normalized `x`. Shape and WordArt
+moves also drop any stale `side` attribute. The first primary pointerdown
+selects the Embed and arms a pending gesture, but creates no proxy or layout
+lease until movement crosses 2px. A pointerup below that threshold remains a
+plain click.
 
 ## Attributes
 
@@ -144,8 +415,32 @@ InlineManager.setAttrs(element, attrs) // Apply attributes to DOM element
 | `a:` | `a:bold`, `a:link` | HTML attribute — `element.setAttribute('bold', …)` |
 | `d:` | `d:foo` | `data-*` — `element.dataset.foo = …` |
 | `s:` | `s:color`, `s:fontSize` | inline CSS — `element.style.setProperty('color' / 'font-size', …)` |
+| `t:` | `t:ff`, `t:fs`, `t:px`, `t:ls` | compact semantic typography resolved through the trusted font catalog and bounded numeric normalizers |
 
-A `null`/falsy value removes the attribute/style. For `s:` keys the property name is **camelCase→kebab-case** converted before `setProperty` (so `s:fontSize` → `font-size`, `s:fontFamily` → `font-family`) — `setProperty` ignores camelCase names, so this conversion is what makes those styles actually render. CSS custom properties (`s:--x`) keep their case. Relative font scaling stores `s:fontSize` as an `em` ratio, e.g. `'1.2em'` (relative to the block's base font size).
+A `null`/falsy value removes the attribute/style. For `s:` keys the property name is **camelCase→kebab-case** converted before `setProperty` (so `s:fontSize` → `font-size`, `s:fontFamily` → `font-family`) — `setProperty` ignores camelCase names, so this conversion is what makes those legacy styles actually render. CSS custom properties (`s:--x`) keep their case. Legacy relative font scaling may store `s:fontSize` as an `em` ratio; new product writes use numeric `t:fs`.
+
+New typography writes use `t:ff` (short font ID), `t:fs` (relative scale),
+`t:px` (fixed base CSS pixels) and
+`t:ls` (letter spacing in `em`). `createInlineTypographyPatch()` also clears the
+matching legacy `s:*` alias for family/scale/spacing and omits neutral `fs=1` / `ls=0`, keeping Y.Text
+runs compact. Legacy styles remain readable and HTML import normalizes supported
+values into the compact form. DOM shells retain matching `data-bc-ff/fs/ls`
+markers so `InlineManager.getAttrs()` can reconstruct canonical keys instead of
+creating camel/kebab duplicates. `t:px` additionally projects `data-bc-px`;
+px 和倍率共用 `font-size`，由 `inlineFontSizeCss()` 合成
+`calc((px × t:fs)px * var(--bc-block-fs-scale, 1))`。属性增删顺序不影响组合结果，
+移除倍率不会移除 px，移除 px 后回到原有 em／继承字号。DOM 比较与反读必须识别
+两个字段，不能将合成 CSS 再写成 `s:fontSize`。
+`createInlineTypographyPatch('px', value)` 只设置固定 px 字段；选区操作应调用
+`TextToolbarHelper.formatFontSizePixels()`，它负责保留倍率和按实际 px 反算。
+
+The shared dropdown presets cover relative scale `0.5×`–`3×` and letter
+spacing `-0.1em`–`0.5em`. They remain numeric model values; `×` / `em` are UI
+and CSS projection units only and are not duplicated in `t:fs` / `t:ls`.
+
+The built-in catalog covers system default, Arial, Calibri, Verdana, Tahoma,
+common Chinese sans/serif families, Times New Roman, Georgia, Kai, FangSong and
+monospace stacks. Persist the catalog ID rather than repeating a CSS stack.
 
 ## When to Read Source Files
 

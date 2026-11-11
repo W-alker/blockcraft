@@ -1,4 +1,6 @@
 import { setAttributes } from "./setAttributes";
+import {getAttributesFrom} from './getAttributes';
+import {compareAttributesWithEle} from './compareAttributes';
 import { IInlineNodeAttrs } from "../types";
 
 describe('setAttributes', () => {
@@ -13,6 +15,56 @@ describe('setAttributes', () => {
     setAttributes(el, { 's:fontSize': '1.2em', 's:fontFamily': 'serif' } as IInlineNodeAttrs);
     expect(el.style.getPropertyValue('font-size')).toBe('1.2em');
     expect(el.style.getPropertyValue('font-family')).toBe('serif');
+  });
+
+  it('renders compact semantic typography keys and keeps their short ids in data attributes', () => {
+    setAttributes(el, {
+      't:ff': 'kai',
+      't:fs': 1.2,
+      't:ls': 0.1,
+    } as IInlineNodeAttrs);
+
+    expect(el.dataset['bcFf']).toBe('kai');
+    expect(el.dataset['bcFs']).toBe('1.2');
+    expect(el.dataset['bcLs']).toBe('0.1');
+    expect(el.style.fontFamily).toContain('Kaiti SC');
+    expect(el.style.fontSize).toBe('1.2em');
+    expect(el.style.letterSpacing).toBe('0.1em');
+  });
+
+  it('roundtrips pixels and scales without adding CSS aliases or render churn', () => {
+    const attrs = {'t:px': 12.8, 't:fs': 1.25};
+    setAttributes(el, attrs);
+    expect(getAttributesFrom(el)).toEqual(attrs);
+    expect(compareAttributesWithEle(el, attrs)).toBeTrue();
+    setAttributes(el, {'t:fs': 2});
+    expect(getAttributesFrom(el)).toEqual({...attrs, 't:fs': 2});
+    expect(compareAttributesWithEle(el, {...attrs, 't:fs': 2})).toBeTrue();
+  });
+
+  it('rejects invalid compact typography values instead of applying arbitrary CSS', () => {
+    setAttributes(el, {
+      't:ff': 'url(javascript:bad)',
+      't:fs': 99,
+      't:ls': 3,
+    } as unknown as IInlineNodeAttrs);
+
+    expect(el.style.fontFamily).toBe('');
+    expect(el.style.fontSize).toBe('');
+    expect(el.style.letterSpacing).toBe('');
+    expect(el.dataset['bcFf']).toBeUndefined();
+  });
+
+  it('lets compact typography win over legacy aliases in transition patches', () => {
+    setAttributes(el, {
+      't:fs': 1.5,
+      's:fontSize': null,
+      't:ls': 0.1,
+      's:letterSpacing': null,
+    } as IInlineNodeAttrs);
+
+    expect(el.style.fontSize).toBe('1.5em');
+    expect(el.style.letterSpacing).toBe('0.1em');
   });
 
   it('still applies single-word s: style keys (no regression)', () => {

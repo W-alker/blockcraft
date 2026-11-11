@@ -29,6 +29,8 @@ export interface ITableSizePickedEvent {
   styles: [`
     :host {
       display: block;
+      inline-size: max-content;
+      max-inline-size: calc(100vw - 16px);
     }
 
     .bc-table-size-picker {

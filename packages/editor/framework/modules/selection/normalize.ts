@@ -1,11 +1,20 @@
 import {
   BaseBlockComponent,
+  BlockNodeType,
   EditableBlockComponent,
   INLINE_END_BREAK_CLASS,
 } from "../../block-std";
 import {BlockCraftError, ErrorCode} from "../../../global";
 import {closetBlockId} from "../../utils";
-import {IBlockRange, INormalizedRange, ISelectionPoint} from "./types";
+import {resolveBlockGapSide} from "../../utils/zero-gap";
+import {
+  IBlockRange,
+  INormalizedRange,
+  ISelectionPoint,
+  IGapSelectionPoint,
+  IBoundarySelectionPoint,
+  ITableCellSelectionPoint,
+} from "./types";
 
 /**
  * Document-ordered endpoints from normalizeRange().
@@ -16,6 +25,20 @@ import {IBlockRange, INormalizedRange, ISelectionPoint} from "./types";
 export interface INormalizedEndpoints {
   readonly start: ISelectionPoint
   readonly end: ISelectionPoint
+}
+
+type EndpointSide = 'start' | 'end'
+
+interface IDomEndpoint {
+  readonly block: BaseBlockComponent<any>
+  readonly node: Node
+  readonly offset: number
+  readonly side: EndpointSide
+  readonly preserveSameBlockWholeSelection?: boolean
+}
+
+function isElementNode(node: unknown): node is HTMLElement {
+  return !!node && typeof (node as Node).nodeType === 'number' && (node as Node).nodeType === 1
 }
 
 /**
@@ -42,54 +65,224 @@ export function normalizeRange(
     return getBlockById(id) as BaseBlockComponent<any>
   }
 
-  const getInlineOffset = (block: EditableBlockComponent<any>, node: Node, offset: number) => {
-    if (node === block.hostElement && block.hostElement !== block.containerElement) {
-      return offset > 0 ? block.textLength : 0
+  const getInlineShellOffset = (
+    block: EditableBlockComponent<any>,
+    node: Node,
+    offset: number,
+    side: EndpointSide,
+  ): number | null => {
+    const {hostElement, containerElement} = block
+    if (!hostElement.contains(node)) return null
+    if (containerElement.contains(node)) return null
+
+    if (node.contains(containerElement)) {
+      const children = Array.from(node.childNodes)
+      const containerChildIndex = children.findIndex(child =>
+        child === containerElement || child.contains(containerElement)
+      )
+      if (containerChildIndex >= 0) {
+        return offset <= containerChildIndex ? 0 : block.textLength
+      }
     }
+
+    const position = node.compareDocumentPosition(containerElement)
+    if (position & Node.DOCUMENT_POSITION_FOLLOWING) return 0
+    if (position & Node.DOCUMENT_POSITION_PRECEDING) return block.textLength
+
+    return side === 'start' ? 0 : block.textLength
+  }
+
+  const getInlineOffset = (
+    block: EditableBlockComponent<any>,
+    node: Node,
+    offset: number,
+    side: EndpointSide,
+  ) => {
+    const shellOffset = getInlineShellOffset(block, node, offset, side)
+    if (shellOffset !== null) return shellOffset
     return block.runtime.mapper.domPointToModelPoint(block.containerElement, node, offset, options)
   }
 
-  const resolvePoint = (block: BaseBlockComponent<any>, node: Node, offset: number): ISelectionPoint => {
-    if (block instanceof EditableBlockComponent) {
-      if (node instanceof HTMLElement && node.classList.contains(INLINE_END_BREAK_CLASS)) {
-        return lazyPoint({blockId: block.id, type: 'text', offset: block.textLength}, getBlockById)
-      }
-      return lazyPoint({blockId: block.id, type: 'text', offset: getInlineOffset(block, node, offset)}, getBlockById)
+  const resolveChildBoundaryIndex = (
+    block: BaseBlockComponent<any>,
+    container: HTMLElement,
+    offset: number,
+    side: EndpointSide,
+  ): number => {
+    const childNodes = Array.from(container.childNodes)
+    const childrenIds = block.childrenIds ?? []
+    const modelIndexes = new Map(childrenIds.map((id, index) => [id, index]))
+    // View-only children (pagination gaps / virtual spacers) deliberately have
+    // no block id. Resolve the adjacent real block hosts from the DOM first so
+    // those nodes do not skew the model boundary index. This also avoids
+    // resolving every model child component when root virtualization is active.
+    const children = childNodes.flatMap((node, domIndex) => {
+      if (!isElementNode(node)) return []
+      const childId = node.getAttribute('data-block-id')
+      if (!childId) return []
+      const modelIndex = modelIndexes.get(childId)
+      return modelIndex !== undefined ? [{modelIndex, domIndex}] : []
+    })
+    if (side === 'start') {
+      const nextIndex = children.findIndex(item => item.domIndex >= offset)
+      return nextIndex >= 0 ? children[nextIndex].modelIndex : childrenIds.length
     }
-    return lazyPoint({blockId: block.id, type: 'selected', offset: 0}, getBlockById)
+    for (let i = children.length - 1; i >= 0; i--) {
+      if (children[i].domIndex < offset) return children[i].modelIndex + 1
+    }
+    return 0
+  }
+
+  const resolveCollapsedGapPoint = (block: BaseBlockComponent<any>, node: Node): IGapSelectionPoint | null => {
+    const gapSide = resolveBlockGapSide(node)
+    if (gapSide === null) return null
+    if (block.nodeType !== BlockNodeType.void && block.nodeType !== BlockNodeType.block) return null
+    return lazyGapPoint(block.id, gapSide, getBlockById)
+  }
+
+  const resolveParentBoundaryForBlock = (
+    block: BaseBlockComponent<any>,
+    side: 'before' | 'after',
+  ): IBoundarySelectionPoint | null => {
+    if (block.nodeType !== BlockNodeType.void && block.nodeType !== BlockNodeType.block) return null
+    if (!block.parentId) return null
+
+    const parent = getBlockById(block.parentId) as BaseBlockComponent<any>
+    if (parent.nodeType !== BlockNodeType.block && parent.nodeType !== BlockNodeType.root) return null
+
+    const childrenIds = parent.childrenIds ?? []
+    let index = childrenIds.indexOf(block.id)
+    if (index < 0 && typeof block.getIndexOfParent === 'function') {
+      index = block.getIndexOfParent()
+    }
+    if (index < 0) return null
+
+    return lazyBoundaryPoint(parent.id, side === 'before' ? index : index + 1, getBlockById)
+  }
+
+  const resolveGapBoundaryPoint = (endpoint: IDomEndpoint): IBoundarySelectionPoint | null => {
+    if (endpoint.preserveSameBlockWholeSelection) return null
+    const gapSide = resolveBlockGapSide(endpoint.node)
+    if (gapSide === null) return null
+    return resolveParentBoundaryForBlock(endpoint.block, gapSide)
+  }
+
+  const resolveParentBoundaryPoint = (endpoint: IDomEndpoint): IBoundarySelectionPoint | null => {
+    if (endpoint.preserveSameBlockWholeSelection) return null
+    return resolveParentBoundaryForBlock(endpoint.block, endpoint.side === 'start' ? 'before' : 'after')
+  }
+
+  const resolveEditableTextPoint = (endpoint: IDomEndpoint): ISelectionPoint | null => {
+    const {block, node, offset, side} = endpoint
+    if (!(block instanceof EditableBlockComponent)) return null
+    if (isElementNode(node) && node.classList.contains(INLINE_END_BREAK_CLASS)) {
+      return lazyPoint({blockId: block.id, type: 'text', offset: block.textLength}, getBlockById)
+    }
+    return lazyPoint({blockId: block.id, type: 'text', offset: getInlineOffset(block, node, offset, side)}, getBlockById)
+  }
+
+  const resolveContainerBoundaryPoint = (endpoint: IDomEndpoint): ISelectionPoint | null => {
+    const {block, node, offset, side} = endpoint
+    if (block.nodeType !== BlockNodeType.block && block.nodeType !== BlockNodeType.root) return null
+    const element = isElementNode(node) ? node : null
+    if (!element) return null
+    let childrenContainer: HTMLElement | null
+    if (element.classList.contains('children-render-container')) {
+      childrenContainer = element
+    } else if (element === block.hostElement && block.nodeType === BlockNodeType.root) {
+      childrenContainer = element
+    } else {
+      childrenContainer = element.querySelector<HTMLElement>('.children-render-container')
+    }
+    if (element !== block.hostElement && !childrenContainer) return null
+
+    const index = childrenContainer === element
+      ? resolveChildBoundaryIndex(block, childrenContainer, offset, side)
+      : (side === 'start' ? 0 : block.childrenLength)
+    return lazyBoundaryPoint(block.id, index, getBlockById)
+  }
+
+  const resolveSelectedPointForBlock = (block: BaseBlockComponent<any>): ISelectionPoint => {
+    return lazyPoint({blockId: block.id, type: 'selected'}, getBlockById)
+  }
+
+  const resolveSelectedPoint = ({block}: IDomEndpoint): ISelectionPoint => {
+    return resolveSelectedPointForBlock(block)
+  }
+
+  const resolvePoint = (endpoint: IDomEndpoint): ISelectionPoint => {
+    const editableTextPoint = resolveEditableTextPoint(endpoint)
+    if (editableTextPoint) return editableTextPoint
+
+    if (!collapsed) {
+      const gapBoundaryPoint = resolveGapBoundaryPoint(endpoint)
+      if (gapBoundaryPoint) return gapBoundaryPoint
+
+      const containerBoundaryPoint = resolveContainerBoundaryPoint(endpoint)
+      if (containerBoundaryPoint) return containerBoundaryPoint
+
+      const parentBoundaryPoint = resolveParentBoundaryPoint(endpoint)
+      if (parentBoundaryPoint) return parentBoundaryPoint
+    }
+    return resolveSelectedPoint(endpoint)
   }
 
   const startBlock = resolveBlock(startContainer)
-  const s = resolvePoint(startBlock, startContainer, startOffset)
+
+  // Gap cursor: a COLLAPSED caret inside a block's leading/trailing gap span maps to
+  // a `gap` point. This MUST be gated on `collapsed` — a NON-collapsed leading->trailing
+  // range is a whole-block `selected` selection (resolved below), not a gap.
+  if (collapsed) {
+    const gp = resolveCollapsedGapPoint(startBlock, startContainer)
+    if (gp) {
+      return {start: gp, end: gp}
+    }
+  }
+
+  let endBlock = startContainer === endContainer ? startBlock : resolveBlock(endContainer)
+  const preserveSameBlockWholeSelection = !collapsed && startBlock === endBlock
+
+  const s = resolvePoint({
+    block: startBlock,
+    node: startContainer,
+    offset: startOffset,
+    side: 'start',
+    preserveSameBlockWholeSelection,
+  })
 
   if (collapsed) {
     return {start: s, end: s}
   }
 
-  let endBlock = startContainer === endContainer ? startBlock : resolveBlock(endContainer)
+  const resolvePreviousBlockEndPoint = (): ISelectionPoint | undefined => {
+    if (!(isElementNode(endContainer) && endContainer.classList.contains('edit-container') && endOffset === 0)) {
+      return undefined
+    }
+    const prev = endContainer.closest('[data-node-type="editable"]')?.previousElementSibling
+    if (!isElementNode(prev)) return undefined
+    const id = prev.getAttribute('data-block-id')
+    if (!id) return undefined
+    endBlock = getBlockById(id) as BaseBlockComponent<any>
+    if (endBlock.nodeType === BlockNodeType.editable) {
+      return lazyPoint({blockId: id, type: 'text', offset: (endBlock as EditableBlockComponent).textLength}, getBlockById)
+    }
+    return resolveSelectedPointForBlock(endBlock)
+  }
 
   // Same block, selected type
   if (startBlock === endBlock && s.type === 'selected') {
     return {start: s, end: s}
   }
 
-  // Edge case: endContainer is an edit-container at offset 0 -> resolve to previous block's end
-  let e: ISelectionPoint | undefined
-  if (endContainer instanceof HTMLElement && endContainer.classList.contains('edit-container') && endOffset === 0) {
-    const prev = endContainer.closest('[data-node-type="editable"]')?.previousElementSibling
-    if (prev && prev instanceof HTMLElement) {
-      const id = prev.getAttribute('data-block-id')
-      if (id) {
-        endBlock = getBlockById(id) as BaseBlockComponent<any>
-        if (endBlock.nodeType === 'editable') {
-          e = lazyPoint({blockId: id, type: 'text', offset: (endBlock as EditableBlockComponent).textLength}, getBlockById)
-        } else {
-          e = lazyPoint({blockId: id, type: 'selected', offset: 0}, getBlockById)
-        }
-      }
-    }
-  }
-  e ??= resolvePoint(endBlock, endContainer, endOffset)
+  // Edge case: endContainer is an edit-container at offset 0 -> resolve to previous block's end.
+  const e = resolvePreviousBlockEndPoint()
+    ?? resolvePoint({
+      block: endBlock,
+      node: endContainer,
+      offset: endOffset,
+      side: 'end',
+      preserveSameBlockWholeSelection,
+    })
 
   return {start: s, end: e}
 }
@@ -100,6 +293,27 @@ export function normalizeRange(
  */
 export function endpointsToLegacy(endpoints: INormalizedEndpoints): INormalizedRange {
   const {start, end} = endpoints
+
+  if (start.type === 'boundary' || end.type === 'boundary') {
+    throw new BlockCraftError(ErrorCode.SelectionError, 'Boundary selection cannot be converted to legacy range')
+  }
+
+  if (start.type === 'table-cell' || end.type === 'table-cell') {
+    throw new BlockCraftError(ErrorCode.SelectionError, 'Table-cell selection cannot be converted to legacy range')
+  }
+
+  // Gap is lossy in legacy format — collapse to a whole-block `selected` range.
+  if (start.type === 'gap' || end.type === 'gap') {
+    const block = start.block
+    const range: any = {blockId: start.blockId, type: 'selected'}
+    Object.defineProperty(range, 'block', {
+      get: () => block,
+      enumerable: false,
+      configurable: true,
+    })
+    return {from: range, to: null, collapsed: true}
+  }
+
   const collapsed = start.blockId === end.blockId
     && start.type === 'text' && end.type === 'text'
     && start.offset === end.offset
@@ -152,4 +366,46 @@ export function lazyPoint(
     configurable: true,
   });
   return point as ISelectionPoint;
+}
+
+export function lazyGapPoint(
+  blockId: string,
+  side: 'before' | 'after',
+  getBlockById: (id: string) => BaseBlockComponent<any>,
+): IGapSelectionPoint {
+  const point: IGapSelectionPoint = { blockId, type: 'gap', side } as any
+  Object.defineProperty(point, 'block', {
+    get: () => getBlockById(blockId),
+    enumerable: false,
+    configurable: true,
+  })
+  return point
+}
+
+export function lazyBoundaryPoint(
+  blockId: string,
+  index: number,
+  getBlockById: (id: string) => BaseBlockComponent<any>,
+): IBoundarySelectionPoint {
+  const point: IBoundarySelectionPoint = { blockId, type: 'boundary', index } as any
+  Object.defineProperty(point, 'block', {
+    get: () => getBlockById(blockId),
+    enumerable: false,
+    configurable: true,
+  })
+  return point
+}
+
+export function lazyTableCellPoint(
+  blockId: string,
+  tableId: string,
+  getBlockById: (id: string) => BaseBlockComponent<any>,
+): ITableCellSelectionPoint {
+  const point: ITableCellSelectionPoint = { blockId, type: 'table-cell', tableId } as any
+  Object.defineProperty(point, 'block', {
+    get: () => getBlockById(blockId),
+    enumerable: false,
+    configurable: true,
+  })
+  return point
 }

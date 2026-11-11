@@ -1,0 +1,771 @@
+import {compactShapeGeometryOverride} from './shape-geometry-storage'
+import {calculateFormattedObjectResize} from './shape-resize'
+import {registerObjectResizePreview} from '../../framework/modules/object/object-resize-preview'
+import {storeBlockPosition} from '../../framework/modules/object/block-placement/state'
+import {ORIGIN_NO_RECORD} from '../../framework/doc/origins'
+import {ObjectEdgeControlsComponent} from '../../components/object-edge-controls.component'
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  inject,
+  NgZone,
+  signal,
+  ViewChild,
+} from '@angular/core'
+import {Subscription} from 'rxjs'
+import {
+  BaseBlockComponent,
+  colorWithOpacity,
+  normalizeBlockObjectFormat,
+  objectEffectsFilter,
+  objectLineArrowPath,
+  objectLineDasharray,
+  objectPaintBackgroundPosition,
+  objectPaintBackgroundSize,
+  objectTextTransformCss,
+  objectPicturePreserveAspectRatio,
+  resolveObjectTextFontFamily,
+} from '../../framework'
+import {getShapeDefinition} from './shape-definitions'
+import {resolveAdjustedShapeTextInsets, resolveShapeAdjustmentProjection} from './shape-adjustments'
+import {
+  createDefaultEditableShapeGeometry,
+  normalizeCustomShapeGeometry,
+  resolveShapeRenderGeometry,
+  serializeCustomShapeGeometry,
+} from './shape-geometry'
+import {
+  createEditableShapeGeometryFromDefinition,
+} from './shape-path-parser'
+import {
+  normalizeShapeProps,
+  normalizeShapeRotation,
+  resolveShapeFillGradient,
+  SHAPE_OBJECT_FORMAT_CAPABILITY,
+  shapeGradientToSvgVector,
+  type CustomShapeGeometry,
+  type NormalizedShapeBlockProps,
+  type ShapeBlockProps,
+  type ShapeAdjustmentValues,
+} from './shape.types'
+import type {ShapeBlockModel} from './index'
+import {
+  ShapeAdjustmentEditorComponent,
+} from './shape-adjustment-editor.component'
+import {ShapeGeometryEditorComponent} from './shape-geometry-editor.component'
+import {
+  ShapeResizerComponent,
+  preserveResizeAspectRatio,
+  type ShapeRotateCommit,
+  type ShapeResizeCommit,
+} from './shape-resizer.component'
+
+const shapeRotationTransform = (rotation: unknown): string => {
+  const normalized = normalizeShapeRotation(rotation)
+  return normalized === 0 ? '' : `rotate(${normalized}deg)`
+}
+
+@Component({
+  selector: 'div.shape-block',
+  standalone: true,
+  imports: [
+    ObjectEdgeControlsComponent,
+    ShapeAdjustmentEditorComponent,
+    ShapeGeometryEditorComponent,
+    ShapeResizerComponent,
+  ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    // Pointer capture during absolute-object drag preparation retargets click
+    // and dblclick to the block host, outside the inner visual shell.
+    '(dblclick)': 'onEditText($event)',
+    '[class.shape-block--editing-points]': 'isEditingPoints',
+  },
+  template: `
+    <div
+      #shapeShell
+      class="shape-block__shell"
+      data-bc-object-drag-surface
+      [attr.data-bc-object-drag-label]="definition.label"
+      data-bc-print-visual-surface
+      data-bc-object-surface
+      contenteditable="false"
+      [style.width.px]="shapeProps.width"
+      [style.height.px]="shapeProps.height"
+      [style.transform]="rotationTransform">
+      <svg
+        #shapeGeometry
+        class="shape-block__geometry"
+        [attr.viewBox]="renderGeometry.viewBox"
+        preserveAspectRatio="none"
+        aria-hidden="true">
+        <defs>
+        @if (fillGradient; as gradient) {
+            <linearGradient
+              [attr.id]="fillGradientId"
+              [attr.x1]="gradient.vector.x1"
+              [attr.y1]="gradient.vector.y1"
+              [attr.x2]="gradient.vector.x2"
+              [attr.y2]="gradient.vector.y2">
+              @for (stop of gradient.stopList; track $index) {
+                <stop
+                  [attr.offset]="stop.offset"
+                  [attr.stop-color]="stop.color"
+                  [attr.stop-opacity]="stop.opacity">
+                </stop>
+              }
+            </linearGradient>
+        }
+          @if (shapeFormat.shapeFill?.type === 'picture') {
+            <pattern
+              [attr.id]="pictureFillId"
+              width="1"
+              height="1"
+              patternContentUnits="objectBoundingBox">
+              <image
+                x="0"
+                y="0"
+                width="1"
+                height="1"
+                [attr.href]="pictureFillSrc"
+                [attr.preserveAspectRatio]="picturePreserveAspectRatio">
+              </image>
+            </pattern>
+          }
+          @if (shapeFormat.shapeOutline?.startArrow !== 'none') {
+            <marker [attr.id]="startMarkerId" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path [attr.d]="arrowPath(shapeFormat.shapeOutline!.startArrow)"
+                [attr.fill]="shapeFormat.shapeOutline?.color"></path>
+            </marker>
+          }
+          @if (shapeFormat.shapeOutline?.endArrow !== 'none') {
+            <marker [attr.id]="endMarkerId" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="7" markerHeight="7" orient="auto">
+              <path [attr.d]="arrowPath(shapeFormat.shapeOutline!.endArrow)"
+                [attr.fill]="shapeFormat.shapeOutline?.color"></path>
+            </marker>
+          }
+        </defs>
+        @for (path of renderGeometry.paths; track $index) {
+          <path
+            data-bc-shape-render-path
+            [attr.d]="path.d"
+            [attr.fill]="path.fillable ? fillPaint : 'none'"
+            [attr.fill-opacity]="shapeFillOpacity"
+            [attr.fill-rule]="path.fillable ? renderGeometry.fillRule ?? null : null"
+            [attr.stroke]="shapeStroke"
+            [attr.stroke-opacity]="shapeFormat.shapeOutline?.opacity"
+            [attr.stroke-width]="shapeFormat.shapeOutline?.width"
+            [attr.stroke-dasharray]="strokeDasharray"
+            [attr.stroke-linecap]="shapeFormat.shapeOutline?.cap"
+            [attr.stroke-linejoin]="shapeFormat.shapeOutline?.join"
+            [attr.marker-start]="startMarkerUrl"
+            [attr.marker-end]="endMarkerUrl"
+            [style.filter]="shapeEffectsFilter"
+            vector-effect="non-scaling-stroke">
+          </path>
+        }
+      </svg>
+
+      <div
+        #shapeTextFrame
+        class="shape-block__text-frame children-render-container"
+        [class.shape-block__text-frame--uniform-paint]="usesUniformTextPaint"
+        [hidden]="definition.supportsText === false"
+        [style.top]="textInset('top')"
+        [style.right]="textInset('right')"
+        [style.bottom]="textInset('bottom')"
+        [style.left]="textInset('left')"
+        [style.color]="shapeProps.textColor"
+        [style.-webkit-text-fill-color]="textPaintColor"
+        [style.background-image]="textPaintBackground"
+        [style.background-size]="textPaintBackgroundSize"
+        [style.background-position]="textPaintBackgroundPosition"
+        [style.background-clip]="'text'"
+        [style.-webkit-background-clip]="'text'"
+        [style.-webkit-text-stroke]="textStroke"
+        [style.text-align]="shapeProps.shapeTextAlign"
+        [style.justify-content]="'safe ' + verticalJustify"
+        [style.writing-mode]="textWritingMode"
+        [style.font-family]="shapeFormat.textStyle?.fontFamily ? resolveObjectTextFontFamily(shapeFormat.textStyle!.fontFamily) : null"
+        [style.font-size.px]="shapeFormat.textStyle?.fontSize"
+        [style.font-weight]="shapeFormat.textStyle?.fontWeight"
+        [style.font-style]="shapeFormat.textStyle?.fontStyle"
+        [style.letter-spacing.em]="shapeFormat.textStyle?.letterSpacingEm"
+        [style.line-height]="shapeFormat.textStyle?.lineHeight"
+        [style.white-space]="shapeFormat.textFrame?.wrap ? null : 'nowrap'"
+        [style.filter]="textEffectsFilter"
+        [style.opacity]="textPictureOpacity"
+        [style.transform]="textTransform">
+      </div>
+
+      @if (!isReadonly) {
+        <bc-object-edge-controls [block]="this" [label]="definition.label" />
+        <shape-resizer
+          [target]="shapeShell"
+          [maxWidthContainer]="placementContainer"
+          [maxWidthResolver]="objectMaxWidthResolver"
+          [resizeCalculator]="resizeCalculator"
+          [rotation]="shapeProps.rotation"
+          [borderDraggable]="!isEditingPoints"
+          [rotatable]="!isEditingPoints"
+          (resizeCommit)="onResizeCommit($event)"
+          (rotateCommit)="onRotateCommit($event)">
+        </shape-resizer>
+        @if (editableGeometry) {
+          <shape-geometry-editor
+            data-bc-placement-pick-ignore
+            [targetSvg]="shapeGeometry"
+            [shapeType]="shapeProps.shapeType"
+            [geometry]="editableGeometry"
+            (geometryCommit)="onGeometryCommit($event)">
+          </shape-geometry-editor>
+        }
+        @if (hasAdjustmentEditor) {
+          <shape-adjustment-editor
+            data-bc-placement-pick-ignore
+            [targetSvg]="shapeGeometry"
+            [shapeType]="shapeProps.shapeType"
+            [adjustments]="shapeProps.adjustments"
+            (adjustmentsCommit)="onAdjustmentsCommit($event)">
+          </shape-adjustment-editor>
+        }
+      }
+    </div>
+  `,
+  styles: [`
+    /* 宽度契约（流内收敛到内容列、浮动不设上限）由 base.scss 按
+       data-bc-object / data-bc-object-surface 统一实施，这里不再写 max-width。 */
+    :host {
+      display: block;
+      width: fit-content;
+      background: transparent !important;
+    }
+
+    :host(.selected) shape-resizer {
+      display: block;
+    }
+
+    :host(.selected) bc-object-edge-controls,
+    :host(.bc-drag-source) bc-object-edge-controls { display: none; }
+
+    :host(.selected) shape-geometry-editor {
+      display: block;
+    }
+
+    :host(.selected) shape-adjustment-editor {
+      display: block;
+    }
+
+    .shape-block__shell {
+      position: relative;
+      box-sizing: border-box;
+      transform-origin: center center;
+      touch-action: none;
+    }
+
+    .shape-block__geometry {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      pointer-events: none;
+    }
+
+    .shape-block__text-frame {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      /* One scrolling viewport for all paragraphs; caret/wheel scrolling stays
+         available without showing an inner scrollbar on the drawing. */
+      overflow: auto;
+      scrollbar-width: none;
+      pointer-events: auto;
+
+      &::-webkit-scrollbar {
+        display: none;
+      }
+    }
+
+    .shape-block__text-frame ::ng-deep > .shape-text-block {
+      inline-size: 100%;
+      flex: none;
+      margin: 0;
+      border: 0;
+      outline: 0;
+      overflow: visible;
+      box-shadow: none;
+      background: transparent;
+      color: inherit;
+      text-align: inherit;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    .shape-block__text-frame--uniform-paint ::ng-deep [data-node-type="editable"],
+    .shape-block__text-frame--uniform-paint ::ng-deep [data-node-type="editable"] * {
+      color: inherit !important;
+      -webkit-text-fill-color: inherit !important;
+      background-color: transparent !important;
+      -webkit-text-stroke: inherit !important;
+      text-shadow: inherit !important;
+    }
+  `],
+})
+export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
+  protected readonly resizeCalculator = calculateFormattedObjectResize
+  protected readonly resolveObjectTextFontFamily = resolveObjectTextFontFamily
+  private readonly _ngZone = inject(NgZone)
+  private readonly _pointEditing = signal(false)
+  private _pointEditingSubscriptions?: Subscription
+
+  @ViewChild('shapeShell', {read: ElementRef})
+  private readonly _shapeShell?: ElementRef<HTMLElement>
+
+  @ViewChild('shapeGeometry', {read: ElementRef})
+  private readonly _shapeGeometry?: ElementRef<SVGSVGElement>
+
+  @ViewChild('shapeTextFrame', {read: ElementRef})
+  private readonly _shapeTextFrame?: ElementRef<HTMLElement>
+  private _autoFitObserver?: MutationObserver
+  private _autoFitResizeObserver?: ResizeObserver
+  private _autoFitFrame: number | null = null
+  private _groupResizePaused = false
+
+  override ngAfterViewInit(): void {
+    super.ngAfterViewInit()
+    const content = this._shapeTextFrame?.nativeElement
+    const ownerWindow = content?.ownerDocument.defaultView
+    if (!content || !ownerWindow?.MutationObserver) return
+    this._ngZone.runOutsideAngular(() => {
+      this._autoFitObserver = new ownerWindow.MutationObserver(() =>
+        this._scheduleAutoFit(),
+      )
+      this._autoFitObserver.observe(content, {
+        childList: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ['style', 'class'],
+        subtree: true,
+      })
+      if (ownerWindow.ResizeObserver) {
+        this._autoFitResizeObserver = new ownerWindow.ResizeObserver(() => this._scheduleAutoFit())
+        this._autoFitResizeObserver.observe(content)
+      }
+    })
+    const propsSubscription = this.onPropsChange.subscribe(() => this._scheduleAutoFit())
+    const unregisterPreview = registerObjectResizePreview(this, paused => {
+      this._groupResizePaused = paused
+      if (paused && this._autoFitFrame !== null) {
+        ownerWindow.cancelAnimationFrame(this._autoFitFrame)
+        this._autoFitFrame = null
+      }
+      if (!paused) this._scheduleAutoFit()
+    })
+    const reattachSubscription = this.onReattach$.subscribe(() => this._scheduleAutoFit())
+    const schedule = () => this._scheduleAutoFit()
+    content.ownerDocument.fonts.addEventListener('loadingdone', schedule)
+    this.onDestroy$.subscribe(() => {
+      unregisterPreview()
+      this._autoFitObserver?.disconnect()
+      this._autoFitObserver = undefined
+      this._autoFitResizeObserver?.disconnect()
+      propsSubscription.unsubscribe()
+      reattachSubscription.unsubscribe()
+      content.ownerDocument.fonts.removeEventListener('loadingdone', schedule)
+      if (this._autoFitFrame !== null) {
+        ownerWindow.cancelAnimationFrame(this._autoFitFrame)
+      }
+      this._autoFitFrame = null
+    })
+    this._scheduleAutoFit()
+  }
+
+  get shapeProps(): NormalizedShapeBlockProps {
+    return normalizeShapeProps(this.props)
+  }
+
+  get definition() {
+    return getShapeDefinition(this.shapeProps.shapeType)
+  }
+
+  get shapeFormat() {
+    return normalizeBlockObjectFormat(this.props, SHAPE_OBJECT_FORMAT_CAPABILITY)
+  }
+
+  get renderGeometry() {
+    return resolveShapeRenderGeometry(
+      this.shapeProps.shapeType,
+      this.definition,
+      this.customGeometry,
+      this.shapeProps.adjustments,
+    )
+  }
+
+  get customGeometry(): CustomShapeGeometry | undefined {
+    return normalizeCustomShapeGeometry(this.shapeProps.customGeometry)
+  }
+
+  get editableGeometry(): CustomShapeGeometry | undefined {
+    return this.isEditingPoints ? this.pointGeometry : undefined
+  }
+
+  /** 顶点模式只影响本地交互；已有 customGeometry 始终参与正常渲染。 */
+  get isEditingPoints(): boolean { return this._pointEditing() }
+
+  get canEditPoints(): boolean { return !!this.pointGeometry }
+
+  setPointEditing(editing: boolean): boolean {
+    if (editing && !this.canEditPoints) return false
+    if (editing === this.isEditingPoints) return true
+    this._pointEditing.set(editing)
+    this._pointEditingSubscriptions?.unsubscribe()
+    this._pointEditingSubscriptions = undefined
+    if (!editing) return true
+
+    // Only the active editor observes lifecycle/selection changes. A toolbar
+    // focus gap can temporarily clear selection; the toolbar owner closes it.
+    const subscriptions = this._pointEditingSubscriptions = new Subscription()
+    const shapeType = this.shapeProps.shapeType
+    const validate = () => {
+      if (this.isReadonly || this.shapeProps.shapeType !== shapeType || !this.canEditPoints) {
+        this.setPointEditing(false)
+      }
+    }
+    subscriptions.add(this.doc.selection.selectionChange$.subscribe(selection => {
+      if (selection && (!selection.isInSameBlock || selection.firstBlock.id !== this.id ||
+        selection.anchor.type !== 'selected')) this.setPointEditing(false)
+    }))
+    subscriptions.add(this.doc.readonlySwitch$.subscribe(validate))
+    subscriptions.add(this.doc.readonlyManager.stateChange$.subscribe(validate))
+    subscriptions.add(this.onPropsChange.subscribe(validate))
+    subscriptions.add(this.onDestroy$.subscribe(() => this.setPointEditing(false)))
+    return true
+  }
+
+  private get pointGeometry(): CustomShapeGeometry | undefined {
+    if (this.isReadonly) return undefined
+    if (this.customGeometry) return this.customGeometry
+    const adjustment = resolveShapeAdjustmentProjection(
+      this.shapeProps.shapeType,
+      this.shapeProps.adjustments,
+    )
+    if (adjustment) return createEditableShapeGeometryFromDefinition({...this.definition, path: adjustment.path})
+    return createDefaultEditableShapeGeometry(this.shapeProps.shapeType) ??
+      createEditableShapeGeometryFromDefinition(this.definition)
+  }
+
+  get hasAdjustmentEditor(): boolean {
+    return !this.isReadonly && !this.isEditingPoints && !this.customGeometry &&
+      !!resolveShapeAdjustmentProjection(
+      this.shapeProps.shapeType,
+      this.shapeProps.adjustments,
+    )
+  }
+
+  get strokeDasharray(): string | null {
+    return objectLineDasharray(this.shapeFormat.shapeOutline!)
+  }
+
+  /** SVG 渐变 def 的 id 以 block id 收尾，保证同文档多形状互不串用。 */
+  get fillGradientId(): string {
+    return `bc-shape-fill-${this.id}`
+  }
+
+  get pictureFillId(): string {
+    return `bc-shape-picture-${this.id}`
+  }
+
+  get startMarkerId(): string { return `bc-shape-arrow-start-${this.id}` }
+  get endMarkerId(): string { return `bc-shape-arrow-end-${this.id}` }
+  get startMarkerUrl(): string | null {
+    return this.shapeFormat.shapeOutline!.startArrow === 'none'
+      ? null
+      : `url(#${this.startMarkerId})`
+  }
+  get endMarkerUrl(): string | null {
+    return this.shapeFormat.shapeOutline!.endArrow === 'none'
+      ? null
+      : `url(#${this.endMarkerId})`
+  }
+
+  arrowPath(type: 'none' | 'triangle' | 'stealth' | 'diamond' | 'oval'): string {
+    return objectLineArrowPath(type)
+  }
+
+  get fillGradient(): {
+    vector: ReturnType<typeof shapeGradientToSvgVector>
+    stopList: Array<{color: string; offset: number; opacity: number}>
+  } | null {
+    const gradient = resolveShapeFillGradient(this.shapeProps)
+    if (!gradient) return null
+    return {
+      vector: shapeGradientToSvgVector(gradient.angle),
+      stopList: gradient.colors.map((color, index) => ({
+        color,
+        offset: gradient.stops[index],
+        opacity: this.shapeFormat.shapeFill!.type === 'linear-gradient'
+          ? this.shapeFormat.shapeFill!.stops[index]?.opacity ?? 1
+          : 1,
+      })),
+    }
+  }
+
+  get fillPaint(): string {
+    const fill = this.shapeFormat.shapeFill!
+    if (fill.type === 'none') return 'none'
+    if (fill.type === 'linear-gradient') return `url(#${this.fillGradientId})`
+    if (fill.type === 'picture') return `url(#${this.pictureFillId})`
+    return fill.color
+  }
+
+  get shapeStroke(): string {
+    const line = this.shapeFormat.shapeOutline!
+    return line.type === 'none' ? 'none' : line.color
+  }
+
+  get shapeEffectsFilter(): string | null {
+    return objectEffectsFilter(this.shapeFormat.shapeEffects!) || null
+  }
+
+  get textEffectsFilter(): string | null {
+    return objectEffectsFilter(this.shapeFormat.textStyle!.effects) || null
+  }
+
+  get picturePreserveAspectRatio(): string {
+    const fill = this.shapeFormat.shapeFill!
+    return fill.type === 'picture'
+      ? objectPicturePreserveAspectRatio(fill)
+      : 'none'
+  }
+
+  get pictureFillSrc(): string | null {
+    const fill = this.shapeFormat.shapeFill!
+    return fill.type === 'picture' ? fill.src : null
+  }
+
+  get shapeFillOpacity(): number {
+    const fill = this.shapeFormat.shapeFill!
+    return fill.type === 'none' ? 0 : fill.opacity
+  }
+
+  get textWritingMode(): string {
+    const direction = this.shapeFormat.textFrame!.direction
+    return direction === 'vertical-rl' ? 'vertical-rl' : 'horizontal-tb'
+  }
+
+  get textTransform(): string | null {
+    const frame = this.shapeFormat.textFrame!
+    const transforms: string[] = []
+    if (frame.direction === 'rotate-90') transforms.push('rotate(90deg)')
+    if (frame.direction === 'rotate-270') transforms.push('rotate(270deg)')
+    if (!frame.rotateWithShape && this.shapeProps.rotation) {
+      transforms.push(`rotate(${-this.shapeProps.rotation}deg)`)
+    }
+    const transform = objectTextTransformCss(this.shapeFormat.textStyle!.transform)
+    if (transform) transforms.push(transform)
+    return transforms.join(' ') || null
+  }
+
+  get usesUniformTextPaint(): boolean {
+    const style = this.shapeFormat.textStyle!
+    return style.fill.type !== 'solid' || style.outline.type !== 'none' ||
+      style.effects.shadow.enabled || style.effects.glow.enabled ||
+      style.transform !== 'none'
+  }
+
+  get textPaintColor(): string {
+    const fill = this.shapeFormat.textStyle!.fill
+    return fill.type === 'solid'
+      ? colorWithOpacity(fill.color, fill.opacity)
+      : 'transparent'
+  }
+
+  get textPaintBackground(): string | null {
+    const fill = this.shapeFormat.textStyle!.fill
+    if (fill.type === 'picture' && fill.src) {
+      return `url("${fill.src.replace(/["\\]/g, '\\$&')}")`
+    }
+    if (fill.type !== 'linear-gradient') return null
+    const stops = fill.stops.map(stop =>
+      `${colorWithOpacity(
+        stop.color,
+        stop.opacity * fill.opacity,
+      )} ${stop.offset * 100}%`,
+    )
+    return `linear-gradient(${fill.angle}deg, ${stops.join(', ')})`
+  }
+
+  get textPictureOpacity(): number | null {
+    const fill = this.shapeFormat.textStyle!.fill
+    return fill.type === 'picture' ? fill.opacity : null
+  }
+
+  get textPaintBackgroundSize(): string {
+    const fill = this.shapeFormat.textStyle!.fill
+    return fill.type === 'picture' ? objectPaintBackgroundSize(fill) : 'auto'
+  }
+
+  get textPaintBackgroundPosition(): string {
+    const fill = this.shapeFormat.textStyle!.fill
+    return fill.type === 'picture'
+      ? objectPaintBackgroundPosition(fill)
+      : '0% 0%'
+  }
+
+  get textStroke(): string {
+    const line = this.shapeFormat.textStyle!.outline
+    return line.type === 'none' ? '0 transparent' : `${line.width}px ${line.color}`
+  }
+
+  textInset(side: 'top' | 'right' | 'bottom' | 'left'): string {
+    const index = {top: 0, right: 1, bottom: 2, left: 3}[side]
+    const inherent = this._textInsets[side] * 100
+    const margin = this.shapeProps.textFrame.margins[index]
+    return `calc(${inherent}% + ${margin}px)`
+  }
+
+  private get _textInsets() {
+    const props = this.shapeProps
+    const definition = getShapeDefinition(props.shapeType)
+    return normalizeCustomShapeGeometry(props.customGeometry)
+      ? definition.textInsets
+      : resolveAdjustedShapeTextInsets(
+          props.shapeType,
+          props.adjustments,
+          definition.textInsets,
+        )
+  }
+
+  private _scheduleAutoFit(): void {
+    if (this._autoFitFrame !== null || this._groupResizePaused || this.isReadonly ||
+      this.shapeFormat.textFrame!.autoFit !== 'resize-shape') return
+    const content = this._shapeTextFrame?.nativeElement
+    const ownerWindow = content?.ownerDocument.defaultView
+    if (!content || !ownerWindow) return
+    this._ngZone.runOutsideAngular(() => this._autoFitFrame = ownerWindow.requestAnimationFrame(() => {
+      this._autoFitFrame = null
+      const frame = this.shapeFormat.textFrame!
+      if (this._groupResizePaused || this.isReadonly || !content.isConnected || !content.getClientRects().length ||
+        this.definition.supportsText === false || frame.autoFit !== 'resize-shape' ||
+        !['horizontal', 'vertical-rl'].includes(frame.direction)) return
+      const vertical = frame.direction === 'vertical-rl'
+      const overflow = vertical
+        ? content.scrollWidth - content.clientWidth
+        : content.scrollHeight - content.clientHeight
+      if (!Number.isFinite(overflow) || overflow <= 1) return
+      const current = this.shapeProps
+      const insets = this._textInsets
+      const availableFraction = 1 - (vertical ? insets.left + insets.right : insets.top + insets.bottom)
+      if (availableFraction <= 0) return
+      // Insets scale with the outer shape. Adding just the overflow would leave
+      // part of the text clipped again in ellipses, arrows and callouts.
+      const growth = Math.ceil(overflow / availableFraction)
+      const surface = this._shapeShell?.nativeElement
+      if (!surface) return
+      // Flow objects can be clamped to their content column. Derive the needed
+      // size from the rendered frame so a capped width cannot grow every RAF.
+      const size = (vertical ? surface.clientWidth : surface.clientHeight) + growth
+      if (size <= (vertical ? current.width : current.height)) return
+      this._ngZone.run(() => this.doc.crud.transact(() => {
+        this.doc.placement.updateObjectGeometry(this, vertical
+          ? {width: size}
+          : {height: size})
+      }, ORIGIN_NO_RECORD))
+    }))
+  }
+
+  get verticalJustify(): 'flex-start' | 'center' | 'flex-end' {
+    if (this.shapeProps.verticalAlign === 'top') return 'flex-start'
+    if (this.shapeProps.verticalAlign === 'bottom') return 'flex-end'
+    return 'center'
+  }
+
+  get rotationTransform(): string {
+    return shapeRotationTransform(this.shapeProps.rotation)
+  }
+
+  onEditText(event: MouseEvent): void {
+    if (this.isReadonly || this.definition?.supportsText === false) return
+    if (event.target instanceof Element && event.target.closest(
+      '.shape-text-block, bc-object-edge-controls, shape-resizer, shape-geometry-editor, shape-adjustment-editor',
+    )) return
+    event.preventDefault()
+    event.stopPropagation()
+    const textBlock = this.firstChildren as
+      BlockCraft.IBlockComponents['shape-text'] | null
+    if (!textBlock) {
+      const snapshot = this.doc.schemas.createSnapshot('shape-text', [])
+      void this.doc.chain()
+        .insertSnapshots(this.id, 0, [snapshot])
+        .selectOrSetCursorAtBlock(snapshot.id, true)
+        .run()
+      return
+    }
+    if (textBlock.flavour !== 'shape-text') return
+    textBlock.setInlineRange(textBlock.textContent().length)
+  }
+
+  onResizeCommit(event: ShapeResizeCommit): void {
+    if (this.isReadonly) return
+    const current = this.shapeProps
+    event = this.shapeFormat.lockAspectRatio
+      ? preserveResizeAspectRatio(event, current.width, current.height)
+      : event
+    const next: Partial<ShapeBlockProps> = {
+      width: Math.round(event.width),
+      height: Math.round(event.height),
+    }
+
+    const placement = this.doc.placement?.getState?.(this.id) ?? {
+      mode: 'relative' as const,
+      x: 0,
+      y: 0,
+      layer: 'over' as const,
+    }
+    if (placement.mode === 'absolute') {
+      next.position = storeBlockPosition({
+        x: placement.x + event.offsetX,
+        y: placement.y + event.offsetY,
+      })
+    }
+    this.doc.placement.updateObjectGeometry(this, next)
+    const shell = this._shapeShell?.nativeElement
+    if (shell) {
+      shell.style.transform = shapeRotationTransform(current.rotation)
+    }
+  }
+
+  onRotateCommit(event: ShapeRotateCommit): void {
+    if (this.isReadonly) return
+    this.doc.placement.updateObjectGeometry(this, {rotation: event.rotation})
+    const shell = this._shapeShell?.nativeElement
+    if (shell) {
+      shell.style.transform = shapeRotationTransform(event.rotation)
+    }
+  }
+
+  onGeometryCommit(geometry: CustomShapeGeometry): void {
+    if (this.isReadonly || !this.isEditingPoints) return
+    const serialized = serializeCustomShapeGeometry(geometry)
+    if (!serialized) return
+    const props = this.shapeProps
+    const customGeometry = compactShapeGeometryOverride(serialized, props.shapeType, props.adjustments)
+    if (customGeometry
+      ? customGeometry === serializeCustomShapeGeometry(props.customGeometry)
+      : this.props.customGeometry == null) return
+    if (this.doc.placement.updateObjectGeometry(this, {customGeometry: customGeometry ?? null}) === false) return
+    const svg = this._shapeGeometry?.nativeElement
+    if (svg) svg.setAttribute('viewBox', `0 0 ${geometry.width} ${geometry.height}`)
+  }
+
+  onAdjustmentsCommit(adjustments: ShapeAdjustmentValues): void {
+    if (this.isReadonly) return
+    this.doc.placement.updateObjectGeometry(this, {adjustments})
+  }
+}

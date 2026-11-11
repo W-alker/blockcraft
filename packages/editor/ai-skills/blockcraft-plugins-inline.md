@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-05-09
+> Last updated: 2026-11-11
 
 ## Inline Extensions
 
@@ -10,7 +10,13 @@
 
 > `plugins/inline-link-extension/` — Hyperlink interactions and editing.
 
-Handles inline link clicks (single-click shows toolbar, double-click navigates), provides link editing/unbinding/copying, and supports "switch view" to convert an inline link into a bookmark block.
+宿主可在 Doc 注入器提供 `LINK_BLOCK_RESOLVER`，将业务链接解析为注册块（flavour、params、label），
+或明确 blocked / unhandled；只有 unhandled 回退为内置网页。菜单和执行共享合同，支持 Promise 和 AbortSignal，
+执行重新解析并以相对范围校验源链接。链接打开、编辑、解除和转卡片仍沿用原规则。
+`switchView('embed')` 现在异步解析宿主目标，返回 Promise<void>；无 resolver 时保留原转换结果。
+完整 Provider 和异步边界见 `blockcraft-app.md`。
+
+Handles inline link clicks (编辑模式单击显示工具栏、双击导航；整篇文档只读时单击直接导航，拖选文字和右键不导航，双击只导航一次；单个块锁定仍保留原工具栏行为), provides link editing/unbinding/copying, and supports direct conversion to card or embed views.
 
 #### Configuration
 
@@ -30,7 +36,7 @@ new InlineLinkExtension(openLink?: (link: string) => void)
 | `edit-link` | Open `LinkEditFloatDialog` for editing |
 | `unbind-link` | Remove the link format, keep text |
 | `copy-link` | Copy URL to clipboard |
-| `switch-view` | Convert inline link to bookmark block |
+| `switch-view` | `card` 转网页卡片，`embed` 直接转嵌入；与卡片、嵌入工具栏形成三种视图互转 |
 
 #### Public API
 
@@ -39,9 +45,16 @@ new InlineLinkExtension(openLink?: (link: string) => void)
 | `openToolbar(target, link, block)` | Show the link toolbar for a specific link element |
 | `closeToolbar()` | Dismiss the toolbar |
 | `onEditLink(target, block)` | Open the link edit dialog |
-| `switchView()` | Convert the current link to a bookmark block |
+| `switchView(view?: 'card' \| 'embed')` | 转换当前链接；默认 `card` 保持旧调用方式 |
 | `tryGetLink(target)` | Get the `href` from a link element |
 | `getLinkInfo(target)` | Get `{ textRange, text }` for a link element |
+
+独立链接直接替换整块，不留下空段落；正文中的链接转换为独立卡片/嵌入块，
+两侧文字保留原格式与段落属性。转换经过一次 DocChain/DocCRUD 事务，并选中新目标。
+转换捕获源选区并建立独立撤销边界；撤销/重做恢复对应视图的光标或块选中状态。
+提交前重查实例存活、只读和父容器插入限制，禁止先删除文字再发现目标不能插入。
+嵌入优先使用 `embed`；只装配旧平台 schemas 的宿主继续回退到 Figma/掘金，
+其他网页、HTML 文件链接和平台地址需注册 `EmbedBlockSchema`。非 HTTP/HTTPS 链接不提供嵌入入口。
 
 #### Usage Example
 
@@ -72,7 +85,7 @@ new MentionPlugin(config: MentionPluginConfig)
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `panel` | `MentionPanelFactory` | **required** | `(ctx: { doc, rect }) => IMentionPanel` — provides all UI and search logic |
+| `panel` | `MentionPanelFactory` | **required** | `(ctx: { doc, rect, getKeyword? }) => IMentionPanel` — provides all UI and search logic |
 | `trigger` | `string` | `'@'` | Character that opens the mention panel |
 | `onMentionClick` | `(id, type, event) => void` | — | Callback when a rendered mention embed is clicked |
 | `onConfirm` | `(data, { block }) => boolean \| void` | — | Host opt-out, called after the `@keyword` range is resolved but **before** the embed is inserted. Return `true` to claim the confirm: the plugin removes the `@keyword` and inserts **no** embed (no node, no trailing space) — the host applies its own side-effect instead. Falsy → default embed insertion |
@@ -83,11 +96,35 @@ The `panel` factory must return an object implementing `IMentionPanel`:
 
 | Method / Property | Type | Purpose |
 |-------------------|------|---------|
-| `onKeywordChange(keyword)` | `(string) => void` | Plugin pushes search keyword as user types |
+| `onKeywordChange(keyword)` | `(string) => void` | 普通输入防抖通知；转交 Tab 前同步最新模型关键词，相同关键词不重复通知 |
 | `onKeydown(e)` | `(KeyboardEvent) => boolean` | Plugin forwards nav/confirm keys; return `true` to consume |
 | `onConfirm` | `Observable<IMentionData>` | Panel emits confirmed selection |
 | `updatePosition(rect)` | `(DOMRect) => void` | Plugin calls on scroll to reposition |
 | `dispose()` | `() => void` | Plugin calls when session closes |
+
+面板工厂的 `ctx.getKeyword?.()` 可在鼠标切换数据源时直接读取当前模型关键词，
+不触发请求，也不等待普通输入的 300ms 防抖。返回 `null` 表示会话、触发符或光标范围失效；
+旧运行时可能不提供此方法，兼容面板可回退到最后收到的关键词。
+键盘 Tab（含 Shift+Tab）转交给 `onKeydown` 前，框架会先同步一次最新关键词；
+IME 组词期间不转交，提交后使用最终模型文本。面板无需解析 DOM 或复制提取逻辑。
+
+默认 `createDefaultMentionPanel({request})` 的键盘和鼠标切换均使用上述最新关键词，
+同一轮关键词同步与 Tab 切换合并为一次请求，旧请求响应和销毁后响应不会覆盖新结果。
+自定义完整面板的鼠标 Tab 处理应先读 `ctx.getKeyword?.()` 再切换数据源；
+只替换默认面板的 `request` 数据源无需额外适配，普通输入请求频率保持原有防抖节奏。
+
+#### Public API
+
+```typescript
+mentionPlugin.openAt(block, index, replaceLength = 0): boolean
+```
+
+`openAt()` opens the same mention session at an explicit model position. A
+non-zero `replaceLength` atomically replaces that range with the configured
+mention trigger before the panel opens; this is how the built-in slash menu
+turns `/mention` into `@`. It returns `false` for stale, plain-text-only, or
+effectively readonly blocks. Command surfaces must use this API instead of
+writing an `@` into contenteditable DOM.
 
 #### Usage Example
 
@@ -113,8 +150,47 @@ new MentionPlugin({
 #### Notes
 
 - Uses `OneShotCursorAnchor` for collaboration-safe cursor tracking during the mention session
+- `openAt()` is the public bridge for slash menus and other model-owned command surfaces
+- A preceding atomic inline Embed is a valid trigger boundary, like a space or
+  line break; typing `@` immediately after a date, formula, image or other Embed
+  opens Mention rather than treating the Embed as part of a word
 - The trigger character is physically inserted into `Y.Text` and removed/replaced on confirm or cancel
 - `onConfirm` lets a host block turn a mention into a **side-effect that runs only on the acting client** rather than a CRDT-synced embed node. Use it when every collaborator observing the node would otherwise re-run the effect (e.g. a synced todo adding a task collaborator from `@user` — only the picker should write; others learn via that domain's own realtime channel)
+
+---
+
+### DateInlineExtensionPlugin
+
+> `plugins/date-inline-extension/` — Click-to-edit for the bundled `date` inline embed.
+> Runtime plugin ID: `date-inline-extension`.
+
+Clicking a `.bc-inline-date` embed opens a connected overlay holding a
+`cs-date-time-picker` and the format list. The list previews each format
+against the currently drafted moment rather than showing token strings, so the
+author picks by appearance.
+
+#### Configuration
+
+```typescript
+new DateInlineExtensionPlugin()   // zero-config
+```
+
+#### Behavior
+
+| Aspect | Behavior |
+|--------|----------|
+| Insertion | Owned by the `/日期` slash command (`inline:date`), not by this plugin |
+| Value semantics | **Frozen.** The plugin never subscribes to a clock and never recomputes at render time — see the `date` embed in `blockcraft-embed.md` |
+| Commit | Only on 确定. The write replaces the embed, which recreates the DOM node the overlay is anchored to, so live-applying each keystroke would strand the anchor |
+| Write path | `applyDeltaOperations([{retain: i}, {delete: 1}, {insert, attributes}])`, with `i` resolved from a live DOM range so a concurrent edit upstream can't misplace it |
+| Readonly | Closes on `subscribeReadonlyChange` and on block-level `readonlyManager.stateChange$` |
+
+#### Notes
+
+- The embed's logical length is always 1, so the update is a `delete: 1` +
+  re-insert rather than an in-place DOM mutation
+- The cursor is restored to `embedIndex + 1` on the next frame, matching
+  `FormulaBlockExtensionPlugin`'s inline path
 
 ---
 
@@ -123,6 +199,7 @@ new MentionPlugin({
 ### CodeInlineEditorBinding
 
 > `plugins/codeEditorBinding.ts` — Keyboard bindings for code and mermaid blocks.
+> Runtime plugin ID: `code-inline-editor-binding`.
 
 Handles Enter (newline with indent preservation or block splitting with Shift), Tab/Shift+Tab (insert/remove tabs), and IME composition end for `code` and `mermaid-textarea` blocks.
 
@@ -147,15 +224,43 @@ new CodeInlineEditorBinding()
 ### TableBlockBinding
 
 > `plugins/tableBlockBinding.ts` — Keyboard and clipboard bindings for table blocks.
+> Runtime plugin ID: `table-block-binding`.
 
-Handles copy/cut of selected cell ranges, table-shaped paste into existing cells, Shift+Arrow to select whole table, Delete/Backspace to clear cells, and Cmd+A to select entire table.
+Handles copy/cut of selected cell ranges, table-shaped paste into existing cells, Arrow/Shift+Arrow movement for model-owned cell rectangles, Delete/Backspace to clear cells, and Cmd+A to select entire table.
+
+Table rectangular selection is model-owned when possible: drag-selected cells are written as `table-cell` anchor/head points via `SelectionManager.setTableCellSelection(table, anchorCell, headCell)`. `TableBlockBinding` resolves that intent through the package-internal `TableModelGrid`, so copy/cut/paste/delete/Arrow/Tab use stable cell IDs and model snapshots even when intermediate cell components are not mounted. `TableBlockComponent` only projects the resolved rectangle onto currently mounted master cells with its private `.bc-table-cell-selected` class; it does not build a Component-owned full-table master map. Row ranges, column ranges, and older transient paths still live as explicit table coordinates, so nonstandard documents without a usable model graph retain the bounded component fallback. Malformed real model grids fail closed. Plain Arrow moves/collapses to the adjacent visible source cell, while Shift+Arrow keeps the anchor and extends the head. Delete/Backspace therefore clears every selected master cell instead of only the anchor cell, while ordinary text deletion inside a cell is still left to `InputTransformer`.
+
+The built-in `TableBlockComponent` previews column resizing with an inert blue
+viewport guide outside the clipped table subtree instead of changing live
+`<col>` widths. Dragging therefore leaves cell content, row heights and
+pagination geometry unchanged. Mouse release resolves
+the stable source-cell anchor through the current model grid and writes
+`colWidths` once; Escape, window blur, a readonly release or
+a stale anchor cancel without a write. This behavior has no configuration
+option and does not change the `TableBlockBinding` constructor or public API.
+The resize handle is a `data-bc-native-input` UI island, so root mouse and
+selection controls do not arm a competing text/rectangle-selection gesture
+before the table starts resizing. The table capture boundary gives that handle
+priority over pagination flow masks and rectangle-selection arming, then stops
+the mousedown from reaching later selection handlers. Idle cell `mousemove`
+repairs the handle's actual DOM ownership after pagination/Angular projection;
+same-cell movement exits through identity checks without reading layout.
+At capture time the built-in table also recognizes the narrow right-edge cell
+geometry as resize ownership. This covers Safari/WebKit table-cell hit testing,
+where a painted absolute handle may still be reported as its `td` or content.
 
 #### Configuration
 
-No configuration options.
+构造参数保持不变。插件声明并导出 `TABLE_TOOLBAR_INTERACTION`（namespace `tableToolbar`）：
+`enabled` 控制结构浮动工具栏，默认 true，immersive 为 false；`textFocus` 控制单元格内文字编辑时自动显示，默认 true。
+官方轻量档通过 experiences 声明 `textFocus: false`，仍在明确选中行、列或单元格区域时显示。
+工具栏开关不影响键盘、剪贴板、行列选择、列宽拖动、文档数据或权限；顶部固定工具栏不变。
+表格组件消费声明的有效策略，普通态和全屏一致；未安装此插件时保留原有显示行为。
+切换相关配置取消待创建的工具栏，再按当前选区同步；无关插件配置不触发刷新。
 
 ```typescript
 new TableBlockBinding()
+doc.interaction.configure({preset: 'mixed', overrides: {plugins: {tableToolbar: {textFocus: false}}}})
 ```
 
 #### Registered Bindings
@@ -165,12 +270,43 @@ new TableBlockBinding()
 | `copy` | `table` | Copy selected cells as table snapshot |
 | `cut` | `table` | Copy + clear selected cells |
 | `paste` | `table` | When clipboard content is a BlockCraft/HTML/Markdown/TSV table, fill existing table cells one-to-one from the focused cell or selected top-left cell; oversized source rows/columns are clipped to the current table, then the range selection UI is cleared |
-| `Shift+Arrow` | `table-cell` | Select the whole table block |
-| `Delete` / `Backspace` | `table` | Clear content of selected cells |
-| `Cmd/Ctrl+A` | `table-cell` | Select entire table (when cell is all-selected) |
+| `Arrow` | `table-cell` | Move/collapse a model table-cell selection to the adjacent visible cell; boundary arrows are consumed and keep the selection unchanged |
+| `Shift+Arrow` | `table-cell` | Extend the model table-cell selection by moving the head cell and keeping the anchor cell fixed |
+| `Delete` / `Backspace` | `table` | Clear content of the explicit selected cell rectangle; if there is no rectangle, only a whole-cell block selection falls back to clearing the single selected cell. Plain text deletion inside a cell is left to `InputTransformer` |
+| `Cmd/Ctrl+A` | `table-cell` | Select entire table after the current cell content is already fully selected |
 
 #### Public API
 
 | Method | Description |
 |--------|-------------|
-| `clearCellContent(cells)` | Clear content of given table cells |
+| `clearCellContent(cells)` | Clear content of given mounted table-cell components; built-in model commands use a private stable-ID write path |
+
+#### Related Table Component API
+
+| Method | Description |
+|--------|-------------|
+| `table.getExplicitSelectedCoordinates()` | Return the active cell/row/column rectangle only. Unlike `getSelectedCoordinates()`, it never falls back to the current selection's first cell |
+| `doc.selection.setTableCellSelection(table, anchorCell, headCell?)` | Store a model-owned rectangular table-cell selection. The browser native Range is cleared and the table component paints the selected rectangle |
+
+### WeatherInlineExtensionPlugin
+
+`plugins/weather-inline-extension/`，运行时 ID `weather-inline-extension`，零配置。
+点击行内天气（含 SVG 图标）打开显示格式选择：完整、温度+天气、仅温度、仅天气，均带图标。
+已有天气在菜单中显示实际结果；模板显示字段组合，不写入模拟天气。
+取消不修改；确定通过 Block 公开 Delta API 替换一个位置，保留天气快照与模板来源，支持 Undo/Redo。
+只读文档/冻结块禁止修改，转只读时关闭弹层，协同删除或重渲染使原锚点失效后放弃提交。
+`createBundledEditorCapabilities()` 默认包含此插件。
+
+### PersonInlineExtensionPlugin
+
+`plugins/person-inline-extension/`，运行时 ID `person-inline-extension`，零配置。
+点击 `person` 原生行内素材打开“行内人员格式”：仅姓名、头像＋姓名、姓名＋部门/职务、头像＋姓名＋部门/职务。
+不改变已定格人员或模板来源，字号继承段落；默认蓝色，悬停加同色下划线，显式文字颜色可覆盖。原生 Delta 替换支持撤销重做。
+文档/块只读、协同删除及锚点失效时禁止写入；进入只读关闭配置，销毁释放监听。
+创建人由宿主建档时传给 `materializeInlinePersonSnapshots()`，插件不访问业务人员服务。
+
+### 天气手动刷新
+
+行内天气弹窗右上角提供“刷新天气”单图标按钮（悬停提示，加载时显示单个转圈图标），沿用 `weatherDate`，旧快照无日期时查实时值；模板创建意向不提供刷新入口。成功通过公开 Delta API 替换快照并保留其他属性及当前显示格式、支持撤销，随后关闭；失败保留旧值并允许重试。取消或销毁弹窗中止等待，协同锚点失效及只读时不写入。
+
+主动刷新成功/失败通过 `doc.messageService`（`DocMessageService`）提示，弹窗不额外渲染结果文案；取消或失效请求不提示。

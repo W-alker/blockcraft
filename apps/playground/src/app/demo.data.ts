@@ -8,6 +8,7 @@ import {
   CodeBlockSchema,
   ColumnBlockSchema,
   ColumnsBlockSchema,
+  DateCardBlockSchema,
   DividerBlockSchema,
   FigmaEmbedBlockSchema,
   FormulaBlockSchema,
@@ -15,15 +16,49 @@ import {
   JuejinEmbedBlockSchema,
   MermaidBlockSchema,
   OrderedBlockSchema,
+  PageDividerBlockSchema,
   ParagraphBlockSchema,
+  PersonCardBlockSchema,
+  RenderUnitBlockSchema,
   RootBlockSchema,
+  ShapeBlockSchema,
+  StickerBlockSchema,
   TableBlockSchema,
+  TextBoxBlockSchema,
   TodoBlockSchema,
   VideoBlockSchema,
+  WeatherBlockSchema,
+  WordArtBlockSchema,
+  createInlineDateDelta,
+  createInlinePersonDelta,
+  createInlineStickerDelta,
+  createInlineWeatherDelta,
   type IBlockSnapshot
 } from '@ccc/blockcraft';
 
 const ROOT_ID = '689ac2b31a9abe3ae8a6788d';
+const DEMO_DATE = '2026-09-21T10:00';
+const DEMO_PERSON = {
+  name: '林知夏',
+  pinyin: 'LIN ZHI XIA',
+  description: '产品设计 / 文档体验',
+};
+const DEMO_WEATHER = {
+  tone: 'cloudy' as const,
+  temp: 24,
+  condition: '多云',
+  location: '杭州',
+  high: 27,
+  low: 19,
+};
+
+const assignStableDemoIds = (block: IBlockSnapshot, path: readonly number[] = []) => {
+  if (path.length) block.id = `demo-${path.join('-')}`;
+  if (block.nodeType !== 'block' && block.nodeType !== 'root') return;
+  (block.children as IBlockSnapshot[]).forEach((child, index) => {
+    assignStableDemoIds(child, [...path, index]);
+  });
+};
 
 const setEditableText = (block: IBlockSnapshot, text: unknown[]) => {
   block.children = text as never;
@@ -52,7 +87,20 @@ const createIntroParagraph = () =>
 
 const createOverviewParagraph = () =>
   ParagraphBlockSchema.createSnapshot([
-    { insert: '这个初始化样本会覆盖段落、列表、待办、引用、提示块、代码、表格、多栏、图片、附件、网页卡片、嵌入块、Mermaid 和公式。' }
+    { insert: '这个初始化样本覆盖常见文本、布局、媒体与对象块，也可直接同步到快照模式检查展示结果。' }
+  ]);
+
+const createInlineMaterials = () =>
+  ParagraphBlockSchema.createSnapshot([
+    {insert: '行内物料：'},
+    createInlineDateDelta(DEMO_DATE, 'YYYY年M月D日')!,
+    {insert: ' · '},
+    createInlinePersonDelta(DEMO_PERSON, 'name-description'),
+    {insert: ' · '},
+    createInlineWeatherDelta(DEMO_WEATHER, 'weather-temp'),
+    {insert: ' · '},
+    createInlineStickerDelta({presetId: 'sunburst', presetVersion: 1}, {width: 28, height: 28}),
+    {insert: ' 这些内容能随正文一起换行。'},
   ]);
 
 const createCallout = () => {
@@ -210,6 +258,47 @@ const createDivider = () => {
   return divider;
 };
 
+const createMaterialExamples = (): IBlockSnapshot[] => {
+  const date = DateCardBlockSchema.createSnapshot();
+  date.props = {...date.props, style: 'masthead', date: DEMO_DATE, format: 'noWeek'};
+
+  const person = PersonCardBlockSchema.createSnapshot();
+  person.props = {
+    ...person.props,
+    style: 'rowPinyin', width: 340, height: 110, dept: 'on',
+    person: JSON.stringify(DEMO_PERSON),
+  };
+
+  const weather = WeatherBlockSchema.createSnapshot();
+  weather.props = {
+    ...weather.props,
+    style: 'ledger', date: '2026-09-21', frozen: DEMO_WEATHER,
+  };
+
+  const sticker = StickerBlockSchema.createSnapshot('sunburst', {sun: '#F97316'});
+  const region = RenderUnitBlockSchema.createSnapshot({}, {
+    p: [14, 18], backColor: '#F8FAFC',
+  });
+  region.children = [
+    ParagraphBlockSchema.createSnapshot('内容区域将多个块放在同一背景和内边距中。'),
+    BulletBlockSchema.createSnapshot('缩放、换行和快照展示都应保持自然文档流。'),
+  ] as never;
+
+  return [
+    PageDividerBlockSchema.createSnapshot(),
+    ParagraphBlockSchema.createSnapshot('快照展示检查', {heading: 2}),
+    createInlineMaterials(),
+    date,
+    person,
+    weather,
+    sticker,
+    ShapeBlockSchema.createSnapshot('right-arrow', '下一步'),
+    WordArtBlockSchema.createSnapshot('BlockCraft'),
+    TextBoxBlockSchema.createSnapshot('文本框既能承载正文，也可以作为对象调整尺寸。'),
+    region,
+  ];
+};
+
 const createDocument = (): IBlockSnapshot => {
   const intro = createIntroParagraph();
   const overview = createOverviewParagraph();
@@ -229,7 +318,7 @@ const createDocument = (): IBlockSnapshot => {
   const video = createVideo();
   const audio = createAudio();
 
-  return RootBlockSchema.createSnapshot(ROOT_ID, [
+  const root = RootBlockSchema.createSnapshot(ROOT_ID, [
     intro,
     overview,
     callout,
@@ -247,8 +336,11 @@ const createDocument = (): IBlockSnapshot => {
     juejin,
     attachment,
     columns,
-    table
+    table,
+    ...createMaterialExamples()
   ]);
+  assignStableDemoIds(root);
+  return root;
 };
 
 export const demoJSON = createDocument();

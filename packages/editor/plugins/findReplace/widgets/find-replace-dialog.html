@@ -33,6 +33,14 @@
     </span>
   </div>
 
+  @if (helper.nonReplaceableCount) {
+    <div class="replace-summary" role="status">
+      <span tabindex="0" [csTooltip]="helper.nonReplaceableTooltip">
+        其中 {{ helper.nonReplaceableCount }} 项无法替换
+      </span>
+    </div>
+  }
+
   <!-- Row 2: Replace (non-readonly) -->
   @if (!(doc.readonlySwitch$ | async)) {
     <div class="replace-row">
@@ -41,8 +49,13 @@
         <input type="text" placeholder="替换为" [(ngModel)]="replaceText" (keydown.escape)="onClose.emit()"/>
       </div>
 
-      <button class="action-btn" [disabled]="!helper.matchedList.length" (click)="replaceOne()">替换</button>
-      <button class="action-btn" [disabled]="!helper.matchedList.length" (click)="replaceAll()">全部</button>
+      <fieldset class="replace-action" [disabled]="!helper.matchedList.length || helper.matchedList[helper.matchIndex]?.replaceable === false"
+                [title]="helper.matchedList[helper.matchIndex]?.replaceDisabledReason || ''">
+        <button cs-button csType="secondary" csSize="sm" class="action-btn" (click)="replaceOne()">替换</button>
+      </fieldset>
+      <fieldset class="replace-action" [disabled]="!helper.hasReplaceableMatches">
+        <button cs-button csType="secondary" csSize="sm" class="action-btn" (click)="replaceAll()">全部</button>
+      </fieldset>
     </div>
   }
 </div>

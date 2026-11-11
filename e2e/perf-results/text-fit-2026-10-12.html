@@ -1,0 +1,33 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>文本内容自适应压测 · 2026-10-12</title>
+<style>body{max-width:1240px;margin:40px auto;padding:0 24px;font:15px/1.65 system-ui,sans-serif;color:#182431;background:#f7f9fc}
+h1{font-size:30px;margin-bottom:4px}h2{margin-top:36px;font-size:21px}small,.muted{color:#526475}small{font-weight:400;font-size:14px}
+table{border-collapse:collapse;width:100%;background:white;margin:14px 0;font-variant-numeric:tabular-nums}th,td{padding:10px 12px;border:1px solid #dce3eb;text-align:left}
+th{background:#eaf0f7}td:nth-child(n+3){text-align:right}.callout{border-left:4px solid #b55b00;background:#fff3dc;padding:16px 20px;margin:24px 0}
+code{font-family:ui-monospace,monospace;font-size:13px}a{color:#1659a5}li{margin:5px 0}</style>
+<h1>文本内容自适应压测</h1><p class="muted">2026-10-12 · 当前源码 · 固定尺寸 / 内容自适应配对比较</p>
+<div class="callout"><b>结论：普通混合文档的单对象输入增量较小；同容器多对象同时变化存在明显性能瓶颈。</b>
+<p>虚拟化仍按根块窗口挂载，但一个内容区域内的子对象作为整体挂载。100 个对象批量改字或改宽时，逐对象尺寸写回触发了重复模型估高和浏览器布局；不能据此宣称性能已经达标。</p></div>
+<p>设备：13th Gen Intel(R) Core(TM) i7-13700K，64 GiB 内存，darwin 25.5.0。
+无 CPU 降速，headless 浏览器；同一份冻结的 Angular 开发构建、source map 关闭、静态 HTTP，无构建 watcher。</p>
+<p>共 48 组样本，其中 34 组有效、14 组预热；脚本失败 0。
+下表对每轮先求指标，再取有效轮次中位数。各浏览器独立对照，不混合统计；小样本与本机 RAF 间隔不代表线上 P95、INP 或硬件 FPS。</p>
+<h2>chromium <small>154.0.8037.98</small></h2><table><thead><tr><th>负载</th><th>指标</th><th>固定尺寸 / ms</th><th>自适应 / ms</th><th>比值</th><th>有效轮次/模式</th></tr></thead><tbody><tr><td>1,000 根块 / 200 文本对象</td><td>高速滚动：帧间隔 P95</td><td>37.2</td><td>41.8</td><td>1.12×</td><td>3</td></tr><tr><td>1,000 根块 / 200 文本对象</td><td>真实输入：beforeinput 到第二帧 P95</td><td>31.1</td><td>31.6</td><td>1.02×</td><td>3</td></tr><tr><td>1,000 根块 / 200 文本对象</td><td>批量改字：最长帧间隔</td><td>17.4</td><td>17.4</td><td>1.00×</td><td>3</td></tr><tr><td>1,000 根块 / 200 文本对象</td><td>批量改宽：帧间隔 P95</td><td>17.5</td><td>17.6</td><td>1.01×</td><td>3</td></tr><tr><td>5,000 根块 / 1,000 文本对象</td><td>高速滚动：帧间隔 P95</td><td>40.0</td><td>44.4</td><td>1.11×</td><td>3</td></tr><tr><td>5,000 根块 / 1,000 文本对象</td><td>真实输入：beforeinput 到第二帧 P95</td><td>31.6</td><td>30.9</td><td>0.98×</td><td>3</td></tr><tr><td>5,000 根块 / 1,000 文本对象</td><td>批量改字：最长帧间隔</td><td>21.5</td><td>21.0</td><td>0.98×</td><td>3</td></tr><tr><td>5,000 根块 / 1,000 文本对象</td><td>批量改宽：帧间隔 P95</td><td>17.5</td><td>19.6</td><td>1.12×</td><td>3</td></tr><tr><td>单容器 100 文本对象 + 200 根段落</td><td>高速滚动：帧间隔 P95</td><td>166.9</td><td>173.1</td><td>1.04×</td><td>3</td></tr><tr><td>单容器 100 文本对象 + 200 根段落</td><td>真实输入：beforeinput 到第二帧 P95</td><td>34.2</td><td>33.2</td><td>0.97×</td><td>3</td></tr><tr><td>单容器 100 文本对象 + 200 根段落</td><td>批量改字：最长帧间隔</td><td>20.1</td><td>172.3</td><td>8.57×</td><td>3</td></tr><tr><td>单容器 100 文本对象 + 200 根段落</td><td>批量改宽：帧间隔 P95</td><td>71.7</td><td>188.7</td><td>2.63×</td><td>3</td></tr></tbody></table><h2>firefox <small>151.0</small></h2><table><thead><tr><th>负载</th><th>指标</th><th>固定尺寸 / ms</th><th>自适应 / ms</th><th>比值</th><th>有效轮次/模式</th></tr></thead><tbody><tr><td>5,000 根块 / 1,000 文本对象</td><td>高速滚动：帧间隔 P95</td><td>68.5</td><td>86.5</td><td>1.26×</td><td>2</td></tr><tr><td>5,000 根块 / 1,000 文本对象</td><td>真实输入：beforeinput 到第二帧 P95</td><td>32.5</td><td>33.0</td><td>1.02×</td><td>2</td></tr><tr><td>5,000 根块 / 1,000 文本对象</td><td>批量改字：最长帧间隔</td><td>54.0</td><td>34.5</td><td>0.64×</td><td>2</td></tr><tr><td>5,000 根块 / 1,000 文本对象</td><td>批量改宽：帧间隔 P95</td><td>24.0</td><td>30.5</td><td>1.27×</td><td>2</td></tr><tr><td>单容器 100 文本对象 + 200 根段落</td><td>高速滚动：帧间隔 P95</td><td>254.5</td><td>249.5</td><td>0.98×</td><td>2</td></tr><tr><td>单容器 100 文本对象 + 200 根段落</td><td>真实输入：beforeinput 到第二帧 P95</td><td>34.5</td><td>38.0</td><td>1.10×</td><td>2</td></tr><tr><td>单容器 100 文本对象 + 200 根段落</td><td>批量改字：最长帧间隔</td><td>44.5</td><td>281.0</td><td>6.31×</td><td>2</td></tr><tr><td>单容器 100 文本对象 + 200 根段落</td><td>批量改宽：帧间隔 P95</td><td>112.5</td><td>345.0</td><td>3.07×</td><td>2</td></tr></tbody></table><h2>webkit <small>26.5</small></h2><table><thead><tr><th>负载</th><th>指标</th><th>固定尺寸 / ms</th><th>自适应 / ms</th><th>比值</th><th>有效轮次/模式</th></tr></thead><tbody><tr><td>5,000 根块 / 1,000 文本对象</td><td>高速滚动：帧间隔 P95</td><td>62.0</td><td>58.0</td><td>0.94×</td><td>2</td></tr><tr><td>5,000 根块 / 1,000 文本对象</td><td>真实输入：beforeinput 到第二帧 P95</td><td>31.0</td><td>33.5</td><td>1.08×</td><td>2</td></tr><tr><td>5,000 根块 / 1,000 文本对象</td><td>批量改字：最长帧间隔</td><td>32.0</td><td>45.5</td><td>1.42×</td><td>2</td></tr><tr><td>5,000 根块 / 1,000 文本对象</td><td>批量改宽：帧间隔 P95</td><td>36.5</td><td>39.0</td><td>1.07×</td><td>2</td></tr><tr><td>单容器 100 文本对象 + 200 根段落</td><td>高速滚动：帧间隔 P95</td><td>263.5</td><td>256.5</td><td>0.97×</td><td>2</td></tr><tr><td>单容器 100 文本对象 + 200 根段落</td><td>真实输入：beforeinput 到第二帧 P95</td><td>43.5</td><td>43.5</td><td>1.00×</td><td>2</td></tr><tr><td>单容器 100 文本对象 + 200 根段落</td><td>批量改字：最长帧间隔</td><td>64.0</td><td>422.0</td><td>6.59×</td><td>2</td></tr><tr><td>单容器 100 文本对象 + 200 根段落</td><td>批量改宽：帧间隔 P95</td><td>171.0</td><td>431.0</td><td>2.52×</td><td>2</td></tr></tbody></table>
+<h2>热点计数：Chromium / 单容器 100 对象 / 12 次批量改宽</h2>
+<table><thead><tr><th>指标（三轮中位数）</th><th>固定尺寸</th><th>内容自适应</th></tr></thead><tbody><tr><td>自适应回调次数</td><td>0.0</td><td>1,300.0</td></tr><tr><td>自适应尺寸写回次数</td><td>0.0</td><td>1,200.0</td></tr><tr><td>根高度估算次数</td><td>12.0</td><td>1,212.0</td></tr><tr><td>浏览器布局次数</td><td>24.0</td><td>5,064.0</td></tr><tr><td>自适应回调累计同步耗时 / ms</td><td>0.0</td><td>1,317.5</td></tr><tr><td>模型估高累计耗时 / ms</td><td>7.1</td><td>630.4</td></tr><tr><td>浏览器布局累计耗时 / ms</td><td>24.2</td><td>363.8</td></tr><tr><td>长任务次数（超过 50ms）</td><td>10.0</td><td>23.0</td></tr></tbody></table>
+<p>自适应回调耗时包含其内部模型写入及同步下游工作；模型估高、浏览器布局与该耗时有重叠，不能相加。</p>
+<h2>已确认的范围</h2><ul>
+<li>5,000 根块高速滚动时，观测到最多挂载 61 个根块；没有变为全量根块挂载。</li>
+<li>混合文档离屏批量改字阶段，自适应回调共 0 次；所有有效样本的 1 秒静置阶段共 0 次。当前负载没有观察到持续测量循环。</li>
+<li>输入用 Playwright 派发 80 个真实键盘字符，并检查正文完整性。其他批量动作通过正式 DocCRUD 事务派发，不是鼠标拖动压测。</li>
+<li>初始高度由真实 DOM 校准；两种模式初始几何相同。编辑后的高度和可见块数量按各自语义自然变化。</li>
+</ul>
+<h2>下一步优化方向</h2><ol>
+<li>同帧的多对象测量分批统一执行，减少样式写入和尺寸读取交错造成的重复布局。</li>
+<li>把同批派生尺寸合并到一次模型事务，避免每个对象的尺寸写回都重新估算整个父容器。</li>
+<li>重挂载时按内容、字体和可用宽度的变化判断是否需要重测；离屏期间暂停不必要的观察。</li>
+</ol>
+<p>本轮仅新增压测脚本、运行说明和结果，没有修改生产性能逻辑。容器内部虚拟化属于更大的架构问题，应单独评估。</p>
+<h2>边界与复现</h2><p>测试对象是实际 BlockCraft Doc、组件、Yjs 和输入路径，但宿主插件为空、预取关闭、Demo 不初始化。
+不覆盖 CSES、Tauri、IME、协作网络、生产优化构建或长期内存泄漏。Firefox/WebKit 不支持的 Long Tasks / CDP 指标没有按零处理。</p>
+<p>参见仓库 <code>scripts/perf/README.md</code> 的“文本内容自适应压测”。原始 JSON 包含环境、浏览器版本、源码及构建 hash、逐帧/逐次计数和未删减慢样本。</p>
+<ul><li><a href="text-fit-2026-10-12-chromium.json">text-fit-2026-10-12-chromium.json</a></li><li><a href="text-fit-2026-10-12-cross-browser.json">text-fit-2026-10-12-cross-browser.json</a></li><li><a href="text-fit-2026-10-12-summary.csv">汇总 CSV</a></li></ul></html>

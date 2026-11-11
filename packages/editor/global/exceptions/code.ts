@@ -23,6 +23,7 @@ export enum ErrorCode {
   UserAbortError,
   ExecutionError,
   PluginError,
+  BlockReadonlyError,
 
   // Fatal error should be greater than 10000
   DefaultFatalError = 10000,

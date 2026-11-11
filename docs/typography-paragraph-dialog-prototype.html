@@ -1,0 +1,1569 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BlockCraft 字体与段落设置弹窗原型</title>
+  <link rel="stylesheet" href="../packages/editor/assets/iconfont/bc-iconfont.css">
+  <style>
+    :root {
+      color-scheme: light;
+      --primary: #1668dc;
+      --primary-hover: #0f57bd;
+      --primary-soft: #eaf3ff;
+      --text: #202124;
+      --text-muted: #5f6672;
+      --text-subtle: #7b8491;
+      --line: #d9dde5;
+      --line-soft: #e9ecf1;
+      --surface: #ffffff;
+      --surface-soft: #f6f7f9;
+      --canvas: #eef1f5;
+      --danger: #d92d20;
+      --radius: 8px;
+      --shadow-dialog: 0 24px 64px rgba(24, 32, 48, 0.22), 0 4px 14px rgba(24, 32, 48, 0.12);
+      font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { min-height: 100%; }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background: var(--canvas);
+      font-size: 14px;
+    }
+
+    button, input, select { font: inherit; }
+
+    button, select, input[type="checkbox"], input[type="color"] { cursor: pointer; }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible {
+      outline: 2px solid rgba(22, 104, 220, 0.72);
+      outline-offset: 2px;
+    }
+
+    .prototype-header {
+      min-height: 56px;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      color: #fff;
+      background: #1f2937;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .prototype-title {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .prototype-title strong { font-size: 15px; font-weight: 650; }
+    .prototype-title span { color: #b8c0cc; font-size: 12px; }
+
+    .prototype-switcher {
+      display: flex;
+      gap: 6px;
+      padding: 3px;
+      background: rgba(255,255,255,.08);
+      border-radius: 7px;
+    }
+
+    .prototype-switcher button {
+      height: 30px;
+      padding: 0 12px;
+      color: #dce2ea;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      transition: background-color .16s ease, color .16s ease;
+    }
+
+    .prototype-switcher button:hover,
+    .prototype-switcher button.active {
+      color: #fff;
+      background: rgba(255,255,255,.16);
+    }
+
+    .app-shell {
+      width: min(1440px, calc(100vw - 32px));
+      min-height: calc(100vh - 88px);
+      margin: 16px auto;
+      overflow: hidden;
+      background: var(--surface);
+      border: 1px solid #d6dae1;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(26, 35, 49, .08);
+    }
+
+    .document-topbar {
+      height: 46px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--line-soft);
+      background: #fff;
+    }
+
+    .document-mark {
+      width: 26px;
+      height: 26px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: var(--primary);
+      border-radius: 6px;
+      font-weight: 700;
+    }
+
+    .document-name { font-weight: 600; }
+    .document-state { color: var(--text-subtle); font-size: 12px; }
+
+    .fixed-toolbar {
+      height: 54px;
+      display: flex;
+      align-items: stretch;
+      padding: 6px 8px;
+      overflow-x: auto;
+      background: #fbfbfc;
+      border-bottom: 1px solid var(--line);
+      scrollbar-width: none;
+    }
+
+    .fixed-toolbar::-webkit-scrollbar { display: none; }
+
+    .toolbar-group {
+      position: relative;
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      padding: 0 10px;
+    }
+
+    .toolbar-group + .toolbar-group::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 5px;
+      bottom: 5px;
+      width: 1px;
+      background: var(--line);
+    }
+
+    .toolbar-btn {
+      min-width: 30px;
+      height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      padding: 0 8px;
+      color: #303641;
+      border: 1px solid transparent;
+      border-radius: 5px;
+      background: transparent;
+      transition: background-color .16s ease, border-color .16s ease, color .16s ease;
+    }
+
+    .toolbar-btn:hover { background: #edf0f4; }
+    .toolbar-btn.active { color: var(--primary); background: var(--primary-soft); }
+    .toolbar-btn.wide { min-width: 106px; justify-content: space-between; }
+    .toolbar-btn.medium { min-width: 76px; justify-content: space-between; }
+    .toolbar-btn .bc_xiajaintou { font-size: 10px; color: #68707d; }
+
+    .toolbar-btn.menu-open {
+      color: var(--primary);
+      border-color: #b8d2f0;
+      background: var(--primary-soft);
+    }
+
+    .toolbar-menu-layer {
+      position: fixed;
+      z-index: 18;
+      width: 224px;
+      display: none;
+      overflow: hidden;
+      color: var(--text);
+      background: #fff;
+      border: 1px solid #d3d8e0;
+      border-radius: 7px;
+      box-shadow: 0 12px 30px rgba(24, 32, 48, .16), 0 2px 8px rgba(24, 32, 48, .08);
+    }
+
+    .toolbar-menu-layer.open { display: block; }
+
+    .toolbar-menu__heading {
+      height: 30px;
+      display: flex;
+      align-items: center;
+      padding: 0 11px;
+      color: #7a8390;
+      background: #fafbfc;
+      border-bottom: 1px solid var(--line-soft);
+      font-size: 11px;
+    }
+
+    .toolbar-menu__items { padding: 5px; }
+
+    .toolbar-menu-item {
+      width: 100%;
+      min-height: 32px;
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr) 14px;
+      align-items: center;
+      gap: 7px;
+      padding: 4px 8px;
+      color: #343b47;
+      text-align: left;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      transition: color .14s ease, background-color .14s ease;
+    }
+
+    .toolbar-menu-item:hover,
+    .toolbar-menu-item:focus-visible {
+      color: #202631;
+      background: #f0f3f7;
+      outline: none;
+    }
+
+    .toolbar-menu-item.active { color: var(--primary); }
+    .toolbar-menu-item__check { color: var(--primary); font-size: 12px; text-align: center; }
+    .toolbar-menu-item__label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .toolbar-menu-item__suffix { color: #7a8491; font-size: 10px; text-align: right; }
+
+    .toolbar-menu__divider {
+      height: 1px;
+      margin: 5px 4px;
+      background: var(--line-soft);
+    }
+
+    .toolbar-menu-item.more-settings {
+      min-height: 36px;
+      color: #315f9c;
+      font-weight: 550;
+    }
+
+    .toolbar-menu-item.more-settings .bc_version_settings { color: var(--primary); }
+
+    .document-stage {
+      min-height: calc(100vh - 206px);
+      padding: 34px 28px 64px;
+      background: #eef0f3;
+    }
+
+    .paper {
+      width: min(820px, 100%);
+      min-height: 860px;
+      margin: 0 auto;
+      padding: 76px 82px;
+      background: #fff;
+      box-shadow: 0 2px 10px rgba(33, 42, 56, .12);
+    }
+
+    .paper h1 { margin: 0 0 24px; font-size: 27px; line-height: 1.35; }
+    .paper p { margin: 0 0 16px; color: #343a44; font-size: 16px; line-height: 1.65; }
+    .paper .selected-text { background: #cfe4ff; border-radius: 2px; }
+
+    .modal-layer {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: rgba(27, 34, 46, .36);
+      backdrop-filter: blur(1.5px);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity .16s ease, visibility .16s ease;
+    }
+
+    .modal-layer.open { opacity: 1; visibility: visible; }
+
+    .settings-dialog {
+      width: min(760px, calc(100vw - 32px));
+      max-height: min(760px, calc(100vh - 48px));
+      display: none;
+      overflow: hidden;
+      background: var(--surface);
+      border: 1px solid rgba(22, 30, 44, .18);
+      border-radius: 10px;
+      box-shadow: var(--shadow-dialog);
+      transform: translateY(8px) scale(.992);
+      transition: transform .18s ease;
+    }
+
+    .modal-layer.open .settings-dialog.active {
+      display: flex;
+      flex-direction: column;
+      transform: translateY(0) scale(1);
+    }
+
+    .dialog-header {
+      min-height: 54px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 18px 0 20px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .dialog-heading { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+    .dialog-heading h2 { margin: 0; font-size: 17px; font-weight: 650; }
+    .dialog-heading span { color: var(--text-subtle); font-size: 12px; white-space: nowrap; }
+
+    .icon-button {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      color: #5e6672;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
+      font-size: 20px;
+      line-height: 1;
+    }
+
+    .icon-button:hover { color: #20242b; background: #f0f2f5; }
+
+    .dialog-tabs {
+      min-height: 43px;
+      display: flex;
+      gap: 18px;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .dialog-tab {
+      position: relative;
+      min-width: 54px;
+      padding: 0 2px;
+      color: var(--text-muted);
+      border: 0;
+      background: transparent;
+    }
+
+    .dialog-tab:hover { color: var(--text); }
+    .dialog-tab.active { color: var(--primary); font-weight: 600; }
+    .dialog-tab.active::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -1px;
+      height: 2px;
+      background: var(--primary);
+      border-radius: 2px 2px 0 0;
+    }
+
+    .dialog-body {
+      padding: 18px 20px 20px;
+      overflow: auto;
+      overscroll-behavior: contain;
+    }
+
+    .font-dialog .dialog-body { min-height: 508px; }
+    .paragraph-dialog .dialog-body { min-height: 510px; }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .section-title {
+      margin: 0 0 10px;
+      color: #353d49;
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .form-section + .form-section {
+      margin-top: 17px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line-soft);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .form-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .form-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+    .field { min-width: 0; }
+
+    .field.located {
+      margin: -6px;
+      padding: 6px;
+      background: #f3f8ff;
+      border-radius: 7px;
+      box-shadow: 0 0 0 2px rgba(22, 104, 220, .2);
+    }
+
+    .field > label,
+    .field-label {
+      display: block;
+      margin-bottom: 6px;
+      color: #4d5664;
+      font-size: 12px;
+    }
+
+    .control,
+    .number-control {
+      width: 100%;
+      height: 34px;
+      color: var(--text);
+      background: #fff;
+      border: 1px solid #cfd5de;
+      border-radius: 6px;
+      transition: border-color .16s ease, box-shadow .16s ease;
+    }
+
+    .control { padding: 0 10px; }
+    .control:hover, .number-control:hover { border-color: #9aa4b2; }
+    .control:focus, .number-control:focus-within {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(22, 104, 220, .12);
+      outline: none;
+    }
+
+    .number-control {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      overflow: hidden;
+    }
+
+    .number-control input {
+      width: 100%;
+      height: 32px;
+      padding: 0 8px 0 10px;
+      border: 0;
+      outline: 0;
+      background: transparent;
+    }
+
+    .number-control span {
+      padding-right: 10px;
+      color: #7a8492;
+      font-size: 12px;
+    }
+
+    .toggle-row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+    .format-toggle {
+      min-width: 38px;
+      height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 0 10px;
+      color: #3e4652;
+      border: 1px solid #cfd5de;
+      border-radius: 6px;
+      background: #fff;
+    }
+
+    .format-toggle:hover { background: #f5f7fa; }
+    .format-toggle[aria-pressed="true"] {
+      color: var(--primary);
+      border-color: #96bcea;
+      background: var(--primary-soft);
+    }
+
+    .check-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 9px 16px;
+    }
+
+    .check-item {
+      min-height: 28px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #3f4753;
+    }
+
+    .check-item input { width: 15px; height: 15px; accent-color: var(--primary); }
+
+    .color-field {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      gap: 7px;
+    }
+
+    .color-field input[type="color"] {
+      width: 34px;
+      height: 34px;
+      padding: 3px;
+      border: 1px solid #cfd5de;
+      border-radius: 6px;
+      background: #fff;
+    }
+
+    .preview-card {
+      margin-top: 17px;
+      overflow: hidden;
+      border: 1px solid #d8dde5;
+      border-radius: 7px;
+      background: #fff;
+    }
+
+    .preview-card__label {
+      height: 30px;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      color: #687282;
+      background: #f7f8fa;
+      border-bottom: 1px solid #e4e7ec;
+      font-size: 11px;
+    }
+
+    .font-preview {
+      min-height: 82px;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      overflow: hidden;
+    }
+
+    #fontPreviewText {
+      max-width: 100%;
+      color: #202124;
+      font-size: 20px;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+
+    .advanced-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .preset-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+
+    .preset-chip {
+      height: 28px;
+      padding: 0 9px;
+      color: #4d5664;
+      border: 1px solid #d4dae3;
+      border-radius: 5px;
+      background: #fff;
+    }
+
+    .preset-chip:hover { color: var(--primary); border-color: #a7c6eb; background: #f5f9ff; }
+
+    .helper-text { margin: 7px 0 0; color: #77818f; font-size: 11px; line-height: 1.55; }
+
+    .paragraph-form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 265px;
+      gap: 20px;
+      align-items: start;
+    }
+
+    .paragraph-preview {
+      position: sticky;
+      top: 0;
+      overflow: hidden;
+      border: 1px solid #d8dde5;
+      border-radius: 7px;
+      background: #f6f7f9;
+    }
+
+    .mini-paper {
+      min-height: 330px;
+      display: flex;
+      flex-direction: column;
+      margin: 14px;
+      padding: 28px 24px;
+      background: #fff;
+      box-shadow: 0 1px 5px rgba(27, 35, 47, .09);
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    .mini-paper p {
+      margin: 0;
+      color: #404754;
+      font-size: 12px;
+      line-height: 1.6;
+      transition: margin .16s ease, line-height .16s ease, padding .16s ease, text-align .16s ease;
+    }
+
+    .mini-paper p.focus-paragraph {
+      color: #263449;
+      background: rgba(22, 104, 220, .06);
+      box-shadow: inset 2px 0 0 #7fb2ec;
+    }
+
+    .spacing-rule {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      padding: 9px 10px;
+      color: #526072;
+      background: #f5f8fc;
+      border: 1px solid #dce6f3;
+      border-radius: 6px;
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .spacing-rule .bc_icon { color: var(--primary); margin-top: 1px; }
+
+    .dialog-footer {
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 20px;
+      border-top: 1px solid var(--line-soft);
+      background: #fcfcfd;
+    }
+
+    .footer-actions { display: flex; gap: 8px; margin-left: auto; }
+
+    .btn {
+      min-width: 72px;
+      height: 34px;
+      padding: 0 15px;
+      border-radius: 6px;
+      transition: background-color .16s ease, border-color .16s ease;
+    }
+
+    .btn-secondary {
+      color: #343b46;
+      border: 1px solid #cfd5de;
+      background: #fff;
+    }
+
+    .btn-secondary:hover { background: #f4f6f8; border-color: #aab3bf; }
+
+    .btn-ghost {
+      min-width: auto;
+      color: #596473;
+      border: 1px solid transparent;
+      background: transparent;
+    }
+
+    .btn-ghost:hover { color: #2e3540; background: #f0f2f5; }
+
+    .btn-primary {
+      color: #fff;
+      border: 1px solid var(--primary);
+      background: var(--primary);
+    }
+
+    .btn-primary:hover { border-color: var(--primary-hover); background: var(--primary-hover); }
+
+    .toast {
+      position: fixed;
+      z-index: 40;
+      left: 50%;
+      bottom: 26px;
+      padding: 10px 16px;
+      color: #fff;
+      background: rgba(26, 31, 40, .92);
+      border-radius: 7px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.2);
+      transform: translate(-50%, 18px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .18s ease, transform .18s ease;
+    }
+
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    @media (max-width: 820px) {
+      .prototype-title span { display: none; }
+      .app-shell { width: 100%; min-height: calc(100vh - 56px); margin: 0; border: 0; border-radius: 0; }
+      .paper { padding: 52px 38px; }
+      .toolbar-group--history { display: none; }
+      .modal-layer { padding: 12px; }
+      .settings-dialog { width: calc(100vw - 24px); max-height: calc(100vh - 24px); }
+      .font-dialog .dialog-body, .paragraph-dialog .dialog-body { min-height: 0; }
+      .form-grid, .form-grid.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .advanced-layout, .paragraph-form { grid-template-columns: 1fr; }
+      .paragraph-preview { position: static; }
+      .mini-paper { min-height: 220px; }
+    }
+
+    @media (max-width: 520px) {
+      .prototype-header { align-items: flex-start; flex-direction: column; }
+      .prototype-switcher { width: 100%; }
+      .prototype-switcher button { flex: 1; }
+      .form-grid, .form-grid.two, .form-grid.four, .check-grid { grid-template-columns: 1fr; }
+      .dialog-heading span { display: none; }
+      .dialog-body { padding: 16px; }
+      .dialog-footer { padding: 10px 16px; }
+      .dialog-footer > .btn-ghost { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+        animation-duration: .01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="prototype-header">
+    <div class="prototype-title">
+      <strong>字体与段落高级设置</strong>
+      <span>独立 HTML 交互原型 · 不写入编辑器数据</span>
+    </div>
+    <nav class="prototype-switcher" aria-label="演示更多设置入口">
+      <button type="button" data-demo-menu="font-family">字体下拉</button>
+      <button type="button" data-demo-menu="line-height">行距下拉</button>
+    </nav>
+  </header>
+
+  <main class="app-shell">
+    <div class="document-topbar">
+      <span class="document-mark" aria-hidden="true">B</span>
+      <span class="document-name">产品需求说明书</span>
+      <span class="document-state">已保存</span>
+    </div>
+
+    <div class="fixed-toolbar" aria-label="固定文本工具栏">
+      <div class="toolbar-group toolbar-group--history" role="group" aria-label="历史">
+        <button class="toolbar-btn" title="撤销"><i class="bc_icon bc_chehui"></i></button>
+        <button class="toolbar-btn" title="重做"><i class="bc_icon bc_huitui"></i></button>
+      </div>
+
+      <div class="toolbar-group" role="group" aria-label="样式">
+        <button class="toolbar-btn wide"><span>正文</span><i class="bc_icon bc_xiajaintou"></i></button>
+        <button
+          class="toolbar-btn wide optional"
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded="false"
+          data-toolbar-menu="font-family"
+        ><i class="bc_icon bc_wenben"></i><span class="toolbar-current">微软雅黑</span><i class="bc_icon bc_xiajaintou"></i></button>
+        <button
+          class="toolbar-btn medium"
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded="false"
+          data-toolbar-menu="font-scale"
+        ><i class="bc_icon bc_zihao-jia"></i><span class="toolbar-current">100%</span><i class="bc_icon bc_xiajaintou"></i></button>
+        <button
+          class="toolbar-btn medium optional"
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded="false"
+          data-toolbar-menu="letter-spacing"
+        ><i class="bc_icon bc_zengjiasuojin1"></i><span class="toolbar-current">0em</span><i class="bc_icon bc_xiajaintou"></i></button>
+      </div>
+
+      <div class="toolbar-group" role="group" aria-label="字体">
+        <button class="toolbar-btn active" title="加粗"><i class="bc_icon bc_jiacu"></i></button>
+        <button class="toolbar-btn" title="斜体"><i class="bc_icon bc_xieti"></i></button>
+        <button class="toolbar-btn" title="下划线"><i class="bc_icon bc_xiahuaxian"></i></button>
+        <button class="toolbar-btn" title="删除线"><i class="bc_icon bc_shanchuxian"></i></button>
+        <button class="toolbar-btn optional" title="上标"><i class="bc_icon bc_shangbiao"></i></button>
+        <button class="toolbar-btn optional" title="下标"><i class="bc_icon bc_xiabiao"></i></button>
+      </div>
+
+      <div class="toolbar-group" role="group" aria-label="段落">
+        <button class="toolbar-btn" title="无序列表"><i class="bc_icon bc_wuxuliebiao"></i></button>
+        <button class="toolbar-btn" title="有序列表"><i class="bc_icon bc_youxuliebiao"></i></button>
+        <button class="toolbar-btn" title="待办事项"><i class="bc_icon bc_gongzuoshixiang"></i></button>
+        <button
+          class="toolbar-btn"
+          type="button"
+          title="左对齐"
+          aria-haspopup="menu"
+          aria-expanded="false"
+          data-toolbar-menu="paragraph-align"
+        ><i class="bc_icon bc_zuoduiqi"></i><i class="bc_icon bc_xiajaintou"></i></button>
+        <button
+          class="toolbar-btn medium optional"
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded="false"
+          data-toolbar-menu="line-height"
+        ><i class="bc_icon bc_hangjianju"></i><span class="toolbar-current">1.5</span><i class="bc_icon bc_xiajaintou"></i></button>
+      </div>
+    </div>
+
+    <section class="document-stage" aria-label="文档画布">
+      <article class="paper">
+        <h1>让复杂文档的编辑体验更接近桌面办公软件</h1>
+        <p>BlockCraft 提供块级结构、实时协作和稳定的跨端渲染能力。</p>
+        <p><span class="selected-text">当前选中的文字会在字体弹窗中以草稿形式预览，确认后才应用到文档。</span></p>
+        <p>段落设置则作用于选区覆盖到的可编辑段落，并跳过不可写或不支持的块。</p>
+      </article>
+    </section>
+  </main>
+
+  <div class="toolbar-menu-layer" id="toolbarMenuLayer" role="menu" aria-hidden="true" aria-labelledby="toolbarMenuHeading">
+    <div class="toolbar-menu__heading" id="toolbarMenuHeading"></div>
+    <div class="toolbar-menu__items" id="toolbarMenuItems"></div>
+  </div>
+
+  <div class="modal-layer" id="modalLayer" aria-hidden="true">
+    <section
+      class="settings-dialog font-dialog"
+      data-dialog="font"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="fontDialogTitle"
+    >
+      <header class="dialog-header">
+        <div class="dialog-heading">
+          <h2 id="fontDialogTitle">字体</h2>
+          <span id="fontDialogContext">高级设置</span>
+        </div>
+        <button class="icon-button" type="button" aria-label="关闭字体设置" data-close-dialog>&times;</button>
+      </header>
+
+      <div class="dialog-tabs" role="tablist" aria-label="字体设置分类">
+        <button class="dialog-tab active" type="button" role="tab" aria-selected="true" data-tab="font-basic">字体</button>
+        <button class="dialog-tab" type="button" role="tab" aria-selected="false" data-tab="font-spacing">字符间距</button>
+      </div>
+
+      <div class="dialog-body">
+        <div class="tab-panel active" data-panel="font-basic">
+          <section class="form-section">
+            <h3 class="section-title">字体</h3>
+            <div class="form-grid">
+              <div class="field">
+                <label for="fontFamily">字体</label>
+                <select class="control" id="fontFamily">
+                  <option value="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">系统默认</option>
+                  <option value="'Microsoft YaHei', 'PingFang SC', sans-serif" selected>微软雅黑</option>
+                  <option value="'PingFang SC', 'Microsoft YaHei', sans-serif">苹方</option>
+                  <option value="SimSun, 'Songti SC', serif">宋体</option>
+                  <option value="KaiTi, 'Kaiti SC', serif">楷体</option>
+                  <option value="Arial, Helvetica, sans-serif">Arial</option>
+                  <option value="Calibri, Candara, sans-serif">Calibri</option>
+                  <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="fontStyle">字形</label>
+                <select class="control" id="fontStyle">
+                  <option value="regular">常规</option>
+                  <option value="bold" selected>加粗</option>
+                  <option value="italic">倾斜</option>
+                  <option value="bold-italic">加粗 倾斜</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="fontScale">文字缩放</label>
+                <select class="control" id="fontScale">
+                  <option value="0.75">75%</option>
+                  <option value="0.875">87.5%</option>
+                  <option value="1" selected>100%</option>
+                  <option value="1.125">112.5%</option>
+                  <option value="1.25">125%</option>
+                  <option value="1.5">150%</option>
+                  <option value="2">200%</option>
+                  <option value="3">300%</option>
+                  <option value="custom" hidden>自定义</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <h3 class="section-title">颜色与突出显示</h3>
+            <div class="form-grid two">
+              <div class="field">
+                <span class="field-label">文字颜色</span>
+                <div class="color-field">
+                  <input id="fontColor" type="color" value="#202124" aria-label="文字颜色">
+                  <select class="control" id="fontColorPreset" aria-label="文字颜色预设">
+                    <option value="#202124">自动</option>
+                    <option value="#1668dc">主题蓝</option>
+                    <option value="#d92d20">强调红</option>
+                    <option value="#067647">深绿色</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field">
+                <span class="field-label">突出显示</span>
+                <div class="color-field">
+                  <input id="highlightColor" type="color" value="#fff1a8" aria-label="突出显示颜色">
+                  <select class="control" id="highlightPreset" aria-label="突出显示颜色预设">
+                    <option value="transparent" selected>无颜色</option>
+                    <option value="#fff1a8">浅黄色</option>
+                    <option value="#d7f4e3">浅绿色</option>
+                    <option value="#dcecff">浅蓝色</option>
+                    <option value="custom" hidden>自定义</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <h3 class="section-title">效果</h3>
+            <div class="check-grid">
+              <label class="check-item"><input id="effectUnderline" type="checkbox">下划线</label>
+              <label class="check-item"><input id="effectStrike" type="checkbox">删除线</label>
+              <label class="check-item"><input id="effectCode" type="checkbox">行内代码</label>
+              <label class="check-item"><input id="effectSup" type="checkbox">上标</label>
+              <label class="check-item"><input id="effectSub" type="checkbox">下标</label>
+            </div>
+          </section>
+
+          <div class="preview-card">
+            <div class="preview-card__label">预览</div>
+            <div class="font-preview"><span id="fontPreviewText">BlockCraft 字体预览  AaBbCc  123</span></div>
+          </div>
+        </div>
+
+        <div class="tab-panel" data-panel="font-spacing">
+          <div class="advanced-layout">
+            <div>
+              <section class="form-section">
+                <h3 class="section-title">缩放与字符间距</h3>
+                <div class="form-grid two">
+                  <div class="field">
+                    <label for="advancedScale">文字缩放</label>
+                    <div class="number-control"><input id="advancedScale" type="number" min="50" max="300" step="12.5" value="100"><span>%</span></div>
+                  </div>
+                  <div class="field">
+                    <label for="letterSpacing">字符间距</label>
+                    <div class="number-control"><input id="letterSpacing" type="number" min="-0.1" max="0.5" step="0.025" value="0"><span>em</span></div>
+                  </div>
+                </div>
+                <div class="preset-row" aria-label="字符间距快捷值">
+                  <button class="preset-chip" type="button" data-spacing="-0.075">-0.075em</button>
+                  <button class="preset-chip" type="button" data-spacing="-0.025">-0.025em</button>
+                  <button class="preset-chip" type="button" data-spacing="0">0em</button>
+                  <button class="preset-chip" type="button" data-spacing="0.05">0.05em</button>
+                  <button class="preset-chip" type="button" data-spacing="0.15">0.15em</button>
+                </div>
+                <p class="helper-text">使用真实数值，不把“紧缩 / 加宽”等描述性文案写入文档。</p>
+              </section>
+
+              <section class="form-section">
+                <h3 class="section-title">基线效果</h3>
+                <div class="toggle-row">
+                  <button class="format-toggle baseline-toggle" type="button" aria-pressed="true" data-baseline="normal">标准</button>
+                  <button class="format-toggle baseline-toggle" type="button" aria-pressed="false" data-baseline="sup"><i class="bc_icon bc_shangbiao"></i>上标</button>
+                  <button class="format-toggle baseline-toggle" type="button" aria-pressed="false" data-baseline="sub"><i class="bc_icon bc_xiabiao"></i>下标</button>
+                </div>
+              </section>
+            </div>
+
+            <div class="preview-card" style="margin-top:0">
+              <div class="preview-card__label">预览</div>
+              <div class="font-preview" style="min-height:160px"><span id="spacingPreviewText">字符间距预览  AaBbCc</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <footer class="dialog-footer">
+        <div class="footer-actions">
+          <button class="btn btn-secondary" type="button" data-close-dialog>取消</button>
+          <button class="btn btn-primary" type="button" data-confirm-dialog="font">确定</button>
+        </div>
+      </footer>
+    </section>
+
+    <section
+      class="settings-dialog paragraph-dialog"
+      data-dialog="paragraph"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="paragraphDialogTitle"
+    >
+      <header class="dialog-header">
+        <div class="dialog-heading">
+          <h2 id="paragraphDialogTitle">段落</h2>
+          <span id="paragraphDialogContext">段落设置</span>
+        </div>
+        <button class="icon-button" type="button" aria-label="关闭段落设置" data-close-dialog>&times;</button>
+      </header>
+
+      <div class="dialog-body">
+        <div class="paragraph-form">
+          <div>
+            <section class="form-section">
+              <h3 class="section-title">常规</h3>
+              <div class="form-grid">
+                <div class="field">
+                  <label for="paragraphAlign">对齐方式</label>
+                  <select class="control" id="paragraphAlign">
+                    <option value="left">左对齐</option>
+                    <option value="center">居中</option>
+                    <option value="right">右对齐</option>
+                  </select>
+                </div>
+              </div>
+            </section>
+
+            <section class="form-section">
+              <h3 class="section-title">间距</h3>
+              <div class="form-grid two">
+                <div class="field">
+                  <label for="spaceBefore">段前</label>
+                  <div class="number-control"><input id="spaceBefore" type="number" min="0" max="120" step="2" value="0"><span>pt</span></div>
+                </div>
+                <div class="field">
+                  <label for="spaceAfter">段后</label>
+                  <div class="number-control"><input id="spaceAfter" type="number" min="0" max="120" step="2" value="8"><span>pt</span></div>
+                </div>
+                <div class="field">
+                  <label for="lineSpacingMode">行距</label>
+                  <select class="control" id="lineSpacingMode">
+                    <option value="1">单倍行距</option>
+                    <option value="1.25">1.25 倍</option>
+                    <option value="1.5" selected>1.5 倍</option>
+                    <option value="1.75">1.75 倍</option>
+                    <option value="2">2 倍</option>
+                    <option value="2.5">2.5 倍</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="paragraphGapRule">相邻段落</label>
+                  <select class="control" id="paragraphGapRule">
+                    <option value="max" selected>取段前/段后较大值</option>
+                    <option value="sum">段前/段后累加</option>
+                  </select>
+                </div>
+              </div>
+
+              <label class="check-item" style="margin-top:10px">
+                <input id="sameStyleNoGap" type="checkbox">
+                相同样式的连续段落之间不添加间距
+              </label>
+
+              <div class="spacing-rule">
+                <i class="bc_icon bc_tixing" aria-hidden="true"></i>
+                <span>“段间距”不再单独存第三个值；它由上一段的“段后”和下一段的“段前”按所选规则计算，避免重复叠加。</span>
+              </div>
+            </section>
+          </div>
+
+          <aside class="paragraph-preview" aria-label="段落设置预览">
+            <div class="preview-card__label">预览</div>
+            <div class="mini-paper" id="paragraphPreview">
+              <p>这是上一段文字，用于观察段前间距。</p>
+              <p class="focus-paragraph">这是当前段落。调整行距、段前和段后时，预览会即时更新，但不会写入文档。</p>
+              <p>这是下一段文字，用于观察段后间距。</p>
+            </div>
+          </aside>
+        </div>
+      </div>
+
+      <footer class="dialog-footer">
+        <div class="footer-actions">
+          <button class="btn btn-secondary" type="button" data-close-dialog>取消</button>
+          <button class="btn btn-primary" type="button" data-confirm-dialog="paragraph">确定</button>
+        </div>
+      </footer>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const toolbarMenuLayer = document.getElementById('toolbarMenuLayer');
+    const toolbarMenuHeading = document.getElementById('toolbarMenuHeading');
+    const toolbarMenuItems = document.getElementById('toolbarMenuItems');
+    const toolbarTriggers = [...document.querySelectorAll('[data-toolbar-menu]')];
+    const demoMenuButtons = [...document.querySelectorAll('[data-demo-menu]')];
+    const modalLayer = document.getElementById('modalLayer');
+    const dialogs = [...document.querySelectorAll('.settings-dialog')];
+    let activeMenuName = null;
+    let activeMenuTrigger = null;
+    let activeDialogName = null;
+    let restoreFocusTo = null;
+
+    const toolbarMenus = {
+      'font-family': {
+        title: '字体',
+        controlId: 'fontFamily',
+        items: [
+          {label: '系统默认', value: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"},
+          {label: '微软雅黑', value: "'Microsoft YaHei', 'PingFang SC', sans-serif"},
+          {label: '苹方', value: "'PingFang SC', 'Microsoft YaHei', sans-serif"},
+          {label: '宋体', value: "SimSun, 'Songti SC', serif"},
+          {label: 'Arial', value: 'Arial, Helvetica, sans-serif'},
+        ],
+        more: {dialog: 'font', tab: 'font-basic', focusId: 'fontFamily', context: '字体'},
+      },
+      'font-scale': {
+        title: '文字缩放',
+        controlId: 'fontScale',
+        items: [
+          {label: '75%', value: '0.75'},
+          {label: '87.5%', value: '0.875'},
+          {label: '100%', value: '1'},
+          {label: '112.5%', value: '1.125'},
+          {label: '125%', value: '1.25'},
+          {label: '150%', value: '1.5'},
+          {label: '200%', value: '2'},
+        ],
+        more: {dialog: 'font', tab: 'font-basic', focusId: 'fontScale', context: '文字缩放'},
+      },
+      'letter-spacing': {
+        title: '字符间距',
+        controlId: 'letterSpacing',
+        items: [
+          {label: '-0.075em', value: '-0.075'},
+          {label: '-0.025em', value: '-0.025'},
+          {label: '默认（0em）', toolbarLabel: '0em', value: '0'},
+          {label: '0.05em', value: '0.05'},
+          {label: '0.15em', value: '0.15'},
+        ],
+        more: {dialog: 'font', tab: 'font-spacing', focusId: 'letterSpacing', context: '字符间距'},
+      },
+      'paragraph-align': {
+        title: '对齐方式',
+        controlId: 'paragraphAlign',
+        iconTarget: true,
+        items: [
+          {label: '左对齐', value: 'left', icon: 'bc_zuoduiqi'},
+          {label: '居中', value: 'center', icon: 'bc_juzhongduiqi'},
+          {label: '右对齐', value: 'right', icon: 'bc_youduiqi'},
+        ],
+        more: {dialog: 'paragraph', focusId: 'paragraphAlign', context: '对齐方式'},
+      },
+      'line-height': {
+        title: '行距',
+        controlId: 'lineSpacingMode',
+        items: [
+          {label: '单倍行距', toolbarLabel: '1.0', value: '1'},
+          {label: '1.25 倍', toolbarLabel: '1.25', value: '1.25'},
+          {label: '1.5 倍', toolbarLabel: '1.5', value: '1.5'},
+          {label: '1.75 倍', toolbarLabel: '1.75', value: '1.75'},
+          {label: '2 倍', toolbarLabel: '2.0', value: '2'},
+          {label: '2.5 倍', toolbarLabel: '2.5', value: '2.5'},
+        ],
+        more: {dialog: 'paragraph', focusId: 'lineSpacingMode', context: '行距'},
+      },
+    };
+
+    function setDialogTab(dialog, tabName) {
+      if (!tabName) return;
+      dialog.querySelectorAll('.dialog-tab').forEach(item => {
+        const active = item.dataset.tab === tabName;
+        item.classList.toggle('active', active);
+        item.setAttribute('aria-selected', String(active));
+      });
+      dialog.querySelectorAll('.tab-panel').forEach(panel => {
+        panel.classList.toggle('active', panel.dataset.panel === tabName);
+      });
+    }
+
+    function clearLocatedField() {
+      document.querySelectorAll('.field.located').forEach(field => field.classList.remove('located'));
+    }
+
+    function openDialog(name, trigger, options = {}) {
+      const dialog = dialogs.find(item => item.dataset.dialog === name);
+      if (!dialog) return;
+      closeToolbarMenu(false);
+      clearLocatedField();
+      restoreFocusTo = trigger || document.activeElement;
+      activeDialogName = name;
+      dialogs.forEach(item => item.classList.toggle('active', item === dialog));
+      setDialogTab(dialog, options.tab);
+      document.getElementById('fontDialogContext').textContent = name === 'font'
+        ? (options.context || '高级设置')
+        : '高级设置';
+      document.getElementById('paragraphDialogContext').textContent = name === 'paragraph'
+        ? (options.context || '段落设置')
+        : '段落设置';
+      modalLayer.classList.add('open');
+      modalLayer.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+      requestAnimationFrame(() => {
+        const focusTarget = options.focusId
+          ? document.getElementById(options.focusId)
+          : dialog.querySelector('.dialog-body select, .dialog-body input, .dialog-body button');
+        const field = focusTarget?.closest('.field');
+        field?.classList.add('located');
+        focusTarget?.scrollIntoView({block: 'center'});
+        focusTarget?.focus();
+      });
+    }
+
+    function closeDialog() {
+      if (!activeDialogName) return;
+      modalLayer.classList.remove('open');
+      modalLayer.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = '';
+      clearLocatedField();
+      activeDialogName = null;
+      const focusTarget = restoreFocusTo;
+      restoreFocusTo = null;
+      setTimeout(() => focusTarget?.focus?.(), 30);
+    }
+
+    function closeToolbarMenu(restoreFocus = true) {
+      if (!activeMenuName) return;
+      const trigger = activeMenuTrigger;
+      toolbarMenuLayer.classList.remove('open');
+      toolbarMenuLayer.setAttribute('aria-hidden', 'true');
+      toolbarTriggers.forEach(button => {
+        button.classList.remove('menu-open');
+        button.setAttribute('aria-expanded', 'false');
+      });
+      demoMenuButtons.forEach(button => button.classList.remove('active'));
+      activeMenuName = null;
+      activeMenuTrigger = null;
+      if (restoreFocus) trigger?.focus();
+    }
+
+    function applyToolbarMenuValue(config, item, trigger) {
+      const control = document.getElementById(config.controlId);
+      if (!control) return;
+      control.value = item.value;
+      control.dispatchEvent(new Event('input', {bubbles: true}));
+      control.dispatchEvent(new Event('change', {bubbles: true}));
+      const currentLabel = trigger.querySelector('.toolbar-current');
+      if (currentLabel) currentLabel.textContent = item.toolbarLabel || item.label;
+      if (config.iconTarget && item.icon) {
+        const icon = trigger.querySelector('.bc_icon:not(.bc_xiajaintou)');
+        if (icon) icon.className = `bc_icon ${item.icon}`;
+        trigger.title = item.label;
+      }
+      closeToolbarMenu();
+    }
+
+    function positionToolbarMenu(trigger) {
+      const rect = trigger.getBoundingClientRect();
+      const width = toolbarMenuLayer.offsetWidth || 224;
+      const left = Math.min(window.innerWidth - width - 10, Math.max(10, rect.left));
+      toolbarMenuLayer.style.left = `${left}px`;
+      toolbarMenuLayer.style.top = `${rect.bottom + 6}px`;
+      const menuRect = toolbarMenuLayer.getBoundingClientRect();
+      if (menuRect.bottom > window.innerHeight - 10) {
+        toolbarMenuLayer.style.top = `${Math.max(10, rect.top - menuRect.height - 6)}px`;
+      }
+    }
+
+    function renderToolbarMenu(name, trigger) {
+      const config = toolbarMenus[name];
+      const currentValue = document.getElementById(config.controlId)?.value;
+      toolbarMenuHeading.textContent = config.title;
+      toolbarMenuItems.replaceChildren();
+
+      config.items.forEach(item => {
+        const button = document.createElement('button');
+        const active = String(currentValue) === String(item.value);
+        button.type = 'button';
+        button.className = `toolbar-menu-item${active ? ' active' : ''}`;
+        button.setAttribute('role', 'menuitemradio');
+        button.setAttribute('aria-checked', String(active));
+
+        const check = document.createElement('span');
+        check.className = 'toolbar-menu-item__check';
+        if (active) check.innerHTML = '<i class="bc_icon bc_xuanzhong"></i>';
+        const label = document.createElement('span');
+        label.className = 'toolbar-menu-item__label';
+        label.textContent = item.label;
+        const suffix = document.createElement('span');
+        suffix.className = 'toolbar-menu-item__suffix';
+        button.append(check, label, suffix);
+        button.addEventListener('click', () => applyToolbarMenuValue(config, item, trigger));
+        toolbarMenuItems.append(button);
+      });
+
+      const divider = document.createElement('div');
+      divider.className = 'toolbar-menu__divider';
+      divider.setAttribute('role', 'separator');
+      toolbarMenuItems.append(divider);
+
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'toolbar-menu-item more-settings';
+      more.setAttribute('role', 'menuitem');
+      more.innerHTML = '<i class="bc_icon bc_version_settings toolbar-menu-item__check"></i><span class="toolbar-menu-item__label">更多设置…</span><i class="bc_icon bc_youjiantou toolbar-menu-item__suffix"></i>';
+      more.addEventListener('click', () => {
+        const originTrigger = trigger;
+        closeToolbarMenu(false);
+        openDialog(config.more.dialog, originTrigger, config.more);
+      });
+      toolbarMenuItems.append(more);
+    }
+
+    function openToolbarMenu(name, trigger, focusFirst = true) {
+      if (!toolbarMenus[name] || !trigger) return;
+      if (activeMenuName === name && activeMenuTrigger === trigger) {
+        closeToolbarMenu();
+        return;
+      }
+      closeToolbarMenu(false);
+      activeMenuName = name;
+      activeMenuTrigger = trigger;
+      renderToolbarMenu(name, trigger);
+      toolbarMenuLayer.classList.add('open');
+      toolbarMenuLayer.setAttribute('aria-hidden', 'false');
+      trigger.classList.add('menu-open');
+      trigger.setAttribute('aria-expanded', 'true');
+      demoMenuButtons.forEach(button => button.classList.toggle('active', button.dataset.demoMenu === name));
+      positionToolbarMenu(trigger);
+      if (focusFirst) requestAnimationFrame(() => toolbarMenuItems.querySelector('button')?.focus());
+    }
+
+    toolbarTriggers.forEach(trigger => {
+      trigger.addEventListener('click', () => openToolbarMenu(trigger.dataset.toolbarMenu, trigger));
+    });
+
+    demoMenuButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        const trigger = document.querySelector(`[data-toolbar-menu="${button.dataset.demoMenu}"]`);
+        openToolbarMenu(button.dataset.demoMenu, trigger);
+      });
+    });
+
+    document.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', closeDialog));
+
+    modalLayer.addEventListener('mousedown', event => {
+      if (event.target === modalLayer) closeDialog();
+    });
+
+    document.addEventListener('pointerdown', event => {
+      if (!activeMenuName) return;
+      if (toolbarMenuLayer.contains(event.target) || activeMenuTrigger?.contains(event.target)) return;
+      closeToolbarMenu(false);
+    });
+
+    window.addEventListener('resize', () => closeToolbarMenu(false));
+    window.addEventListener('scroll', () => closeToolbarMenu(false), true);
+
+    document.addEventListener('keydown', event => {
+      if (activeMenuName && !activeDialogName) {
+        const menuButtons = [...toolbarMenuItems.querySelectorAll('button')];
+        const currentIndex = menuButtons.indexOf(document.activeElement);
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          closeToolbarMenu();
+          return;
+        }
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          const delta = event.key === 'ArrowDown' ? 1 : -1;
+          const next = currentIndex < 0
+            ? 0
+            : (currentIndex + delta + menuButtons.length) % menuButtons.length;
+          menuButtons[next]?.focus();
+          return;
+        }
+        if (event.key === 'Home' || event.key === 'End') {
+          event.preventDefault();
+          menuButtons[event.key === 'Home' ? 0 : menuButtons.length - 1]?.focus();
+          return;
+        }
+      }
+      if (!activeDialogName) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeDialog();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const activeDialog = dialogs.find(item => item.classList.contains('active'));
+      const focusable = [...activeDialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled])')]
+        .filter(item => item.offsetParent !== null);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+
+    document.querySelectorAll('.dialog-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const dialog = tab.closest('.settings-dialog');
+        setDialogTab(dialog, tab.dataset.tab);
+      });
+    });
+
+    const fontFamily = document.getElementById('fontFamily');
+    const fontStyle = document.getElementById('fontStyle');
+    const fontScale = document.getElementById('fontScale');
+    const advancedScale = document.getElementById('advancedScale');
+    const letterSpacing = document.getElementById('letterSpacing');
+    const fontColor = document.getElementById('fontColor');
+    const fontColorPreset = document.getElementById('fontColorPreset');
+    const highlightColor = document.getElementById('highlightColor');
+    const highlightPreset = document.getElementById('highlightPreset');
+    const fontPreviewText = document.getElementById('fontPreviewText');
+    const spacingPreviewText = document.getElementById('spacingPreviewText');
+    let currentFontScale = Number(fontScale.value || 1);
+
+    function fontEffectState() {
+      return {
+        underline: document.getElementById('effectUnderline').checked,
+        strike: document.getElementById('effectStrike').checked,
+        code: document.getElementById('effectCode').checked,
+        sup: document.getElementById('effectSup').checked,
+        sub: document.getElementById('effectSub').checked,
+      };
+    }
+
+    function updateFontPreview(scaleSource = 'preserve') {
+      const style = fontStyle.value;
+      const effects = fontEffectState();
+      if (scaleSource === 'advanced') {
+        currentFontScale = Math.min(3, Math.max(.5, Number(advancedScale.value || 100) / 100));
+        const matchingPreset = [...fontScale.options].find(option =>
+          option.value !== 'custom' && Number(option.value) === currentFontScale
+        );
+        fontScale.value = matchingPreset?.value || 'custom';
+      } else if (scaleSource === 'basic' && fontScale.value !== 'custom') {
+        currentFontScale = Number(fontScale.value || 1);
+        advancedScale.value = String(currentFontScale * 100);
+      }
+      const scale = currentFontScale;
+      [fontPreviewText, spacingPreviewText].forEach(preview => {
+        preview.style.fontFamily = fontFamily.value;
+        preview.style.fontWeight = style.includes('bold') ? '700' : '400';
+        preview.style.fontStyle = style.includes('italic') ? 'italic' : 'normal';
+        preview.style.color = fontColor.value;
+        preview.style.backgroundColor = highlightPreset.value === 'transparent' ? 'transparent' : highlightColor.value;
+      });
+      fontPreviewText.style.fontSize = `${20 * scale}px`;
+      fontPreviewText.style.letterSpacing = `${Number(letterSpacing.value || 0)}em`;
+      fontPreviewText.style.textDecoration = [effects.underline && 'underline', effects.strike && 'line-through'].filter(Boolean).join(' ') || 'none';
+      fontPreviewText.style.fontFamily = effects.code ? 'ui-monospace, SFMono-Regular, Menlo, monospace' : fontFamily.value;
+      fontPreviewText.style.verticalAlign = effects.sup ? 'super' : effects.sub ? 'sub' : 'baseline';
+      spacingPreviewText.style.fontSize = `${20 * scale}px`;
+      spacingPreviewText.style.letterSpacing = `${Number(letterSpacing.value || 0)}em`;
+    }
+
+    [fontFamily, fontStyle, letterSpacing, fontColor].forEach(control => {
+      control.addEventListener('input', () => updateFontPreview());
+    });
+    highlightColor.addEventListener('input', () => {
+      highlightPreset.value = 'custom';
+      updateFontPreview();
+    });
+    fontScale.addEventListener('input', () => updateFontPreview('basic'));
+    advancedScale.addEventListener('input', () => updateFontPreview('advanced'));
+
+    fontColorPreset.addEventListener('change', () => { fontColor.value = fontColorPreset.value; updateFontPreview(); });
+    highlightPreset.addEventListener('change', () => {
+      if (highlightPreset.value !== 'transparent') highlightColor.value = highlightPreset.value;
+      updateFontPreview();
+    });
+
+    ['effectUnderline', 'effectStrike', 'effectCode', 'effectSup', 'effectSub'].forEach(id => {
+      document.getElementById(id).addEventListener('change', event => {
+        if (id === 'effectSup' && event.target.checked) document.getElementById('effectSub').checked = false;
+        if (id === 'effectSub' && event.target.checked) document.getElementById('effectSup').checked = false;
+        updateFontPreview();
+      });
+    });
+
+    document.querySelectorAll('[data-spacing]').forEach(button => {
+      button.addEventListener('click', () => { letterSpacing.value = button.dataset.spacing; updateFontPreview(); });
+    });
+
+    document.querySelectorAll('.baseline-toggle').forEach(button => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('.baseline-toggle').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+        const baseline = button.dataset.baseline;
+        spacingPreviewText.style.verticalAlign = baseline === 'sup' ? 'super' : baseline === 'sub' ? 'sub' : 'baseline';
+      });
+    });
+
+    const paragraphControls = {
+      align: document.getElementById('paragraphAlign'),
+      before: document.getElementById('spaceBefore'),
+      after: document.getElementById('spaceAfter'),
+      lineHeight: document.getElementById('lineSpacingMode'),
+      gapRule: document.getElementById('paragraphGapRule'),
+      sameStyle: document.getElementById('sameStyleNoGap'),
+    };
+
+    function ptToPx(value) { return Number(value || 0) * 1.333; }
+
+    function updateParagraphPreview() {
+      const preview = document.getElementById('paragraphPreview');
+      const paragraphs = [...preview.querySelectorAll('p')];
+      const focus = preview.querySelector('.focus-paragraph');
+      focus.style.textAlign = paragraphControls.align.value;
+      focus.style.lineHeight = paragraphControls.lineHeight.value;
+      const before = Math.min(48, ptToPx(paragraphControls.before.value));
+      const after = Math.min(48, ptToPx(paragraphControls.after.value));
+      const neighbourGap = 8;
+      const beforeGap = paragraphControls.gapRule.value === 'sum'
+        ? neighbourGap + before
+        : Math.max(neighbourGap, before);
+      const afterGap = paragraphControls.gapRule.value === 'sum'
+        ? neighbourGap + after
+        : Math.max(neighbourGap, after);
+      focus.style.marginTop = '0';
+      focus.style.marginBottom = paragraphControls.sameStyle.checked ? '0' : `${afterGap}px`;
+      paragraphs[0].style.marginBottom = paragraphControls.sameStyle.checked ? '0' : `${beforeGap}px`;
+      paragraphs[2].style.marginTop = '0';
+    }
+
+    Object.values(paragraphControls).forEach(control => control.addEventListener('input', updateParagraphPreview));
+
+    const toast = document.getElementById('toast');
+    let toastTimer;
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+    }
+
+    document.querySelectorAll('[data-confirm-dialog]').forEach(button => {
+      button.addEventListener('click', () => {
+        const name = button.dataset.confirmDialog;
+        closeDialog();
+        showToast(name === 'font' ? '已模拟应用字体设置' : '已模拟应用段落设置');
+      });
+    });
+
+    updateFontPreview();
+    updateParagraphPreview();
+    const params = new URLSearchParams(location.search);
+    const requestedDialog = params.get('dialog');
+    const requestedMenu = params.get('menu');
+    const requestedTarget = params.get('target');
+    if (toolbarMenus[requestedTarget]) {
+      const config = toolbarMenus[requestedTarget];
+      const trigger = document.querySelector(`[data-toolbar-menu="${requestedTarget}"]`);
+      openDialog(config.more.dialog, trigger, config.more);
+    } else if (requestedDialog === 'font' || requestedDialog === 'paragraph') {
+      openDialog(requestedDialog, document.querySelector(`[data-demo-menu="${requestedDialog === 'font' ? 'font-family' : 'line-height'}"]`));
+    } else {
+      const initialMenu = toolbarMenus[requestedMenu] ? requestedMenu : 'font-family';
+      const initialTrigger = document.querySelector(`[data-toolbar-menu="${initialMenu}"]`);
+      requestAnimationFrame(() => openToolbarMenu(initialMenu, initialTrigger, false));
+    }
+  </script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 import {IBlockSnapshot} from "../../block-std";
-import {IAdapter} from "../../services";
+import {IAdapter} from '../../host/adapter.service';
 import {ClipboardDataType} from "./types";
 
 export const BLOCKCRAFT_WEB_SNAPSHOT_MIME = `web ${ClipboardDataType.BLOCKCRAFT_SNAPSHOT}`;
@@ -66,6 +66,11 @@ function decodeClipboardPayload(raw: string) {
 function buildClipboardMarker(snapshot: IBlockSnapshot) {
   const payload = encodeClipboardPayload(snapshot);
   return `<span class="${BLOCKCRAFT_CLIPBOARD_MARKER_CLASS}" ${BLOCKCRAFT_CLIPBOARD_FORMAT_ATTR}="${BLOCKCRAFT_CLIPBOARD_FORMAT}" ${BLOCKCRAFT_CLIPBOARD_VERSION_ATTR}="${BLOCKCRAFT_CLIPBOARD_VERSION}" ${BLOCKCRAFT_CLIPBOARD_PAYLOAD_ATTR}="${payload}"></span>`;
+}
+
+/** HTML fallback that can be written synchronously during a native copy event. */
+export function buildClipboardSnapshotMarkerHtml(snapshot: IBlockSnapshot) {
+  return buildClipboardMarker(snapshot);
 }
 
 export function decorateClipboardHtml(html: string, snapshot: IBlockSnapshot) {

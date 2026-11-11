@@ -1,0 +1,431 @@
+import {
+  INLINE_TYPOGRAPHY_ATTRS, type InlineTypographyKey, type TypographyFontFamilyId,
+} from '@ccc/blockcraft/framework/model';
+export {INLINE_TYPOGRAPHY_ATTRS} from '@ccc/blockcraft/framework/model';
+export type {InlineTypographyAttr, InlineTypographyKey, TypographyFontFamilyId} from '@ccc/blockcraft/framework/model';
+
+export interface TypographyFontFamilyOption {
+  readonly id: TypographyFontFamilyId;
+  readonly label: string;
+  readonly css: string;
+}
+
+export const INLINE_FONT_SCALE_PRESETS = [
+  0.5, 0.625, 0.75, 0.875, 1, 1.125, 1.25, 1.375, 1.5, 1.75, 2, 2.5, 3,
+] as const;
+
+export const INLINE_LETTER_SPACING_PRESETS = [
+  -0.1, -0.075, -0.05, -0.025, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.4,
+  0.5,
+] as const;
+
+export const PARAGRAPH_LINE_HEIGHT_PRESETS = [
+  1, 1.25, 1.5, 1.75, 2, 2.5,
+] as const;
+
+/**
+ * Safe, portable font stacks. Documents persist only the short `id`; the CSS
+ * stack is resolved at render time so repeated inline runs stay compact.
+ */
+export const TYPOGRAPHY_FONT_FAMILIES: readonly TypographyFontFamilyOption[] =
+  Object.freeze([
+    {
+      id: "sans",
+      label: "系统默认",
+      css: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
+    },
+    {
+      id: "arial",
+      label: "Arial",
+      css: 'Arial, Helvetica, "PingFang SC", "Microsoft YaHei", sans-serif',
+    },
+    {
+      id: "calibri",
+      label: "Calibri",
+      css: 'Calibri, Candara, "Segoe UI", Arial, sans-serif',
+    },
+    {
+      id: "verdana",
+      label: "Verdana",
+      css: 'Verdana, Geneva, "PingFang SC", "Microsoft YaHei", sans-serif',
+    },
+    {
+      id: "tahoma",
+      label: "Tahoma",
+      css: 'Tahoma, Geneva, "PingFang SC", "Microsoft YaHei", sans-serif',
+    },
+    {
+      id: "hei",
+      label: "黑体",
+      css: 'SimHei, "Noto Sans CJK SC", "Source Han Sans SC", sans-serif',
+    },
+    {
+      id: "yahei",
+      label: "微软雅黑",
+      css: '"Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
+    },
+    {
+      id: "pingfang",
+      label: "苹方",
+      css: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
+    },
+    {
+      id: "serif",
+      label: "通用衬线",
+      css: '"Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", SimSun, serif',
+    },
+    {
+      id: "times",
+      label: "Times New Roman",
+      css: '"Times New Roman", Times, "Songti SC", SimSun, serif',
+    },
+    {
+      id: "georgia",
+      label: "Georgia",
+      css: 'Georgia, "Times New Roman", "Songti SC", SimSun, serif',
+    },
+    {
+      id: "simsun",
+      label: "宋体",
+      css: 'SimSun, "Songti SC", "Noto Serif CJK SC", serif',
+    },
+    {
+      id: "kai",
+      label: "楷体",
+      css: '"Kaiti SC", KaiTi, STKaiti, serif',
+    },
+    {
+      id: "xingkai",
+      label: "行楷",
+      css: '"Xingkai SC", STXingkai, "Kaiti SC", KaiTi, STKaiti, serif',
+    },
+    {
+      id: "fang",
+      label: "仿宋",
+      css: 'FangSong, STFangsong, "FangSong_GB2312", serif',
+    },
+    {
+      id: "dengxian",
+      label: "等线",
+      css: 'DengXian, "等线", "PingFang SC", "Microsoft YaHei", sans-serif',
+    },
+    {
+      id: "lishu",
+      label: "隶书",
+      css: 'LiSu, "隶书", "Kaiti SC", KaiTi, serif',
+    },
+    {
+      id: "youyuan",
+      label: "幼圆",
+      css: 'YouYuan, "幼圆", "Yuanti SC", "PingFang SC", sans-serif',
+    },
+    {
+      id: "cambria",
+      label: "Cambria",
+      css: 'Cambria, Georgia, "Times New Roman", "Songti SC", serif',
+    },
+    {
+      id: "palatino",
+      label: "Palatino",
+      css: '"Palatino Linotype", Palatino, "Book Antiqua", "Songti SC", serif',
+    },
+    {
+      id: "trebuchet",
+      label: "Trebuchet MS",
+      css: '"Trebuchet MS", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
+    },
+    {
+      id: "courier",
+      label: "Courier New",
+      css: '"Courier New", Courier, "SFMono-Regular", "Microsoft YaHei", monospace',
+    },
+    {
+      id: "mono",
+      label: "等宽",
+      css: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
+    },
+  ] satisfies TypographyFontFamilyOption[]);
+
+/** Object text also offers the display fonts used by WordArt. */
+export const OBJECT_DISPLAY_FONT_FAMILIES = [
+  {id: 'display-sans', label: '醒目黑体', stack: '"Arial Black", "PingFang SC", "Microsoft YaHei", sans-serif'},
+  {id: 'rounded-sans', label: '圆体', stack: '"Arial Rounded MT Bold", "PingFang SC", "Microsoft YaHei", sans-serif'},
+  {id: 'serif', label: '衬线体', stack: 'Georgia, "Songti SC", SimSun, serif'},
+  {id: 'cjk-hei', label: '中文黑体', stack: '"PingFang SC", "Microsoft YaHei", SimHei, sans-serif'},
+  {id: 'cjk-kai', label: '中文楷体', stack: 'Kaiti SC, KaiTi, STKaiti, serif'},
+  {id: 'condensed-sans', label: '窄体黑体', stack: 'Impact, "Arial Narrow", "Microsoft YaHei", sans-serif'},
+  {id: 'humanist-sans', label: '人文无衬线', stack: 'Trebuchet MS, "PingFang SC", "Microsoft YaHei", sans-serif'},
+  {id: 'slab-serif', label: '粗衬线体', stack: 'Rockwell, "Songti SC", SimSun, serif'},
+  {id: 'cjk-song', label: '中文宋体', stack: 'Songti SC, STSong, SimSun, serif'},
+  {id: 'monospace', label: '等宽体', stack: 'Menlo, Consolas, "Microsoft YaHei", monospace'},
+] as const;
+
+const OBJECT_FONT_FAMILIES = [
+  ...TYPOGRAPHY_FONT_FAMILIES.map(font => ({id: font.id as string, css: font.css})),
+  ...OBJECT_DISPLAY_FONT_FAMILIES.filter(font => !TYPOGRAPHY_FONT_FAMILIES.some(item => item.id === font.id))
+    .map(font => ({id: font.id as string, css: font.stack})),
+];
+
+/** Persist catalog fonts by ID, while keeping custom and old CSS stacks intact. */
+export function compactObjectTextFontFamily(value: string): string {
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, ' ');
+  return OBJECT_FONT_FAMILIES.find(font => font.id === value ||
+    font.css.toLowerCase().replace(/\s+/g, ' ') === normalized)?.id ?? value;
+}
+
+/** Resolve object text IDs for live surfaces, exports and snapshot previews. */
+export function resolveObjectTextFontFamily(value: unknown): string | null {
+  const display = OBJECT_DISPLAY_FONT_FAMILIES.find(font =>
+    font.id !== 'serif' && font.id === value);
+  return display?.stack ?? resolveTypographyFontFamily(value);
+}
+
+const FAMILY_BY_ID = new Map(
+  TYPOGRAPHY_FONT_FAMILIES.map((option) => [option.id, option] as const),
+);
+
+const roundCompact = (value: number): number => Math.round(value * 1000) / 1000;
+
+const boundedNumber = (
+  value: unknown,
+  min: number,
+  max: number,
+): number | null => {
+  const normalized =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim() !== ""
+        ? Number(value)
+        : Number.NaN;
+  return Number.isFinite(normalized) && normalized >= min && normalized <= max
+    ? roundCompact(normalized)
+    : null;
+};
+
+export const isTypographyFontFamilyId = (
+  value: unknown,
+): value is TypographyFontFamilyId =>
+  typeof value === "string" &&
+  FAMILY_BY_ID.has(value as TypographyFontFamilyId);
+
+export const getTypographyFontFamily = (
+  id: unknown,
+): TypographyFontFamilyOption | null =>
+  isTypographyFontFamilyId(id) ? FAMILY_BY_ID.get(id)! : null;
+
+export const resolveTypographyFontFamily = (value: unknown): string | null => {
+  const catalog = getTypographyFontFamily(value);
+  if (catalog) return catalog.css;
+
+  // Preserve safe legacy root `ff` values without accepting CSS expressions.
+  if (typeof value !== "string") return null;
+  const legacy = value.trim();
+  if (
+    !legacy ||
+    legacy.length > 256 ||
+    /[;{}]|(?:url|var|attr|expression)\s*\(/i.test(legacy)
+  )
+    return null;
+  return legacy;
+};
+
+/** Best-effort import bridge for ordinary external HTML font-family styles. */
+export const matchTypographyFontFamily = (
+  value: unknown,
+): TypographyFontFamilyId | null => {
+  if (isTypographyFontFamilyId(value)) return value;
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!normalized) return null;
+
+  for (const option of TYPOGRAPHY_FONT_FAMILIES) {
+    if (option.css.toLowerCase().replace(/\s+/g, " ") === normalized) {
+      return option.id;
+    }
+  }
+  if (/(?:dengxian|等线)/i.test(normalized)) return "dengxian";
+  if (/(?:\blisu\b|隶书)/i.test(normalized)) return "lishu";
+  if (/(?:youyuan|yuanti|幼圆)/i.test(normalized)) return "youyuan";
+  if (/(?:\bcambria\b)/i.test(normalized)) return "cambria";
+  if (/(?:palatino|book antiqua)/i.test(normalized)) return "palatino";
+  if (/(?:trebuchet)/i.test(normalized)) return "trebuchet";
+  if (/(?:\bcourier\b)/i.test(normalized)) return "courier";
+  if (/\b(?:sfmono|consolas|monaco|courier|monospace)\b/i.test(normalized))
+    return "mono";
+  // Prefer running script over the KaiTi fallback in imported font stacks.
+  if (/(?:xingkai|行楷)/i.test(normalized)) return "xingkai";
+  if (/(?:kaiti|stkaiti|楷体)/i.test(normalized)) return "kai";
+  if (/(?:fangsong|仿宋)/i.test(normalized)) return "fang";
+  if (/(?:microsoft yahei|微软雅黑)/i.test(normalized)) return "yahei";
+  if (/(?:pingfang|hiragino sans gb|苹方)/i.test(normalized)) return "pingfang";
+  if (/(?:simsun|宋体)/i.test(normalized)) return "simsun";
+  if (/times new roman|\btimes\b/i.test(normalized)) return "times";
+  if (/\bgeorgia\b/i.test(normalized)) return "georgia";
+  if (/\bcalibri\b/i.test(normalized)) return "calibri";
+  if (/\bverdana\b/i.test(normalized)) return "verdana";
+  if (/\btahoma\b/i.test(normalized)) return "tahoma";
+  if (/\barial\b|\bhelvetica\b/i.test(normalized)) return "arial";
+  if (/(?:simhei|heiti|黑体)/i.test(normalized)) return "hei";
+  // Match sans before the generic `serif` token (`sans-serif` contains it).
+  if (/sans-serif|system-ui/i.test(normalized)) return "sans";
+  if (/(?:songti|serif)/i.test(normalized)) return "serif";
+  return null;
+};
+
+export const normalizeInlineFontScale = (value: unknown): number | null =>
+  boundedNumber(value, 0.5, 3);
+
+/** Compact paragraph-level font scale persisted on editable Block props. */
+export const normalizeParagraphFontScale = (value: unknown): number | null =>
+  boundedNumber(value, 0.5, 3);
+
+/** Resolve paragraph scale together with the block's built-in semantic size. */
+export const resolveEditableBlockFontScale = (
+  props: Record<string, unknown> | undefined,
+  flavour?: string,
+): number => {
+  const paragraphScale = normalizeParagraphFontScale(props?.['pfs']) ?? 1;
+  const heading = props?.['heading'];
+  let presentationScale = flavour === 'caption' ? 0.9 : 1;
+  if (heading === 1) presentationScale = 2;
+  else if (heading === 2) presentationScale = 1.8;
+  else if (heading === 3) presentationScale = 1.6;
+  else if (heading === 4) presentationScale = 1.4;
+  return roundCompact(paragraphScale * presentationScale);
+};
+
+/** Base sizes allow fractional pixels after reversing retained scales. */
+export const normalizeFontSizePixels = (value: unknown): number | null => {
+  const size = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN;
+  return Number.isFinite(size) && size >= 0.1 && size <= 4096 ? Math.round(size * 1e6) / 1e6 : null;
+};
+
+/** A fixed base size overrides the heading/caption default, retaining pfs. */
+export const resolveEditableBlockFontSize = (
+  props: Record<string, unknown> | undefined,
+  flavour: string | undefined,
+  inheritedFontSize: number,
+): number => {
+  const fixed = normalizeFontSizePixels(props?.['fs']);
+  return fixed === null
+    ? inheritedFontSize * resolveEditableBlockFontScale(props, flavour)
+    : fixed * (normalizeParagraphFontScale(props?.['pfs']) ?? 1);
+};
+
+/** Shared live/viewer projection; semantic sizes remain CSS theme defaults. */
+export const editableBlockFontSizeCss = (
+  props: Record<string, unknown> | undefined,
+  flavour?: string,
+): string | null => {
+  const fixed = normalizeFontSizePixels(props?.['fs']);
+  if (fixed !== null) return `${fixed * (normalizeParagraphFontScale(props?.['pfs']) ?? 1)}px`;
+  return normalizeParagraphFontScale(props?.['pfs']) === null
+    ? null : `${resolveEditableBlockFontScale(props, flavour) * 100}%`;
+};
+
+/** Legacy CSS sizes keep their unit; loading a document never rewrites them. */
+export const readInlineFontSize = (attrs: Readonly<Record<string, unknown>>) => {
+  const legacy = typeof attrs['s:fontSize'] === 'string' ? attrs['s:fontSize'].trim() : '';
+  const em = /^([+]?(?:\d+(?:\.\d+)?|\.\d+))em$/i.exec(legacy);
+  const px = /^([+]?(?:\d+(?:\.\d+)?|\.\d+))px$/i.exec(legacy);
+  const compactScale = normalizeInlineFontScale(attrs[INLINE_TYPOGRAPHY_ATTRS.fontScale]);
+  return {
+    pixels: normalizeFontSizePixels(attrs[INLINE_TYPOGRAPHY_ATTRS.fontSize]) ?? (compactScale === null && px ? normalizeFontSizePixels(px[1]) : null),
+    scale: compactScale ?? (em ? normalizeInlineFontScale(em[1]) : null) ?? 1,
+  };
+};
+
+/** Pixel runs use the paragraph multiplier without inheriting its base size. */
+export const inlineFontSizeCss = (pixels: unknown, scale: unknown): string | null => {
+  const px = normalizeFontSizePixels(pixels);
+  const fs = normalizeInlineFontScale(scale);
+  return px !== null
+    ? `calc(${px * (fs ?? 1)}px * var(--bc-block-fs-scale, 1))`
+    : fs !== null ? `${fs}em` : null;
+};
+
+export const normalizeInlineLetterSpacing = (value: unknown): number | null =>
+  boundedNumber(value, -0.1, 0.5);
+
+export const normalizeDocumentFontSize = (value: unknown): number | null =>
+  boundedNumber(value, 10, 32);
+
+export const normalizeTypographyLineHeight = (value: unknown): number | null =>
+  boundedNumber(value, 1, 3);
+
+/** Paragraph dialog values are persisted in typographic points. */
+export const normalizeParagraphSpacing = (value: unknown): number | null =>
+  boundedNumber(value, 0, 120);
+
+export const paragraphPointsToCss = (value: number): string => `${value}pt`;
+
+export const paragraphPointsToPixels = (value: number): number =>
+  Math.round(value * 4 / 3 * 1000) / 1000;
+
+/**
+ * Produces one canonical inline-format patch and removes its legacy CSS alias.
+ * Neutral values are omitted so repeated text runs stay as small as possible.
+ */
+export const createInlineTypographyPatch = (
+  key: InlineTypographyKey,
+  value: unknown,
+): Record<string, TypographyFontFamilyId | number | null> => {
+  switch (key) {
+    case "ff": {
+      const ff = isTypographyFontFamilyId(value) ? value : null;
+      return {
+        [INLINE_TYPOGRAPHY_ATTRS.fontFamily]: ff,
+        "s:fontFamily": null,
+      };
+    }
+    case "fs": {
+      const fs = normalizeInlineFontScale(value);
+      return {
+        [INLINE_TYPOGRAPHY_ATTRS.fontScale]: fs === 1 ? null : fs,
+        "s:fontSize": null,
+      };
+    }
+    case "px":
+      return {[INLINE_TYPOGRAPHY_ATTRS.fontSize]: normalizeFontSizePixels(value)};
+    case "ls": {
+      const ls = normalizeInlineLetterSpacing(value);
+      return {
+        [INLINE_TYPOGRAPHY_ATTRS.letterSpacing]: ls === 0 ? null : ls,
+        "s:letterSpacing": null,
+      };
+    }
+  }
+};
+
+export const inlineTypographyCssProperty = (
+  key: string,
+): "font-family" | "font-size" | "letter-spacing" | null => {
+  switch (key) {
+    case INLINE_TYPOGRAPHY_ATTRS.fontFamily:
+      return "font-family";
+    case INLINE_TYPOGRAPHY_ATTRS.fontScale:
+    case INLINE_TYPOGRAPHY_ATTRS.fontSize:
+      return "font-size";
+    case INLINE_TYPOGRAPHY_ATTRS.letterSpacing:
+      return "letter-spacing";
+    default:
+      return null;
+  }
+};
+
+export const inlineTypographyDatasetKey = (
+  key: string,
+): "bcFf" | "bcFs" | "bcPx" | "bcLs" | null => {
+  switch (key) {
+    case INLINE_TYPOGRAPHY_ATTRS.fontFamily:
+      return "bcFf";
+    case INLINE_TYPOGRAPHY_ATTRS.fontScale:
+      return "bcFs";
+    case INLINE_TYPOGRAPHY_ATTRS.fontSize:
+      return "bcPx";
+    case INLINE_TYPOGRAPHY_ATTRS.letterSpacing:
+      return "bcLs";
+    default:
+      return null;
+  }
+};

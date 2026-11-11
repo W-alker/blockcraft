@@ -1,0 +1,282 @@
+[
+  {
+    "browser": "chromium",
+    "case": "mixed-1000",
+    "phase": "scroll",
+    "metric": "summary.frames.p95",
+    "fixed": 37.19999980926514,
+    "auto": 41.799999952316284,
+    "ratio": 1.1236559184579742,
+    "rounds": 3
+  },
+  {
+    "browser": "chromium",
+    "case": "mixed-1000",
+    "phase": "typing",
+    "metric": "summary.keys.p95",
+    "fixed": 31.09999990463257,
+    "auto": 31.600000143051147,
+    "ratio": 1.016077178133499,
+    "rounds": 3
+  },
+  {
+    "browser": "chromium",
+    "case": "mixed-1000",
+    "phase": "batch-edit",
+    "metric": "summary.frames.max",
+    "fixed": 17.399999856948853,
+    "auto": 17.40000009536743,
+    "ratio": 1.0000000137022174,
+    "rounds": 3
+  },
+  {
+    "browser": "chromium",
+    "case": "mixed-1000",
+    "phase": "width",
+    "metric": "summary.frames.p95",
+    "fixed": 17.5,
+    "auto": 17.600000143051147,
+    "ratio": 1.005714293888637,
+    "rounds": 3
+  },
+  {
+    "browser": "chromium",
+    "case": "mixed-5000",
+    "phase": "scroll",
+    "metric": "summary.frames.p95",
+    "fixed": 40,
+    "auto": 44.39999985694885,
+    "ratio": 1.1099999964237213,
+    "rounds": 3
+  },
+  {
+    "browser": "chromium",
+    "case": "mixed-5000",
+    "phase": "typing",
+    "metric": "summary.keys.p95",
+    "fixed": 31.600000143051147,
+    "auto": 30.90000009536743,
+    "ratio": 0.9778480998571246,
+    "rounds": 3
+  },
+  {
+    "browser": "chromium",
+    "case": "mixed-5000",
+    "phase": "batch-edit",
+    "metric": "summary.frames.max",
+    "fixed": 21.5,
+    "auto": 21,
+    "ratio": 0.9767441860465116,
+    "rounds": 3
+  },
+  {
+    "browser": "chromium",
+    "case": "mixed-5000",
+    "phase": "width",
+    "metric": "summary.frames.p95",
+    "fixed": 17.5,
+    "auto": 19.600000143051147,
+    "ratio": 1.1200000081743513,
+    "rounds": 3
+  },
+  {
+    "browser": "chromium",
+    "case": "nested-100",
+    "phase": "scroll",
+    "metric": "summary.frames.p95",
+    "fixed": 166.90000009536743,
+    "auto": 173.09999990463257,
+    "ratio": 1.0371479916460302,
+    "rounds": 3
+  },
+  {
+    "browser": "chromium",
+    "case": "nested-100",
+    "phase": "typing",
+    "metric": "summary.keys.p95",
+    "fixed": 34.19999980926514,
+    "auto": 33.200000047683716,
+    "ratio": 0.9707602407263608,
+    "rounds": 3
+  },
+  {
+    "browser": "chromium",
+    "case": "nested-100",
+    "phase": "batch-edit",
+    "metric": "summary.frames.max",
+    "fixed": 20.09999990463257,
+    "auto": 172.29999995231628,
+    "ratio": 8.57213934178205,
+    "rounds": 3
+  },
+  {
+    "browser": "chromium",
+    "case": "nested-100",
+    "phase": "width",
+    "metric": "summary.frames.p95",
+    "fixed": 71.70000004768372,
+    "auto": 188.70000004768372,
+    "ratio": 2.6317991620946968,
+    "rounds": 3
+  },
+  {
+    "browser": "firefox",
+    "case": "mixed-5000",
+    "phase": "scroll",
+    "metric": "summary.frames.p95",
+    "fixed": 68.5,
+    "auto": 86.5,
+    "ratio": 1.2627737226277371,
+    "rounds": 2
+  },
+  {
+    "browser": "firefox",
+    "case": "mixed-5000",
+    "phase": "typing",
+    "metric": "summary.keys.p95",
+    "fixed": 32.5,
+    "auto": 33.0,
+    "ratio": 1.0153846153846153,
+    "rounds": 2
+  },
+  {
+    "browser": "firefox",
+    "case": "mixed-5000",
+    "phase": "batch-edit",
+    "metric": "summary.frames.max",
+    "fixed": 54.0,
+    "auto": 34.5,
+    "ratio": 0.6388888888888888,
+    "rounds": 2
+  },
+  {
+    "browser": "firefox",
+    "case": "mixed-5000",
+    "phase": "width",
+    "metric": "summary.frames.p95",
+    "fixed": 24.0,
+    "auto": 30.5,
+    "ratio": 1.2708333333333333,
+    "rounds": 2
+  },
+  {
+    "browser": "firefox",
+    "case": "nested-100",
+    "phase": "scroll",
+    "metric": "summary.frames.p95",
+    "fixed": 254.5,
+    "auto": 249.5,
+    "ratio": 0.9803536345776032,
+    "rounds": 2
+  },
+  {
+    "browser": "firefox",
+    "case": "nested-100",
+    "phase": "typing",
+    "metric": "summary.keys.p95",
+    "fixed": 34.5,
+    "auto": 38.0,
+    "ratio": 1.1014492753623188,
+    "rounds": 2
+  },
+  {
+    "browser": "firefox",
+    "case": "nested-100",
+    "phase": "batch-edit",
+    "metric": "summary.frames.max",
+    "fixed": 44.5,
+    "auto": 281.0,
+    "ratio": 6.314606741573034,
+    "rounds": 2
+  },
+  {
+    "browser": "firefox",
+    "case": "nested-100",
+    "phase": "width",
+    "metric": "summary.frames.p95",
+    "fixed": 112.5,
+    "auto": 345.0,
+    "ratio": 3.066666666666667,
+    "rounds": 2
+  },
+  {
+    "browser": "webkit",
+    "case": "mixed-5000",
+    "phase": "scroll",
+    "metric": "summary.frames.p95",
+    "fixed": 62.0,
+    "auto": 58.0,
+    "ratio": 0.9354838709677419,
+    "rounds": 2
+  },
+  {
+    "browser": "webkit",
+    "case": "mixed-5000",
+    "phase": "typing",
+    "metric": "summary.keys.p95",
+    "fixed": 31.0,
+    "auto": 33.5,
+    "ratio": 1.0806451612903225,
+    "rounds": 2
+  },
+  {
+    "browser": "webkit",
+    "case": "mixed-5000",
+    "phase": "batch-edit",
+    "metric": "summary.frames.max",
+    "fixed": 32.0,
+    "auto": 45.5,
+    "ratio": 1.421875,
+    "rounds": 2
+  },
+  {
+    "browser": "webkit",
+    "case": "mixed-5000",
+    "phase": "width",
+    "metric": "summary.frames.p95",
+    "fixed": 36.5,
+    "auto": 39.0,
+    "ratio": 1.0684931506849316,
+    "rounds": 2
+  },
+  {
+    "browser": "webkit",
+    "case": "nested-100",
+    "phase": "scroll",
+    "metric": "summary.frames.p95",
+    "fixed": 263.5,
+    "auto": 256.5,
+    "ratio": 0.9734345351043643,
+    "rounds": 2
+  },
+  {
+    "browser": "webkit",
+    "case": "nested-100",
+    "phase": "typing",
+    "metric": "summary.keys.p95",
+    "fixed": 43.5,
+    "auto": 43.5,
+    "ratio": 1.0,
+    "rounds": 2
+  },
+  {
+    "browser": "webkit",
+    "case": "nested-100",
+    "phase": "batch-edit",
+    "metric": "summary.frames.max",
+    "fixed": 64.0,
+    "auto": 422.0,
+    "ratio": 6.59375,
+    "rounds": 2
+  },
+  {
+    "browser": "webkit",
+    "case": "nested-100",
+    "phase": "width",
+    "metric": "summary.frames.p95",
+    "fixed": 171.0,
+    "auto": 431.0,
+    "ratio": 2.52046783625731,
+    "rounds": 2
+  }
+]

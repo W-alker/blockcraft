@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-04-07
+> Last updated: 2026-08-28
 
 ## Data Flow Tracing
 
@@ -100,6 +100,48 @@ API call: doc.chain().insertAfter(block, 'paragraph').run()
 3. Check `updateProps()` is used (not `setInitProps()` which skips history)
 
 ## Debugging Tools
+
+### Playground Adapter Lab
+
+The template playground's debug aside includes an `adapter` section. Open
+`Adapter Lab · Markdown` to exercise the registry attached to the current
+template document, including its host-only Blocks and Inline Embeds.
+
+- Select `portable` to inspect the readable standard-Markdown degradation.
+- Select `blockcraft` to exercise lossless BlockCraft directives where no
+  native Markdown form exists.
+- `导出当前文档` serializes the live snapshot into the source editor.
+- `解析源码` shows the reconstructed Snapshot without mutating the document.
+- `往返校验` normalizes generated IDs/meta, compares the supported structure,
+  and reports semantic degradation separately from a BlockCraft-profile loss.
+
+This lab is a manual integration probe, not the adapter contract test suite.
+Every custom flavour/key still needs focused HTML and Markdown import/export
+fixtures, including a round-trip assertion for its non-default properties.
+
+The playground toolbar's `导入 Markdown` action uses the same injected Markdown
+adapter/registry, then hands the resulting root Snapshot to
+`ClipboardManager.applyPasteOption()`. This keeps file import on the normal
+paste transaction, selection, Undo and readonly path. `MarkdownStreamRenderer`
+is reserved for the editable simulated-stream probe; Adapter Lab's `解析源码`
+stops before either write-back layer. When the surfaces differ, first inspect
+the Adapter Lab Snapshot, then test the relevant paste or stream application
+step; do not assume they use different matcher registries.
+
+The standalone Snapshot Viewer Markdown Stream also uses that same
+`MarkdownAdapter` and registry. It has no Stream-specific Markdown planner:
+each coalesced refresh parses the complete accumulated source once, then patches
+the rendered snapshot with stable generated IDs. For a Stream-only mismatch,
+compare the current stream result with a one-shot `MarkdownAdapter` parse using
+the same registry and profile; their snapshot semantics must match.
+Register `MarkdownStreamViewerOptions.onError` while debugging custom adapters:
+a failed refresh preserves the last successful view and the next source update
+retries instead of poisoning the stream queue.
+
+The editable `MarkdownStreamRenderer` returns a Promise from `append()`,
+`replace()`, `clear()`, and `flush()`. Observe rejection when debugging a custom
+adapter. A rejected call no longer poisons later input, and a renderer destroyed
+during parsing must not write the completed stale Snapshot into `BlockCraftDoc`.
 
 ### Logger
 

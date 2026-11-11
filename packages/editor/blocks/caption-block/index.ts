@@ -3,6 +3,8 @@ import {BlockNodeType, DeltaInsert} from "../../framework/block-std/types";
 import {EditableBlockNative} from "../../framework";
 import {CaptionBlockComponent} from "./caption.block";
 
+export * from './agent'
+
 export interface CaptionBlockModel extends EditableBlockNative {
   flavour: 'caption'
 }
@@ -15,8 +17,12 @@ export const CaptionBlockSchema: IBlockSchemaOptions<CaptionBlockModel> = {
   metadata: {
     version: 1,
     label: "标题",
+    description: "为图片等内容添加标题说明",
     isLeaf: true,
-    includeChildren: ['caption']
+    includeChildren: ['caption'],
+    virtualization: {
+      speculativeMount: 'safe',
+    },
   }
 }
 

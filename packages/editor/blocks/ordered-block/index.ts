@@ -6,6 +6,9 @@ import {
   EditableBlockCreateSnapshotParams
 } from "../../framework";
 import {OrderedBlockComponent} from "./ordered.block";
+
+export * from './agent'
+import {isOrderedMarkerStyleId, OrderedMarkerStyleId} from "./utils";
 export * from './utils'
 
 export interface OrderedBlockModel extends EditableBlockNative {
@@ -13,20 +16,42 @@ export interface OrderedBlockModel extends EditableBlockNative {
   props: {
     order: number
     start?: number | null
+    /** Continue the nearest preceding compatible list across non-ordered siblings. */
+    continuePrevious?: boolean
+    /** Word-like marker preset. Missing/null keeps the historical depth cycle. */
+    ms?: OrderedMarkerStyleId | null
   } & IEditableBlockProps
+}
+
+const createEditableOrderedSnapshot = editableBlockCreateSnapShotFn<OrderedBlockModel>(
+  'ordered',
+  {order: 0},
+)
+
+const createOrderedSnapshot = (...args: EditableBlockCreateSnapshotParams) => {
+  const snapshot = createEditableOrderedSnapshot(...args)
+  const markerStyle = args[1]?.['ms']
+  if (isOrderedMarkerStyleId(markerStyle)) {
+    snapshot.props['ms'] = markerStyle
+  }
+  return snapshot
 }
 
 export const OrderedBlockSchema: IBlockSchemaOptions<OrderedBlockModel> = {
   flavour: 'ordered',
   nodeType: BlockNodeType.editable,
   component: OrderedBlockComponent,
-  createSnapshot: editableBlockCreateSnapShotFn<OrderedBlockModel>('ordered', {order: 0}),
+  createSnapshot: createOrderedSnapshot,
   metadata: {
     version: 1,
     label: "有序列表",
+    description: "创建按顺序编号的列表",
     icon: 'bc_icon bc_youxuliebiao-color',
     svgIcon: 'bc_youxuliebiao-color',
     placeholder: '列表项',
+    virtualization: {
+      speculativeMount: 'safe',
+    },
   }
 }
 

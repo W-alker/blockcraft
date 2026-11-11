@@ -1,0 +1,42 @@
+<main>
+  <header>
+    <div>
+      <a class="back" href="/">BlockCraft Playground / 专项测试</a>
+      <h1>浮动文字 · 自适应与滚动</h1>
+      <p>真实可编辑文档。左列固定尺寸，中列自适应文字，右列组合与竖排文字。</p>
+    </div>
+    <nav aria-label="测试规模">
+      <a href="/tests/floating-text" [class.active]="!stress">普通场景</a>
+      <a href="/tests/floating-text?scale=stress" [class.active]="stress">1000 对象压力场景</a>
+    </nav>
+  </header>
+
+  <section class="metrics" aria-label="预置浮动对象挂载统计">
+    <div><span>固定尺寸 · 已挂载 / 总数</span><strong data-testid="fixed-count">{{ mountedFixed }} / {{ fixedCount }}</strong><small>随滚动按需挂载</small></div>
+    <div><span>自适应样本 · 已挂载 / 总数</span><strong data-testid="auto-count">{{ mountedAuto }} / {{ autoCount }}</strong><small>切换主文本框为固定尺寸后，该样本也会按需挂载</small></div>
+    <div><span>含自适应成员的组合</span><strong data-testid="group-count">{{ mountedGroups }} / 1</strong><small>组合整体常驻</small></div>
+    <div><span>主文本框</span><strong data-testid="target-state">{{ targetMounted ? '已挂载' : '未挂载' }}</strong><small>模式：{{ autoFit ? '内容自适应' : '固定尺寸' }} · 自适应测量值 {{ targetFit }}</small></div>
+  </section>
+
+  <section class="controls" aria-label="测试操作">
+    <div class="row">
+      <button class="primary" [disabled]="!ready" (click)="scrollTo('below')">从主文本框下方开始</button>
+      <button [disabled]="!ready" (click)="scrollTo('target')">定位主文本框</button>
+      <button [disabled]="!ready" (click)="scrollTo('bottom')">文档底部</button>
+      <button [disabled]="!ready" (click)="scrollTo('top')">文档顶部</button>
+      <span class="scroll-position">滚动位置 {{ scrollTop }} px</span>
+    </div>
+    <div class="row">
+      <span>主文本框：</span>
+      <button [disabled]="!ready" (click)="changeText(true)">换成长文本</button>
+      <button [disabled]="!ready" (click)="changeText(false)">换成短文本</button>
+      <button [disabled]="!ready" (click)="toggleFit()">{{ autoFit ? '切换为固定尺寸' : '切换为内容自适应' }}</button>
+      <button [disabled]="!ready" (click)="undo()">撤销</button>
+      <button [disabled]="!ready" (click)="redo()">重做</button>
+    </div>
+    <p class="status" role="status">{{ error || status }}</p>
+  </section>
+
+  <block-craft-editor [showFixedToolbar]="true" [virtualizationEnabled]="true" />
+  <footer>可双击编辑对象，拖动或调整尺寸；也可通过编辑器工具栏创建对象。统计仅跟踪预置样本，每 150 ms 更新；选中对象可能被保留挂载。切换场景或刷新会重置此测试文档。</footer>
+</main>

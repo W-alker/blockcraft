@@ -1,6 +1,51 @@
+@mixin _column-add-point {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--bc-color-lighter);
+  cursor: pointer;
+
+  &::before {
+    content: '';
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  i { display: none; font-size: var(--bc-fs-sm); }
+  &:hover,
+  &:focus-visible {
+    background: var(--bc-active-color);
+    color: var(--bc-columns-handle-color);
+    &::before { display: none; }
+    i { display: block; }
+  }
+  &:focus-visible { outline: 2px solid var(--bc-active-color); outline-offset: -2px; }
+}
+
 [data-blockcraft-root="true"] {
   .columns-block {
-    padding: 8px 0;
+    padding: 0;
+
+    // 分栏两侧保留光标入口，但不让占位点扩张填写区的滚动范围。
+    // 入口覆盖像素取整误差，避免无内边距时 Firefox 命中相邻正文。
+    > [data-block-zero-space="true"] {
+      width: 2px;
+    }
+
+    > [data-block-zero-space="true"][data-block-gap-side="before"] {
+      left: 1px;
+    }
+
+    > [data-block-zero-space="true"][data-block-gap-side="after"] {
+      right: 1px;
+    }
 
     /* 包装容器，用于放置分割线 */
     .columns-wrapper {
@@ -62,9 +107,9 @@
       }
     }
 
-    &:has(.focused),
-    &:has(.selected),
     &:hover,
+    &:focus-within,
+    &.column-controls-active,
     &.drag-over {
       .column-block .column-content {
         outline: 1px dashed var(--bc-border-color);
@@ -75,13 +120,37 @@
       }
     }
 
-    /* 拖拽期间：分栏线让出 hit-test，并隐藏 + 号，避免遮挡 drop target / 视觉干扰 */
+    /* 拖拽期间：分栏线让出 hit-test，避免遮挡 drop target */
     &.drag-over .column-divider {
       pointer-events: none;
+    }
 
-      .add-point {
-        display: none;
-      }
+    .column-add-point {
+      @include _column-add-point;
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 11;
+      // 按钮中心贴齐内容上沿，一半在内、一半在外，不占正文高度。
+      top: -10px;
+      left: -4px;
+      &--start { left: 4px; }
+      &--end { left: auto; right: 4px; }
+    }
+
+    &:hover,
+    &:focus-within,
+    &.column-controls-active {
+      .column-add-point { opacity: 1; pointer-events: auto; }
+    }
+
+    @media (hover: none) {
+      .column-add-point { opacity: 1; pointer-events: auto; }
+    }
+
+    &.drag-over,
+    &.column-controls-dragging {
+      .column-add-point { opacity: 0; pointer-events: none; }
     }
 
     &.selected {
@@ -96,7 +165,6 @@
 
     /* 列之间的可拖拽分割线 - Notion 风格 */
     .column-divider {
-      z-index: 101;
       position: absolute;
       top: 0;
       bottom: 0;
@@ -154,48 +222,10 @@
 
       .divider-line {
         width: 2px;
-        transform: translateY(8px);
-        height: calc(100% - 8px);
+        height: 100%;
         background: var(--bc-columns-divider-hover-color);
         transition: all 0.12s ease;
         pointer-events: none;
-      }
-
-      .add-point {
-        position: absolute;
-        top: -10px;
-        left: -2px;
-        width: 16px;
-        height: 16px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--bc-columns-handle-color);
-        font-size: 10px;
-
-        &:hover {
-          background: var(--bc-active-color);
-          cursor: pointer;
-          border-radius: 50%;
-
-          &::before {
-            display: none;
-          }
-
-          &::after {
-            content: '+';
-          }
-
-        }
-
-        &::before {
-          display: block;
-          content: '';
-          height: 6px;
-          width: 6px;
-          background: var(--bc-columns-handle-bg);
-          border-radius: 50%;
-        }
       }
     }
   }
@@ -203,21 +233,78 @@
 
   // 列块
   .column-block {
+    position: relative;
     display: block;
     flex: 1;
     padding: 0 8px;
     margin-bottom: 0 !important;
 
+    // 只保留栏间间隔，分栏外沿与正文对齐。
+    &:first-child { padding-left: 0; }
+    &:last-child { padding-right: 0; }
+
+    .column-drag-handle {
+      position: absolute;
+      // 抓手中心贴齐内容下沿，一半在内、一半在外，不预留正文高度。
+      bottom: -7px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 14px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: grab;
+      touch-action: none;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 11;
+
+      i { font-size: var(--bc-fs-sm); line-height: 1; transform: rotate(90deg); pointer-events: none; }
+      &:active { cursor: grabbing; }
+    }
+
+    &:hover > .column-drag-handle, > .column-drag-handle:focus-visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
     .column-content {
+      @include bc_scrollbar;
+      scrollbar-color: var(--bc-scrollbar-thumb-color) transparent;
+
+      &:hover {
+        scrollbar-color: var(--bc-scrollbar-thumb-hover-color) transparent;
+      }
+
+      &::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+
+      &::-webkit-scrollbar-track,
+      &::-webkit-scrollbar-corner {
+        background: transparent;
+      }
+
       width: 100%;
       height: 100%;
-      padding: 4px;
+      padding: 0;
       border-radius: 4px;
       /* 子块在这里纵向堆叠 */
       display: flex;
       flex-direction: column;
       transition: background 0.12s ease;
-      overflow: hidden;
+      // 暂时移除 overflow: hidden（2026-09-16），避免裁剪子块阴影、选中轮廓和交互手柄。
+      // 栏宽仍由 columns-layout 的 min-width / width / max-width 约束，溢出内容由具体子块处理。
+      // TODO(分栏溢出回归)：窄栏及拖拽调宽时检查长文本、超宽图片/代码/公式是否侵入相邻栏；
+      // 检查阴影、选中轮廓、拖拽手柄的显示与命中，以及底部内容和滚动范围。
+      // 覆盖编辑态、只读 Snapshot Viewer、分页/打印及 Chromium / Firefox / WebKit；
+      // 若需恢复裁剪，先定位具体子块，避免直接重新裁剪整栏。
     }
 
     &.selected {

@@ -1,10 +1,10 @@
 import {Injectable} from "@angular/core";
 import {DocMessageService} from "../../framework";
-import {NzMessageService} from "ng-zorro-antd/message";
+import {CsMessageService} from "@cses/ui";
 
 @Injectable()
 export class MyDocMessageService implements DocMessageService {
-  constructor(private message: NzMessageService) {
+  constructor(private message: CsMessageService) {
   }
 
   success(message: string): void {

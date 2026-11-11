@@ -3,7 +3,10 @@
   "version": 1,
   "cli": {
     "packageManager": "pnpm",
-    "analytics": "e719eec9-13a0-476d-975b-73bd9635918b"
+    "analytics": "e719eec9-13a0-476d-975b-73bd9635918b",
+    "cache": {
+      "enabled": false
+    }
   },
   "newProjectRoot": ".",
   "projects": {
@@ -25,12 +28,17 @@
             "tsConfig": "apps/playground/tsconfig.app.json",
             "inlineStyleLanguage": "scss",
             "assets": [
-              "apps/playground/src/assets"
+              "apps/playground/src/assets",
+              {
+                "glob": "bc-iconfont.js",
+                "input": "packages/editor/assets/iconfont",
+                "output": "assets/blockcraft-iconfont"
+              }
             ],
             "styles": [
               "apps/playground/src/styles.scss",
               "node_modules/viewerjs/dist/viewer.min.css",
-              "node_modules/ng-zorro-antd/ng-zorro-antd.min.css",
+              "node_modules/@cses/ui/styles/cses-ui.scss",
               "packages/editor/themes/base.scss",
               "packages/editor/themes/light.scss",
               "packages/editor/themes/dark.scss",
@@ -68,6 +76,9 @@
         },
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",
+          "options": {
+            "proxyConfig": "apps/playground/proxy.conf.json"
+          },
           "configurations": {
             "production": {
               "buildTarget": "playground:build:production"
@@ -105,6 +116,39 @@
           "builder": "@angular-devkit/build-angular:karma",
           "options": {
             "tsConfig": "packages/editor/tsconfig.spec.json",
+            "polyfills": [
+              "zone.js",
+              "zone.js/testing"
+            ]
+          }
+        }
+      }
+    },
+    "blockcraft-agent": {
+      "projectType": "library",
+      "root": "packages/blockcraft-agent",
+      "sourceRoot": "packages/blockcraft-agent/src",
+      "prefix": "bc",
+      "architect": {
+        "build": {
+          "builder": "@angular-devkit/build-angular:ng-packagr",
+          "options": {
+            "project": "packages/blockcraft-agent/ng-package.json"
+          },
+          "configurations": {
+            "production": {
+              "tsConfig": "packages/blockcraft-agent/tsconfig.lib.prod.json"
+            },
+            "development": {
+              "tsConfig": "packages/blockcraft-agent/tsconfig.lib.json"
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "test": {
+          "builder": "@angular-devkit/build-angular:karma",
+          "options": {
+            "tsConfig": "packages/blockcraft-agent/tsconfig.spec.json",
             "polyfills": [
               "zone.js",
               "zone.js/testing"

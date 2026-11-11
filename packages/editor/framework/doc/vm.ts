@@ -17,6 +17,10 @@ export class DocVM {
   appRef = this.doc.injector.get(ApplicationRef)
   private envInjector = this.appRef.injector
   private store: Map<string, BlockCraft.BlockComponentRef> = new Map()
+  private retainedRootIds = new Set<string>()
+  private deferredSparseRootOrder: readonly string[] | null = null
+  private deferredSparseRootIds = new Set<string>()
+  private _sparseRoot = false
 
   constructor(
     private readonly doc: BlockCraft.Doc
@@ -31,6 +35,132 @@ export class DocVM {
     return this.doc.schemas
   }
 
+  get usesSparseRoot(): boolean {
+    return this._sparseRoot
+  }
+
+  private readonly placementChildIndices = new Map<string, Map<string, number>>()
+  private readonly deferredPlacementOrders = new Map<string, readonly string[]>()
+  private readonly retainedPlacementIds = new Map<string, string>()
+
+  /** @internal Only root placement layers have independently projected children. */
+  _isSparsePlacementParent(id: string): boolean {
+    return this._sparseRoot && this.doc.model.getFlavour(id) === 'placement-layout' &&
+      this.doc.model.getParentId(id) === this.root.id
+  }
+
+  /** @internal Materialize an explicitly requested object, keeping its subtree atomic. */
+  _ensurePlacementChildComponent(parentId: string, id: string): BlockCraft.BlockComponentRef {
+    const parent = this.get(parentId) ?? this.ensureRootChildComponent(parentId)
+    let indices = this.placementChildIndices.get(parentId)
+    if (!indices) {
+      indices = new Map(this.doc.model.getChildrenIds(parentId).map((childId, index) => [childId, index]))
+      this.placementChildIndices.set(parentId, indices)
+    }
+    if (!indices.has(id)) throw new BlockCraftError(ErrorCode.ModelCRUDError, `${id} is not a placement child`)
+    const cached = this.get(id)
+    if (cached) return cached
+    const yBlock = this.doc.crud.getYBlock(id)
+    if (!yBlock) throw new BlockCraftError(ErrorCode.ModelCRUDError, 'Cannot find block with id: ' + id)
+    return this._withCreationRollback(createdIds => {
+      const component = this._createComponentByYBlock(yBlock, parent, {[id]: yBlock}, undefined, true, createdIds)
+      this._visitComponentSubtree(component, child => child.instance.detach())
+      this.retainedPlacementIds.set(id, parentId)
+      return component
+    })
+  }
+
+  /** @internal Reconcile one placement layer without walking its offscreen model children. */
+  _mountPlacementChildren(parentId: string, ids: ReadonlySet<string>, additive = false): boolean {
+    const parent = this.get(parentId)
+    const renderRef = parent?.instance.childrenRenderRef
+    if (!parent || !renderRef) return false
+    let changed = false
+    if (!additive) for (const id of renderRef.ids) {
+      if (ids.has(id)) continue
+      const component = renderRef.unmountSparse(id)
+      if (component && component.instance.parentId === parentId) {
+        this._visitComponentSubtree(component, child => child.instance.detach())
+        this.retainedPlacementIds.set(id, parentId)
+      }
+      changed = true
+    }
+    const mounted = new Set(renderRef.ids)
+    for (const id of ids) {
+      if (mounted.has(id)) continue
+      const component = this._ensurePlacementChildComponent(parentId, id)
+      this._adoptComponents(parent, [component])
+      this.retainedPlacementIds.delete(id)
+      renderRef.mountSparse(this.placementChildIndices.get(parentId)!.get(id)!, component)
+      changed = true
+    }
+    return changed
+  }
+
+  /** @internal Structure sync preserves same-parent mounted objects and their DOM identity. */
+  _reconcileSparsePlacementChildren(parentId: string, modelIds: readonly string[]): void {
+    this.placementChildIndices.set(parentId, new Map(modelIds.map((id, index) => [id, index])))
+    const parent = this.get(parentId)
+    const renderRef = parent?.instance.childrenRenderRef
+    if (!parent || !renderRef) return
+    const desired = new Set(modelIds)
+    for (const id of renderRef.ids) {
+      if (desired.has(id)) continue
+      const component = renderRef.unmountSparse(id)
+      if (component && this.get(id) === component && component.instance.parentId === parentId) {
+        this._visitComponentSubtree(component, child => child.instance.detach())
+        this.retainedPlacementIds.set(id, parentId)
+      }
+    }
+    // @ts-expect-error internal model projection maintained by DocCRUD
+    parent.instance._childrenIds = [...modelIds]
+    const session = this.doc.inputManger?.compositionSession
+    const activeId = this.doc.event?.status?.isComposing && session?.isActive ? session.activeBlockId : null
+    const path = activeId ? this.doc.model.getPath(activeId) : null
+    const activeChild = path?.[1] === parentId ? path[2] : null
+    if (activeChild && desired.has(activeChild) && renderRef.ids.includes(activeChild)) {
+      renderRef.adoptSparseOrder(modelIds)
+      this.deferredPlacementOrders.set(parentId, [...modelIds])
+    } else {
+      this.deferredPlacementOrders.delete(parentId)
+      renderRef._reconcileSparseOrder(modelIds)
+    }
+  }
+
+  /** @internal Settle cross-parent adoption after every children delta has run. */
+  _retainPlacementChild(parentId: string, id: string): void {
+    const component = this.get(id)
+    if (!component) return
+    if (this.get(parentId)?.instance.childrenRenderRef?.ids.includes(id)) {
+      component.instance.parentId = parentId
+      return
+    }
+    component.instance.hostElement.remove()
+    component.instance.parentId = parentId
+    this.retainedRootIds.delete(id)
+    this._visitComponentSubtree(component, child => child.instance.detach())
+    this.retainedPlacementIds.set(id, parentId)
+  }
+
+  /** @internal Fixed offscreen objects have no second, unbounded subtree cache. */
+  _releaseUnrenderedPlacementChildren(): void {
+    for (const [id, parentId] of this.retainedPlacementIds) {
+      const component = this.get(id)
+      if (component && component.instance.parentId === parentId && !component.instance.isAttached) this.destroy(id)
+    }
+    this.retainedPlacementIds.clear()
+  }
+
+  enableSparseRootMode(rootId: string): void {
+    if (this._sparseRoot) return
+    const rootRef = this.get(rootId)
+    if (!rootRef || rootRef.instance.nodeType !== BlockNodeType.root) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, 'Cannot enable sparse mode without root component')
+    }
+    rootRef?.instance.childrenRenderRef?.adoptSparseOrder(rootRef.instance.childrenIds)
+    this._sparseRoot = true
+  }
+
   has(id: string) {
     return this.store.has(id)
   }
@@ -43,6 +173,74 @@ export class DocVM {
     return this.store.get(id) as BlockCraft.BlockComponentRef<T> | undefined
   }
 
+  private _createComponentByYBlock(
+    yBlock: YBlock,
+    parent: BlockCraft.BlockComponentRef | null,
+    yBlocks: Record<string, YBlock>,
+    onMissingChild?: (parentId: string, childId: string) => void,
+    recursive = true,
+    createdIds: Set<string> = new Set(),
+  ): BlockCraft.BlockComponentRef {
+    const id = yBlock.get('id')
+    const cached = this.get(id)
+    if (cached) return cached
+
+    const schema = this.schemas.get(yBlock.get('flavour'))!
+    const cpr = createComponent(schema.component, {
+      elementInjector: this.doc.injector,
+      environmentInjector: this.envInjector,
+    })
+
+    const nativeModel = yBlock2Native(yBlock)
+    const useModelProjection = !!this.doc.isInitialized && this.doc.model.exists(id)
+    if (
+      useModelProjection &&
+      yBlock.get('nodeType') !== BlockNodeType.editable &&
+      yBlock.get('nodeType') !== BlockNodeType.void
+    ) {
+      nativeModel.children = [...this.doc.model.getChildrenIds(id)]
+    }
+    cpr.setInput('model', nativeModel)
+    cpr.setInput('yBlock', yBlock)
+    cpr.setInput('doc', this.doc)
+    cpr.instance.parentId = parent?.instance.id || null
+    if (cpr.instance.nodeType !== BlockNodeType.editable && cpr.instance.nodeType !== BlockNodeType.void) {
+      cpr.instance.childrenRenderRef = new BlockChildrenRenderRef(cpr.instance, this)
+    }
+
+    this.set(id, cpr)
+    createdIds.add(id)
+    this.appRef.attachView(cpr.hostView)
+
+    const yChildren = yBlock.get('children')
+    if (recursive && !this._isSparsePlacementParent(id) && yBlock.get('nodeType') !== BlockNodeType.editable && yChildren.length) {
+      if (useModelProjection) this._reportMissingChildRefs(yBlock, onMissingChild)
+      const childIds = useModelProjection
+        ? this.doc.model.getChildrenIds(id)
+        : yChildren.toArray()
+      const childrenComps = childIds.map(childId => {
+        const childYBlock = yBlocks[childId] || this.doc.crud.getYBlock(childId)
+        if (!childYBlock) {
+          this.doc.logger?.warn?.('skip missing child block on load: ' + childId)
+          onMissingChild?.(cpr.instance.id, childId)
+          return null
+        }
+        return this._createComponentByYBlock(
+          childYBlock,
+          cpr,
+          yBlocks,
+          onMissingChild,
+          true,
+          createdIds,
+        )
+      }).filter((child): child is BlockCraft.BlockComponentRef => child !== null)
+      this.insert(cpr, 0, childrenComps)
+    }
+
+    cpr.changeDetectorRef.detectChanges()
+    return cpr
+  }
+
   /**
    * @param onMissingChild 可选：构建时遇到悬空 child 引用（childId 无对应 yBlock）
    *   逐个上报。仅初始加载路径（initByYBlock）传入，用于"遇到才兜底"地剪除这些
@@ -52,67 +250,392 @@ export class DocVM {
     yBlocks: Record<string, YBlock>,
     onMissingChild?: (parentId: string, childId: string) => void
   ) {
-    // 乱序的，要根据children中的Id顺序组合
-    const createComp = (yBlock: YBlock, parent: BlockCraft.BlockComponentRef | null = null) => {
-      const id = yBlock.get('id')
-      // try get it from cache
-      if (this.has(id)) {
-        return this.get(id) as BlockCraft.BlockComponentRef
+    return this._withCreationRollback(createdIds => {
+      const res: Record<string, BlockCraft.BlockComponentRef> = {}
+      for (const id in yBlocks) {
+        res[id] = this._createComponentByYBlock(
+          yBlocks[id]!,
+          null,
+          yBlocks,
+          onMissingChild,
+          true,
+          createdIds,
+        )
       }
+      return res
+    })
+  }
 
-      const schema = this.schemas.get(yBlock.get('flavour'))!
-      const cpr = createComponent(schema.component, {
-        elementInjector: this.doc.injector,
-        environmentInjector: this.envInjector,
-      })
+  /** Create the permanent root component without eagerly creating its children. */
+  createRootOnlyByYBlock(
+    yRoot: YBlock,
+    options: {sparse?: boolean} = {},
+  ): BlockCraft.BlockComponentRef {
+    return this._withCreationRollback(createdIds => {
+      const root = this._createComponentByYBlock(
+        yRoot,
+        null,
+        {[yRoot.get('id')]: yRoot},
+        undefined,
+        false,
+        createdIds,
+      )
+      if (options.sparse !== false) this.enableSparseRootMode(yRoot.get('id'))
+      return root
+    })
+  }
 
-      cpr.setInput('model', yBlock2Native(yBlock))
-      cpr.setInput('yBlock', yBlock)
-      cpr.setInput('doc', this.doc)
-      cpr.instance.parentId = parent?.instance.id || null
-      if (cpr.instance.nodeType !== BlockNodeType.editable && cpr.instance.nodeType !== BlockNodeType.void) {
-        cpr.instance.childrenRenderRef = new BlockChildrenRenderRef(cpr.instance, this)
-      }
-
-      this.set(id, cpr)
-      this.appRef.attachView(cpr.hostView)
-
-      const yChildren = yBlock.get('children')
-      if (yBlock.get('nodeType') !== BlockNodeType.editable && yChildren.length) {
-        const childrenComps = yChildren.toArray().map(
-          childId => {
-            const childYBlock = yBlocks[childId] || this.doc.crud.getYBlock(childId)
-            // 悬空 child 引用：childId 在父块 children 数组里，但 yBlockMap 没有
-            // 对应 yBlock。成因是历史协同「并发移动 vs 删除」——一端把块移入新父
-            // （新父 children 加引用）、另一端删除该块（删 yBlock），合并后引用
-            // 存活而 yBlock 丢失。CRDT 加载本就要容忍这种引用缺口（增量同步乱序
-            // 也会临时出现）。必须跳过：把 undefined 传给 createComp 会在
-            // `yBlock.get('id')` 处抛错，导致整篇文档初始化失败、_root 永不就绪。
-            // 不在此合成占位块（会把空段落写回 yBlockMap 广播+持久化）。是否剪除
-            // 引用交给调用方：初始加载会通过 onMissingChild 收集、构建后兜底剪除
-            // （修正 _compRefs 与模型的长度错位）；运行时路径不传回调，仅跳过渲染
-            // （增量同步下该块可能只是尚未到达，不能剪）。
-            if (!childYBlock) {
-              this.doc.logger.warn('skip missing child block on load: ' + childId)
-              onMissingChild?.(cpr.instance.id, childId)
-              return null
-            }
-            return createComp(childYBlock, cpr)
-          }
-        ).filter((c): c is BlockCraft.BlockComponentRef => c !== null)
-        cpr.instance.childrenRenderRef?.insert(0, childrenComps)
-      }
-
-      cpr.changeDetectorRef.detectChanges()
-      return cpr
+  /**
+   * Materialize every reachable root-child subtree after the model graph and
+   * bootstrap root are ready. Full rendering uses this path so block lifecycle
+   * hooks observe the same initialized model/root contract as virtual mounts.
+   */
+  mountAllRootChildren(
+    onMissingChild?: (parentId: string, childId: string) => void,
+  ): BlockCraft.BlockComponentRef[] {
+    if (this._sparseRoot) {
+      throw new BlockCraftError(
+        ErrorCode.ModelCRUDError,
+        'Cannot eagerly mount every root child while sparse root mode is enabled',
+      )
     }
 
-    const res: Record<string, BlockCraft.BlockComponentRef> = {}
-    for (const id in yBlocks) {
-      res[id] = createComp(yBlocks[id]!)
+    const rootRef = this.get(this.root.id)
+    if (!rootRef?.instance.childrenRenderRef) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, 'Root block has no children renderer')
+    }
+    if (rootRef.instance.childrenRenderRef.length) {
+      return []
     }
 
-    return res
+    this._reportMissingChildRefs(rootRef.instance.yBlock, onMissingChild)
+    return this._withCreationRollback(createdIds => {
+      const children = this.doc.model.getChildrenIds(rootRef.instance.id).map(id => {
+        const yBlock = this.doc.crud.getYBlock(id)
+        if (!yBlock) {
+          onMissingChild?.(rootRef.instance.id, id)
+          return null
+        }
+        return this._createComponentByYBlock(
+          yBlock,
+          rootRef,
+          {[id]: yBlock},
+          onMissingChild,
+          true,
+          createdIds,
+        )
+      }).filter((child): child is BlockCraft.BlockComponentRef => child !== null)
+      this.insert(rootRef, 0, children)
+      return children
+    })
+  }
+
+  private _reportMissingChildRefs(
+    yBlock: YBlock,
+    onMissingChild?: (parentId: string, childId: string) => void,
+  ): void {
+    if (!onMissingChild || yBlock.get('nodeType') === BlockNodeType.editable) return
+    const children = yBlock.get('children')
+    if (!(children instanceof Y.Array)) return
+    const parentId = yBlock.get('id')
+    children.toArray().forEach(childId => {
+      if (!this.doc.crud.getYBlock(childId)) onMissingChild(parentId, childId)
+    })
+  }
+
+  private _withCreationRollback<T>(
+    create: (createdIds: Set<string>) => T,
+  ): T {
+    const createdIds = new Set<string>()
+    try {
+      return create(createdIds)
+    } catch (error) {
+      this._rollbackCreatedComponents(createdIds)
+      throw error
+    }
+  }
+
+  private _rollbackCreatedComponents(createdIds: ReadonlySet<string>): void {
+    ;[...createdIds].reverse().forEach(id => {
+      const component = this.store.get(id)
+      if (!component) return
+      this.retainedRootIds.delete(id)
+      component.location.nativeElement.remove()
+      try {
+        this.appRef.detachView(component.hostView)
+      } catch {
+        // The failed lifecycle pass may already have detached the host view.
+      }
+      try {
+        component.destroy()
+      } catch {
+        // Rollback must still evict the poisoned ref even if teardown is partial.
+      }
+      this.store.delete(id)
+    })
+  }
+
+  private _visitComponentSubtree(
+    root: BlockCraft.BlockComponentRef,
+    visit: (component: BlockCraft.BlockComponentRef) => void,
+  ): void {
+    visit(root)
+    if (root.instance.nodeType === BlockNodeType.editable) return
+    // A remote transaction can remove both the parent reference and its YBlock.
+    // Deleted shared types are no longer readable, so finish lifecycle cleanup
+    // from the component's last synchronized child snapshot.
+    const liveChildren = this.doc.crud.getYBlock(root.instance.id)?.get('children')
+    const cachedChildren = Reflect.get(root.instance, '_childrenIds')
+    const childIds = this._isSparsePlacementParent(root.instance.id)
+      ? root.instance.childrenRenderRef?.ids ?? []
+      : liveChildren instanceof Y.Array
+      ? liveChildren.toArray()
+      : (Array.isArray(cachedChildren) ? cachedChildren : [])
+    for (const childId of childIds) {
+      const child = this.get(childId)
+      if (child) this._visitComponentSubtree(child, visit)
+    }
+  }
+
+  /** Ensure one complete root-child subtree exists, but keep it retained. */
+  ensureRootChildComponent(id: string): BlockCraft.BlockComponentRef {
+    const rootRef = this.get(this.root.id)
+    if (!rootRef) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, 'Cannot find root component')
+    }
+    if (!rootRef.instance.childrenIds.includes(id)) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `${id} is not a root child`)
+    }
+
+    const cached = this.get(id)
+    if (cached) {
+      cached.instance.parentId = rootRef.instance.id
+      if (!cached.instance.isAttached) this.retainedRootIds.add(id)
+      return cached
+    }
+    const yBlock = this.doc.crud.getYBlock(id)
+    if (!yBlock) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, 'Cannot find block with id: ' + id)
+    }
+
+    return this._withCreationRollback(createdIds => {
+      const component = this._createComponentByYBlock(
+        yBlock,
+        rootRef,
+        {[id]: yBlock},
+        undefined,
+        true,
+        createdIds,
+      )
+      this._visitComponentSubtree(component, child => child.instance.detach())
+      this.retainedRootIds.add(id)
+      return component
+    })
+  }
+
+  /** Mount a retained root child at its model index. */
+  mountRootChild(id: string): BlockCraft.BlockComponentRef {
+    const rootRef = this.get(this.root.id)
+    if (!rootRef?.instance.childrenRenderRef) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, 'Root block has no children renderer')
+    }
+    const modelIndex = rootRef.instance.childrenIds.indexOf(id)
+    if (modelIndex < 0) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `${id} is not a root child`)
+    }
+
+    const component = this.ensureRootChildComponent(id)
+    this.retainedRootIds.delete(id)
+    this._visitComponentSubtree(component, child => child.instance.reattach())
+    rootRef.instance.childrenRenderRef.mountSparse(modelIndex, component)
+    return component
+  }
+
+  /** Remove a root-child host from the DOM while retaining its component subtree. */
+  retainRootChild(id: string): BlockCraft.BlockComponentRef | undefined {
+    const rootRef = this.get(this.root.id)
+    if (!rootRef) return undefined
+
+    const mounted = rootRef.instance.childrenRenderRef?.unmountSparse(id)
+    if (!mounted && !rootRef.instance.childrenIds.includes(id)) return this.get(id)
+
+    const component = mounted ?? this.get(id)
+    if (!component) return undefined
+
+    // A cross-parent move can insert the block into sparse root before the
+    // source container's view delta has finished. Settle ownership here after
+    // all deltas: the component must not remain visible in its old container
+    // while waiting for the virtualizer to decide whether root should mount it.
+    component.instance.hostElement.remove()
+    component.instance.parentId = rootRef.instance.id
+    this._visitComponentSubtree(component, child => child.instance.detach())
+    this.retainedRootIds.add(id)
+    return component
+  }
+
+  getRetainedRootChildIds(): string[] {
+    return [...this.retainedRootIds]
+  }
+
+  /** Destroy one unmounted root subtree so a future mount rebuilds it from Yjs. */
+  destroyRetainedRootChild(id: string): boolean {
+    const component = this.get(id)
+    if (!component || component.instance.isAttached) return false
+    if (component.instance.parentId !== this.root.id) return false
+    this.destroy(id)
+    return true
+  }
+
+  /** Retain view resources for an already-created subtree without moving its host. */
+  retainComponentSubtree(component: BlockCraft.BlockComponentRef): void {
+    this._visitComponentSubtree(component, child => child.instance.detach())
+  }
+
+  /** Reconcile mounted root-child indices after a Y.Array delta. */
+  applySparseRootChildrenDelta(
+    delta: Y.YEvent<Y.Array<string>>['changes']['delta'],
+    options?: {
+      desiredIds: readonly string[]
+      preserveIds: ReadonlySet<string>
+    },
+  ): void {
+    if (!this._sparseRoot) return
+    const renderRef = this.get(this.root.id)?.instance.childrenRenderRef
+    if (!renderRef) return
+    const {removed, preserved} = renderRef.reconcileSparseDelta(
+      delta,
+      options?.preserveIds,
+    )
+    removed.forEach(component => {
+      const id = component.instance.id
+      // Top-level YBlock deletion is processed before delayed children deltas.
+      // A removed sparse ref can therefore already be destroyed, or even have
+      // been replaced by a fresh ref with the same stable ID. Never retain that
+      // stale ref back into the sparse cache.
+      if (this.get(id) !== component) {
+        this.retainedRootIds.delete(id)
+        component.instance.hostElement.remove()
+        return
+      }
+      // A cross-parent transaction can deliver the mounted destination's
+      // children insertion before the sparse-root deletion. In that order the
+      // destination has already adopted this ComponentRef and moved its host.
+      // Root reconciliation must release only its stale sparse reference; it
+      // no longer owns the component lifecycle or DOM.
+      if (component.instance.parentId !== this.root.id) {
+        this.retainedRootIds.delete(id)
+        return
+      }
+      this._visitComponentSubtree(component, child => child.instance.detach())
+      this.retainedRootIds.add(id)
+    })
+    if (preserved && options) {
+      this._deferSparseRootOrder(renderRef, options.desiredIds, options.preserveIds)
+    }
+  }
+
+  /** @internal Whether a composing sparse-root move is holding DOM order stable. */
+  get hasDeferredSparseRootOrder(): boolean {
+    return this.deferredSparseRootOrder !== null || this.deferredPlacementOrders.size > 0
+  }
+
+  /** @internal Whether ownership settlement must keep this composing host mounted. */
+  isDeferredSparseRootChild(id: string): boolean {
+    return this.deferredSparseRootIds.has(id)
+  }
+
+  /** @internal Settle a composing sparse-root move before the final caret projection. */
+  _flushDeferredSparseRootOrder(): boolean {
+    const desiredIds = this.deferredSparseRootOrder
+    const hasPlacementOrders = this.deferredPlacementOrders.size > 0
+    for (const [id, ids] of this.deferredPlacementOrders) {
+      this.get(id)?.instance.childrenRenderRef?._reconcileSparseOrder(ids)
+    }
+    this.deferredPlacementOrders.clear()
+    if (!desiredIds) return hasPlacementOrders
+    this.deferredSparseRootOrder = null
+    this.deferredSparseRootIds.clear()
+    this.get(this.root.id)?.instance.childrenRenderRef?._reconcileSparseOrder(desiredIds)
+    return true
+  }
+
+  /** @internal Recover sparse-root indices without mounting offscreen gaps. */
+  _reconcileSparseRootChildren(modelIds: readonly string[]): void {
+    if (!this._sparseRoot) return
+    const rootRef = this.get(this.root.id)
+    const renderRef = rootRef?.instance.childrenRenderRef
+    if (!rootRef || !renderRef) return
+
+    const desired = new Set(modelIds)
+    renderRef.ids.filter(id => !desired.has(id)).forEach(id => {
+      const component = renderRef.unmountSparse(id)
+      if (!component) return
+      if (this.get(id) !== component) {
+        component.instance.hostElement.remove()
+        return
+      }
+      if (component.instance.parentId !== this.root.id) {
+        this.retainedRootIds.delete(id)
+        return
+      }
+      if (this.doc.model.exists(id)) {
+        this._visitComponentSubtree(component, child => child.instance.detach())
+        this.retainedRootIds.add(id)
+      } else {
+        this.destroy(id)
+      }
+    })
+    // @ts-expect-error internal model projection maintained by DocCRUD
+    rootRef.instance._childrenIds = [...modelIds]
+    const activeRootId = this._activeCompositionRootUnitId()
+    const currentIds = renderRef.ids
+    const indexById = new Map(modelIds.map((id, index) => [id, index]))
+    const desiredMountedIds = [...currentIds].sort((left, right) =>
+      (indexById.get(left) ?? Number.MAX_SAFE_INTEGER) -
+      (indexById.get(right) ?? Number.MAX_SAFE_INTEGER),
+    )
+    const orderChanged = currentIds.some((id, index) => desiredMountedIds[index] !== id)
+    if (
+      activeRootId &&
+      currentIds.includes(activeRootId) &&
+      modelIds.includes(activeRootId) &&
+      orderChanged
+    ) {
+      this._deferSparseRootOrder(renderRef, modelIds, new Set([activeRootId]))
+    } else {
+      renderRef._reconcileSparseOrder(modelIds)
+    }
+  }
+
+  private _activeCompositionRootUnitId(): string | null {
+    if (!this.doc.event?.status?.isComposing) return null
+    const session = this.doc.inputManger?.compositionSession
+    const activeBlockId = session?.isActive ? session.activeBlockId : null
+    if (!activeBlockId) return null
+    try {
+      const path = this.doc.model.getPath(activeBlockId)
+      return path?.[0] === this.doc.rootId ? path[1] ?? null : null
+    } catch {
+      return null
+    }
+  }
+
+  private _deferSparseRootOrder(
+    renderRef: BlockChildrenRenderRef,
+    desiredIds: readonly string[],
+    preserveIds: ReadonlySet<string>,
+  ): void {
+    renderRef.adoptSparseOrder(desiredIds)
+    this.deferredSparseRootOrder = [...desiredIds]
+    preserveIds.forEach(id => this.deferredSparseRootIds.add(id))
+  }
+
+  isMounted(id: string): boolean {
+    return this.get(id)?.instance.isAttached ?? false
+  }
+
+  getMountedRootChildIds(): string[] {
+    return this.get(this.root.id)?.instance.childrenRenderRef?.ids ?? []
   }
 
   createComponentBySnapshot<T extends IBlockSnapshot>(snapshot: T, cb?: (cpr: BlockCraft.BlockComponentRef) => void) {
@@ -157,6 +680,26 @@ export class DocVM {
     return createComp(snapshot)
   }
 
+  private _adoptComponents(
+    parent: BlockCraft.BlockComponentRef,
+    components: readonly BlockCraft.BlockComponentRef[],
+  ): void {
+    const shouldAttach = parent.instance.isAttached
+    components.forEach(component => {
+      // A direct root child can be retained by virtualization before the target
+      // parent's children event adopts the same cached component. Once it moves
+      // below another parent, that old root-cache ownership must end.
+      this.retainedRootIds.delete(component.instance.id)
+      this.retainedPlacementIds.delete(component.instance.id)
+      component.instance.parentId = parent.instance.id
+      if (component.instance.isAttached === shouldAttach) return
+      this._visitComponentSubtree(component, child => {
+        if (shouldAttach) child.instance.reattach()
+        else child.instance.detach()
+      })
+    })
+  }
+
   insert(parent: string | BlockCraft.BlockComponentRef, index: number, comps: BlockCraft.BlockComponentRef[]) {
     const parentComp = parent instanceof ComponentRef ? parent : this.store.get(parent)
     if (!parentComp) {
@@ -168,6 +711,7 @@ export class DocVM {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `${parentComp.instance.id} block has no children`)
     }
 
+    this._adoptComponents(parentComp, comps)
     instance.childrenRenderRef!.insert(index, comps)
   }
 
@@ -186,8 +730,15 @@ export class DocVM {
   }
 
   destroy(id: string) {
+    const isPlacement = this.placementChildIndices.delete(id)
+    this.deferredPlacementOrders.delete(id)
+    this.retainedPlacementIds.delete(id)
+    if (isPlacement) for (const [childId, parentId] of this.retainedPlacementIds) {
+      if (parentId === id && this.get(childId)?.instance.parentId === id) this.destroy(childId)
+    }
     const cpr = this.store.get(id)
     if (cpr) {
+      this.retainedRootIds.delete(id)
       cpr.instance.childrenRenderRef?.clearAll()
       cpr.instance.hostElement.remove()
       cpr.destroy()
@@ -196,9 +747,70 @@ export class DocVM {
   }
 
   deleteByIds(ids: string[]) {
-    ids.forEach(id => {
-      this.destroy(id)
+    const deletedIds = new Set(ids)
+    const visited = new Set<string>()
+    ids.forEach(id => this._destroyDeletedComponent(id, deletedIds, visited))
+  }
+
+  /**
+   * Destroy a data-deleted component tree without consuming descendants that
+   * the canonical model already moved elsewhere in the same Yjs transaction.
+   */
+  private _destroyDeletedComponent(
+    id: string,
+    deletedIds: ReadonlySet<string>,
+    visited: Set<string>,
+  ): void {
+    if (visited.has(id)) return
+    visited.add(id)
+    const component = this.store.get(id)
+    if (!component) return
+
+    const renderRef = component.instance.childrenRenderRef
+    const children = renderRef?.splice(0, renderRef.length) ?? []
+    if (this.placementChildIndices.delete(id)) {
+      for (const [childId, parentId] of this.retainedPlacementIds) {
+        if (parentId !== id) continue
+        const child = this.get(childId)
+        if (child && child.instance.parentId === id) children.push(child)
+      }
+    }
+    this.retainedPlacementIds.delete(id)
+    this.deferredPlacementOrders.delete(id)
+    children.forEach(child => {
+      const childId = child.instance.id
+      if (deletedIds.has(childId) || !this.doc.model.exists(childId)) {
+        this._destroyDeletedComponent(childId, deletedIds, visited)
+        return
+      }
+      this._releaseMovedChildFromDeletedParent(child)
     })
+
+    this.retainedRootIds.delete(id)
+    component.instance.hostElement.remove()
+    component.destroy()
+    this.store.delete(id)
+  }
+
+  private _releaseMovedChildFromDeletedParent(
+    component: BlockCraft.BlockComponentRef,
+  ): void {
+    const id = component.instance.id
+    const parentId = this.doc.model.getParentId(id)
+    component.instance.hostElement.remove()
+    component.instance.parentId = parentId
+
+    if (parentId === this.root.id) {
+      this._visitComponentSubtree(component, child => child.instance.detach())
+      this.retainedRootIds.add(id)
+      return
+    }
+
+    this.retainedRootIds.delete(id)
+    const parent = parentId ? this.get(parentId) : undefined
+    if (!parent?.instance.isAttached) {
+      this._visitComponentSubtree(component, child => child.instance.detach())
+    }
   }
 
   clear() {
@@ -206,6 +818,13 @@ export class DocVM {
       cpr?.destroy()
     })
     this.store.clear()
+    this.retainedRootIds.clear()
+    this.retainedPlacementIds.clear()
+    this.placementChildIndices.clear()
+    this.deferredPlacementOrders.clear()
+    this.deferredSparseRootOrder = null
+    this.deferredSparseRootIds.clear()
+    this._sparseRoot = false
   }
 
 }
@@ -213,10 +832,16 @@ export class DocVM {
 export class BlockChildrenRenderRef {
   private _containerElement?: HTMLElement
   get containerElement() {
-    return this._containerElement ??= (this.block.hostElement.querySelector('.children-render-container') || this.block.hostElement)
+    if (!this._containerElement) {
+      this._containerElement =
+        (this.block.hostElement.querySelector('.children-render-container') || this.block.hostElement) as HTMLElement
+      this._containerElement.setAttribute('data-bc-placement-container', '')
+    }
+    return this._containerElement
   }
 
   private _compRefs: BlockCraft.BlockComponentRef[] = []
+  private readonly _sparseModelIndices = new Map<string, number>()
 
   constructor(private readonly block: BlockCraft.BlockComponent, private vm: DocVM) {
   }
@@ -235,6 +860,154 @@ export class BlockChildrenRenderRef {
     this._compRefs.splice(index, 0, ...comps)
   }
 
+  /** Insert one sparse child using its model index, independent of unmounted siblings. */
+  mountSparse(modelIndex: number, comp: BlockCraft.BlockComponentRef): void {
+    if (this._compRefs.some(current => current.instance.id === comp.instance.id)) return
+
+    let low = 0
+    let high = this._compRefs.length
+    while (low < high) {
+      const middle = (low + high) >>> 1
+      const currentIndex = this._sparseModelIndices.get(this._compRefs[middle].instance.id)
+      if (currentIndex != null && currentIndex < modelIndex) low = middle + 1
+      else high = middle
+    }
+
+    comp.instance.parentId = this.block.id
+    const next = this._compRefs[low]
+    if (next) next.instance.hostElement.before(comp.location.nativeElement)
+    else this.containerElement.append(comp.location.nativeElement)
+    this._compRefs.splice(low, 0, comp)
+    this._sparseModelIndices.set(comp.instance.id, modelIndex)
+  }
+
+  adoptSparseOrder(modelIds: readonly string[]): void {
+    this._sparseModelIndices.clear()
+    const indexById = new Map(modelIds.map((id, index) => [id, index]))
+    this._compRefs.forEach(component => {
+      const index = indexById.get(component.instance.id)
+      if (index !== undefined) this._sparseModelIndices.set(component.instance.id, index)
+    })
+  }
+
+  /** @internal Re-index and reorder only currently mounted sparse children. */
+  _reconcileSparseOrder(modelIds: readonly string[]): void {
+    const domIndexByHost = new Map<Element, number>()
+    Array.from(this.containerElement.children).forEach((host, index) => {
+      domIndexByHost.set(host, index)
+    })
+    const currentIndexById = new Map(
+      this._compRefs.map((component, index) => [
+        component.instance.id,
+        domIndexByHost.get(component.instance.hostElement) ?? domIndexByHost.size + index,
+      ]),
+    )
+    this.adoptSparseOrder(modelIds)
+    const indexById = new Map(modelIds.map((id, index) => [id, index]))
+    const desired = [...this._compRefs].sort((a, b) =>
+      (indexById.get(a.instance.id) ?? Number.MAX_SAFE_INTEGER) -
+      (indexById.get(b.instance.id) ?? Number.MAX_SAFE_INTEGER),
+    )
+    // Keep the largest already-correct host subsequence in place. Re-appending
+    // an untouched contenteditable host can invalidate a native DOM Range.
+    const stablePositions = longestIncreasingSubsequencePositions(
+      desired.map(component => currentIndexById.get(component.instance.id) ?? -1),
+    )
+    desired.forEach((component, index) => {
+      if (component.instance.hostElement.parentElement !== this.containerElement) {
+        stablePositions.delete(index)
+      }
+    })
+    if (stablePositions.size !== desired.length) {
+      for (let index = desired.length - 1; index >= 0; index--) {
+        if (stablePositions.has(index)) continue
+        const host = desired[index].instance.hostElement
+        const nextHost = desired[index + 1]?.instance.hostElement
+        if (nextHost) this.containerElement.insertBefore(host, nextHost)
+        else this.containerElement.append(host)
+      }
+    }
+    // Commit the in-memory order only after every DOM move succeeds. A later
+    // retry can then derive the remaining work from the partially moved DOM.
+    this._compRefs = desired
+    this._pruneUnownedSparseHosts()
+  }
+
+  private _pruneUnownedSparseHosts(): void {
+    const ownedHosts = new Set(
+      this._compRefs.map(component => component.instance.hostElement),
+    )
+    Array.from(this.containerElement.children).forEach(node => {
+      const element = node as HTMLElement
+      if (element.hasAttribute('data-block-id') && !ownedHosts.has(element)) {
+        element.remove()
+      }
+    })
+  }
+
+  /** Remove a sparse child host without destroying its component. */
+  unmountSparse(id: string): BlockCraft.BlockComponentRef | undefined {
+    const index = this._compRefs.findIndex(comp => comp.instance.id === id)
+    if (index < 0) return undefined
+    const [component] = this._compRefs.splice(index, 1)
+    this._sparseModelIndices.delete(id)
+    // The destination parent may already have adopted the same ComponentRef
+    // earlier in this Yjs transaction. Removing the stale root projection must
+    // not pull its host back out of that destination.
+    if (component.instance.parentId === this.block.id) {
+      component.instance.hostElement.remove()
+    }
+    return component
+  }
+
+  /** Update sparse model indices and retain mounted children deleted from the sequence. */
+  reconcileSparseDelta(
+    delta: Y.YEvent<Y.Array<string>>['changes']['delta'],
+    preserveIds: ReadonlySet<string> = new Set(),
+  ): {
+    removed: BlockCraft.BlockComponentRef[]
+    preserved: boolean
+  } {
+    const removed: BlockCraft.BlockComponentRef[] = []
+    let preserved = false
+    let cursor = 0
+
+    for (const operation of delta) {
+      if (operation.retain) {
+        cursor += operation.retain
+        continue
+      }
+      if (operation.insert) {
+        const length = operation.insert.length
+        this._sparseModelIndices.forEach((index, id) => {
+          if (index >= cursor) this._sparseModelIndices.set(id, index + length)
+        })
+        cursor += length
+        continue
+      }
+      if (operation.delete) {
+        const end = cursor + operation.delete
+        const removedIds: string[] = []
+        this._sparseModelIndices.forEach((index, id) => {
+          if (index >= cursor && index < end) removedIds.push(id)
+        })
+        removedIds.forEach(id => {
+          if (preserveIds.has(id)) {
+            preserved = true
+            return
+          }
+          const component = this.unmountSparse(id)
+          if (component) removed.push(component)
+        })
+        this._sparseModelIndices.forEach((index, id) => {
+          if (index >= end) this._sparseModelIndices.set(id, index - operation.delete!)
+        })
+      }
+    }
+
+    return {removed, preserved}
+  }
+
   remove(index: number, length = 1) {
     const comps = this._compRefs.splice(index, length)
     comps.forEach(comp => {
@@ -247,6 +1020,7 @@ export class BlockChildrenRenderRef {
       this.vm.destroy(comp.instance.id)
     })
     this._compRefs = []
+    this._sparseModelIndices.clear()
   }
 
   get(index: number) {
@@ -265,6 +1039,10 @@ export class BlockChildrenRenderRef {
     return this._compRefs.length
   }
 
+  get ids(): string[] {
+    return this._compRefs.map(component => component.instance.id)
+  }
+
 }
 
 declare global {
@@ -278,4 +1056,30 @@ declare global {
     type BlockComponent<T extends BlockFlavour = BlockFlavour> = IBlockComponents[T] | BaseBlockComponent
     type BlockComponentRef<T extends BlockFlavour = BlockFlavour> = ComponentRef<BlockComponent<T>>
   }
+}
+
+function longestIncreasingSubsequencePositions(values: readonly number[]): Set<number> {
+  if (!values.length) return new Set()
+
+  const predecessors = new Array<number>(values.length).fill(-1)
+  const tails: number[] = []
+  for (let index = 0; index < values.length; index++) {
+    let low = 0
+    let high = tails.length
+    while (low < high) {
+      const middle = (low + high) >>> 1
+      if (values[tails[middle]] < values[index]) low = middle + 1
+      else high = middle
+    }
+    if (low > 0) predecessors[index] = tails[low - 1]
+    tails[low] = index
+  }
+
+  const positions = new Set<number>()
+  let cursor = tails[tails.length - 1]
+  while (cursor !== undefined && cursor >= 0) {
+    positions.add(cursor)
+    cursor = predecessors[cursor]
+  }
+  return positions
 }

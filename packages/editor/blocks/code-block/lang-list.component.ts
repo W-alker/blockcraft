@@ -9,7 +9,6 @@ import {
 } from "@angular/core";
 import { CodeBlockLanguage, LANGUAGE_LIST } from "./const";
 import { loadLanguage } from "./shiki-config";
-import { NgForOf } from "@angular/common";
 import { debounce } from "../../global";
 
 @Component({
@@ -85,7 +84,6 @@ import { debounce } from "../../global";
 
     }
   `],
-  imports: [NgForOf],
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush
 })

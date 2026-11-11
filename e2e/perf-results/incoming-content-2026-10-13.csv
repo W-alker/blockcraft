@@ -1,0 +1,85 @@
+browser,phase,scenario,metric,samples,median_ms,p95_ms,max_ms,bytes
+chromium,gate,纯文本 10 KiB,gateMs,20,0.25,0.4,0.4,10260
+chromium,gate,纯文本 1.4 MiB,gateMs,20,6.5,8.1,9.4,1468027
+chromium,gate,中文超限 1.6 MiB,gateMs,20,7.35,10.4,11.4,1677744
+chromium,gate,2000 个短段落,gateMs,20,26.35,36.2,38.8,445197
+chromium,gate,100×20 表格,gateMs,20,48.1,60.1,78.8,908832
+chromium,gate,100×40 超限表格,gateMs,20,87.45,119.3,128.1,1808912
+chromium,paste,10 KiB 粘贴／空文档,dispatchMs,3,1.7,1.8,1.8,10240
+chromium,paste,10 KiB 粘贴／空文档,twoFramesMs,3,32.3,32.5,32.5,10240
+chromium,paste,10 KiB 粘贴／5000 段文档,dispatchMs,3,2.1,2.3,2.3,10240
+chromium,paste,10 KiB 粘贴／5000 段文档,twoFramesMs,3,23.9,36.9,36.9,10240
+chromium,paste,1.4 MiB 单段粘贴,dispatchMs,3,132.6,144.2,144.2,1468006
+chromium,paste,1.4 MiB 单段粘贴,twoFramesMs,3,193.4,210,210,1468006
+chromium,paste,1000 段纯文本粘贴,dispatchMs,3,106.3,119.9,119.9,600999
+chromium,paste,1000 段纯文本粘贴,twoFramesMs,3,134.3,150.9,150.9,600999
+chromium,paste,1.6 MiB 中文超限拒绝,dispatchMs,3,8.4,9.4,9.4,1677723
+chromium,paste,1.6 MiB 中文超限拒绝,twoFramesMs,3,33.4,34.5,34.5,1677723
+chromium,import,HTML 100 段／约 1 MiB,parseMs,3,30.2,30.5,30.5,1050700
+chromium,import,HTML 100 段／约 1 MiB,gateMs,3,5.9,7.4,7.4,1050700
+chromium,import,HTML 100 段／约 1 MiB,writeMs,3,1.1,2,2,1050700
+chromium,import,HTML 100 段／约 1 MiB,twoFramesMs,3,99.4,106.3,106.3,1050700
+chromium,import,Markdown 100 段／约 1 MiB,parseMs,3,76.6,89.6,89.6,1050200
+chromium,import,Markdown 100 段／约 1 MiB,gateMs,3,6.1,7.9,7.9,1050200
+chromium,import,Markdown 100 段／约 1 MiB,writeMs,3,1.2,1.3,1.3,1050200
+chromium,import,Markdown 100 段／约 1 MiB,twoFramesMs,3,153.4,154.3,154.3,1050200
+chromium,import,HTML 超限／1.6 MiB,parseMs,3,24.1,25.5,25.5,1677730
+chromium,import,HTML 超限／1.6 MiB,gateMs,3,6.7,7.3,7.3,1677730
+chromium,import,HTML 超限／1.6 MiB,writeMs,3,0,0,0,1677730
+chromium,import,HTML 超限／1.6 MiB,twoFramesMs,3,61.5,61.9,61.9,1677730
+firefox,gate,纯文本 10 KiB,gateMs,20,0.5,1,1,10260
+firefox,gate,纯文本 1.4 MiB,gateMs,20,5.0,13,15,1468027
+firefox,gate,中文超限 1.6 MiB,gateMs,20,5.5,10,18,1677744
+firefox,gate,2000 个短段落,gateMs,20,41.5,57,59,445197
+firefox,gate,100×20 表格,gateMs,20,66.0,108,114,908832
+firefox,gate,100×40 超限表格,gateMs,20,157.5,202,208,1808912
+firefox,paste,10 KiB 粘贴／空文档,dispatchMs,3,3,3,3,10240
+firefox,paste,10 KiB 粘贴／空文档,twoFramesMs,3,58,59,59,10240
+firefox,paste,10 KiB 粘贴／5000 段文档,dispatchMs,3,2,3,3,10240
+firefox,paste,10 KiB 粘贴／5000 段文档,twoFramesMs,3,74,82,82,10240
+firefox,paste,1.4 MiB 单段粘贴,dispatchMs,3,34,38,38,1468006
+firefox,paste,1.4 MiB 单段粘贴,twoFramesMs,3,301,320,320,1468006
+firefox,paste,1000 段纯文本粘贴,dispatchMs,3,337,366,366,600999
+firefox,paste,1000 段纯文本粘贴,twoFramesMs,3,424,434,434,600999
+firefox,paste,1.6 MiB 中文超限拒绝,dispatchMs,3,7,7,7,1677723
+firefox,paste,1.6 MiB 中文超限拒绝,twoFramesMs,3,31,39,39,1677723
+firefox,import,HTML 100 段／约 1 MiB,parseMs,3,48,51,51,1050700
+firefox,import,HTML 100 段／约 1 MiB,gateMs,3,10,12,12,1050700
+firefox,import,HTML 100 段／约 1 MiB,writeMs,3,3,4,4,1050700
+firefox,import,HTML 100 段／约 1 MiB,twoFramesMs,3,152,163,163,1050700
+firefox,import,Markdown 100 段／约 1 MiB,parseMs,3,240,242,242,1050200
+firefox,import,Markdown 100 段／约 1 MiB,gateMs,3,11,13,13,1050200
+firefox,import,Markdown 100 段／约 1 MiB,writeMs,3,2,3,3,1050200
+firefox,import,Markdown 100 段／约 1 MiB,twoFramesMs,3,335,386,386,1050200
+firefox,import,HTML 超限／1.6 MiB,parseMs,3,50,67,67,1677730
+firefox,import,HTML 超限／1.6 MiB,gateMs,3,4,5,5,1677730
+firefox,import,HTML 超限／1.6 MiB,writeMs,3,0,0,0,1677730
+firefox,import,HTML 超限／1.6 MiB,twoFramesMs,3,64,75,75,1677730
+webkit,gate,纯文本 10 KiB,gateMs,20,0.0,1,1,10260
+webkit,gate,纯文本 1.4 MiB,gateMs,20,4.0,6,7,1468027
+webkit,gate,中文超限 1.6 MiB,gateMs,20,2.0,4,4,1677744
+webkit,gate,2000 个短段落,gateMs,20,16.0,30,32,445197
+webkit,gate,100×20 表格,gateMs,20,28.0,51,66,908832
+webkit,gate,100×40 超限表格,gateMs,20,62.0,96,103,1808912
+webkit,paste,10 KiB 粘贴／空文档,dispatchMs,3,2,3,3,10240
+webkit,paste,10 KiB 粘贴／空文档,twoFramesMs,3,32,35,35,10240
+webkit,paste,10 KiB 粘贴／5000 段文档,dispatchMs,3,2,4,4,10240
+webkit,paste,10 KiB 粘贴／5000 段文档,twoFramesMs,3,36,50,50,10240
+webkit,paste,1.4 MiB 单段粘贴,dispatchMs,3,17,17,17,1468006
+webkit,paste,1.4 MiB 单段粘贴,twoFramesMs,3,3299,3453,3453,1468006
+webkit,paste,1000 段纯文本粘贴,dispatchMs,3,189,194,194,600999
+webkit,paste,1000 段纯文本粘贴,twoFramesMs,3,258,277,277,600999
+webkit,paste,1.6 MiB 中文超限拒绝,dispatchMs,3,4,6,6,1677723
+webkit,paste,1.6 MiB 中文超限拒绝,twoFramesMs,3,30,31,31,1677723
+webkit,import,HTML 100 段／约 1 MiB,parseMs,3,31,35,35,1050700
+webkit,import,HTML 100 段／约 1 MiB,gateMs,3,5,6,6,1050700
+webkit,import,HTML 100 段／约 1 MiB,writeMs,3,1,2,2,1050700
+webkit,import,HTML 100 段／约 1 MiB,twoFramesMs,3,122,132,132,1050700
+webkit,import,Markdown 100 段／约 1 MiB,parseMs,3,122,138,138,1050200
+webkit,import,Markdown 100 段／约 1 MiB,gateMs,3,6,6,6,1050200
+webkit,import,Markdown 100 段／约 1 MiB,writeMs,3,2,3,3,1050200
+webkit,import,Markdown 100 段／约 1 MiB,twoFramesMs,3,221,227,227,1050200
+webkit,import,HTML 超限／1.6 MiB,parseMs,3,47,63,63,1677730
+webkit,import,HTML 超限／1.6 MiB,gateMs,3,3,3,3,1677730
+webkit,import,HTML 超限／1.6 MiB,writeMs,3,0,0,0,1677730
+webkit,import,HTML 超限／1.6 MiB,twoFramesMs,3,66,69,69,1677730

@@ -4,7 +4,8 @@ import {
   type ASTToDeltaMatcher,
   DeltaASTConverter, InlineDeltaMatcher,
 } from '../types';
-import {DeltaInsert, IInlineNodeAttrs} from "../../framework";
+import {DeltaInsert, IInlineNodeAttrs} from '@ccc/blockcraft/framework/model';
+import {inlineInsertPlainText} from '../utils';
 
 export type InlineDeltaToMarkdownAdapterMatcher =
   InlineDeltaMatcher<PhrasingContent>;
@@ -24,19 +25,7 @@ export class MarkdownDeltaConverter extends DeltaASTConverter<
   }
 
   private _deltaInsertToPlainText(delta: DeltaInsert) {
-    if (typeof delta.insert === 'string') {
-      return delta.insert;
-    }
-
-    // insert 在 delta-op 模型里是可选的（见 DeltaOperation.insert?）：历史/异常持久化数据
-    // 可能产生 insert 缺失、为 null 或为原始值的 op。必须先确认它是对象再用 `in`，否则
-    // Safari/WebKit 下 `'mention' in undefined` 会抛 "undefined is not an Object" 致整篇导出失败。
-    // 与同模块 latexDeltaToMarkdownAdapterMatcher 的 `typeof delta.insert === 'object'` 守卫保持一致。
-    if (delta.insert && typeof delta.insert === 'object' && 'mention' in delta.insert) {
-      return String(delta.insert['mention'] ?? '');
-    }
-
-    return '';
+    return inlineInsertPlainText(delta.insert);
   }
 
   applyTextFormatting(
@@ -87,10 +76,12 @@ export class MarkdownDeltaConverter extends DeltaASTConverter<
     deltas: DeltaInsert[],
     depth = 0
   ): PhrasingContent[] {
-    if (depth > 0) {
-      deltas.unshift({ insert: ' '.repeat(4).repeat(depth) });
+    const content = deltas.map(delta => this.applyTextFormatting(delta));
+    // Keep indentation separate from inline marks and never mutate snapshot deltas.
+    // Remark escapes ambiguous leading tabs so prose does not become a code block.
+    if (Number.isSafeInteger(depth) && depth > 0) {
+      content.unshift({type: 'text', value: '\t'.repeat(Math.min(depth, 100))});
     }
-
-    return deltas.map(delta => this.applyTextFormatting(delta));
+    return content;
   }
 }

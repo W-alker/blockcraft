@@ -8,6 +8,8 @@ import {
 } from "../../framework";
 import {CodeBlockLanguage} from "./const";
 
+export * from './agent'
+
 export interface CodeBlockModel extends EditableBlockNative {
   flavour: 'code',
   props: {
@@ -27,8 +29,10 @@ export const CodeBlockSchema: IBlockSchemaOptions<CodeBlockModel> = {
   metadata: {
     version: 1,
     label: "代码块",
+    description: "插入支持语法高亮的代码",
     svgIcon: "bc_daimakuai1",
-    icon: "bc_icon bc_daimakuai1"
+    icon: "bc_icon bc_daimakuai1",
+    plainTextOnly: true,
   }
 }
 

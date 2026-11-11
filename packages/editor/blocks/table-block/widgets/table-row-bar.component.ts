@@ -28,6 +28,10 @@ export interface RowReorderEndEvent {
   selector: "table-row-bar",
   template: `
     @for (rowId of rowIds; let idx = $index; track rowId) {
+      @if (pageBreakGaps[rowId]) {
+        <!-- 分页页缝：撑出与表格内占位行等高的空隙，使行手柄与被下推的行保持对齐。 -->
+        <div class="handle-page-break" [style.height.px]="pageBreakGaps[rowId]" aria-hidden="true"></div>
+      }
       <button type="button"
               class="handle"
               [style.height.px]="rowHeightsRecord[rowId]"
@@ -67,6 +71,10 @@ export class TableRowBarComponent {
 
   @Input({required: true})
   rowHeightsRecord: {[key: string]: number} = {}
+
+  /** 屏幕分页断点：rowId → 该行手柄上方的页缝高度（px）。普通态为空对象。 */
+  @Input()
+  pageBreakGaps: {[key: string]: number} = {}
 
   @Input()
   visibleHandleIndex: number | null = null

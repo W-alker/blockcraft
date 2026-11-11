@@ -2,15 +2,130 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-06-24
+> Last updated: 2026-11-11
 
 These plugins provide floating toolbars that appear when specific block types are selected.
+
+## 迷你对象菜单四向避让（0.12.7）
+
+对象格式、整组、块级图片与内容区域菜单共享内部定位器；按右、左、上、下优先寻找完整落点，均不足时使用可见比例最大的一侧。
+上/下落点改为横向快捷条；设置卡独立选择四个方向并限制可用宽高，内部滚动保留，开关或切换面板不移动快捷条。
+滚动、窗口/视口尺寸变化及目标尺寸变化按帧合并重算；仅观察当前目标的样式投影，覆盖模型通知早于 DOM 平移/旋转落地的情况。关闭时清理观察器、监听与待执行帧。
+状态与插件构造参数不变，不写文档或 Undo；行内图片、普通 Callout、多对象水平排列工具条沿用既有交互。
+
+## 工具栏交互声明（未发布）
+
+`ObjectFormatToolbarPlugin.interactionConfigs` 注册 `OBJECT_TOOLBAR_INTERACTION`（objectToolbar）与 `GROUP_TOOLBAR_INTERACTION`（groupToolbar）；`ImgToolbarPlugin` 注册 `IMAGE_TOOLBAR_INTERACTION`（imageToolbar）；`CalloutToolbarPlugin` 注册 `REGION_TOOLBAR_INTERACTION`（regionToolbar）。声明位于各自目录 `interaction-config.ts`，由插件入口导出，默认值与三模式覆盖由插件拥有。
+插件通过 `doc.interaction.get(声明对象)` 读取类型化配置，继续订阅 `policyChanges$`。已有配置路径、构造参数和浮动工具栏生命周期保留；不存在的插件不会在实例注册表与调试台中出现。
+
+## 专注预设停用浮动编辑工具栏（未发布）
+
+各插件声明自己的 `enabled` 字段：`objectToolbar`、`imageToolbar`、`regionToolbar`、`stickerToolbar`、`materialToolbar`。默认 `true`，immersive 预设为 `false`；`groupToolbar.enabled` 继续独立控制组合工具栏。切换关闭时清理现有浮层及待打开计时器，点击、选区、焦点和行内对象路径均不会重开；切回 mixed/design 后恢复原触发规则。物料配置由 `MaterialToolbarPlugin` 拥有，兼容 `WeatherToolbarPlugin` 继承使用，不应同时安装两者。
+
+这是停用插件的浮动 UI 能力，不卸载渲染器、布局转换适配器或正文命令；正文输入、原生选区与行内对象复制仍可用。图片查看、附件打开等内容访问功能不属于本开关。高级宿主可在 immersive 下用 `overrides.plugins.<namespace>.enabled = true` 单独恢复所需工具栏。
+
+`InlineObjectInteractionController` 的第四个可选构造参数 `toolbarEnabled: () => boolean` 默认返回 `true`；所属插件传入配置读取回调，策略变更时关闭行内浮层，选择 Embed 的模型路径保留。
+
+## 可配置的内部选区工具栏（未发布）
+
+`ObjectFormatToolbarPlugin`、`ImgToolbarPlugin` 和 `CalloutToolbarPlugin` 分别读取
+`policy.plugins.objectToolbar/imageToolbar/regionToolbar.contentSelection`（design 预设默认开启），
+根据模型选区两端查找同一个最近对象，为文本框、艺术字、形状、图片说明、内容区域显示对应浮动工具栏。
+同一对象内跨段落可显示；跨对象、gap、失效目标或只读目标不扩展显示。
+组合是查找边界，不因成员内部选区弹出组合工具栏；成员自身可以显示自己的工具栏，整组选中仍保留组合菜单。
+订阅 `doc.interaction.policyChanges$`，预设和覆盖修改均重新判定现有选区。新入口不创建整块选区，也不为正在编辑的艺术字添加整块选中类；
+工具栏复用同一实例处理连续文字输入，从内部选区提交的对象格式变更进入普通用户事务；提交时仍保留的文字选区会记录到 Undo。
+未覆盖时 mixed/design 的既有工具栏触发规则保留；immersive 默认关闭以下编辑工具栏。`plugins.groupToolbar.enabled` 独立控制整组工具栏。规则位于 Plugin 层，不改变 `objectFormat.getSelectionIds()` 的整块选择契约。
+
+## 模式下的对象拖动（未发布）
+
+`native.layoutControls` 控制几何控件显隐；`native.moveExistingBlocks` 控制 ObjectDrag、浮动 Placement、已有块排序、
+行内环绕图片/形状/艺术字的移动入口（immersive 预设两项均关闭）；对象格式命令与媒体内容操作继续可用。
+underlay 对象的 CDK 控制层随模式切换移除/重建，避免正文下方对象通过浮层继续被误拖。
+mixed/design 沿用原正文编辑和对象移动/排序事务；design 在对象文字聚焦时直接显示缩放抓手。
+
+## 浮动文本工具栏默认按钮（未发布）
+
+`FloatTextToolbarPlugin` 默认不再显示上标、下标和行内公式按钮。
+标题、对齐、加粗、删除线、下划线、斜体、行内代码、链接、颜色与自定义动作入口保留。
+此调整仅影响浮动文本工具栏的默认按钮；上标/下标格式、公式数据与编辑能力、固定工具栏入口不变。
+
+## 动画浮动入口暂停（未发布）
+
+`ObjectFormatToolbarPlugin` 不再自动创建独立动画侧栏，形状、文本框、艺术字的默认对象侧栏也移除“动画”页签。
+所有块、整体组合及同平面混选都不显示默认浮动动画按钮；正文格式、对象布局/形状/文本以及图片/物料工具栏保留。
+此调整只移除默认 UI 入口，不更改 `doc.objectAnimation`、已保存的 `props.animation`、播放行为或宿主显式装配的设置组件。
+以下设置行为继续适用于宿主显式打开的动画设置面板：
+预设分为进入（淡入、飞入、缩放、弹入、翻入、旋入、滚入、落入）和强调（呼吸、摇摆、心跳、抖动、弹跳、漂浮、晃动、旋转），保留“无”选项。
+打开时定位到已保存效果的分类；切换分类只浏览，不修改草稿。另有方向、时长、延迟、重复、速度曲线以及预览/确定。
+多选异值显示混合态，选择效果后统一设置。字段调整保存在面板草稿中，连续修改合并 180ms 后自动预览；
+“预览”可手动重播，“确定”以一次可撤销事务保存，关闭对象侧栏并结束本次选中编辑，随后播放已保存的动画。关闭面板或切换 tab 放弃草稿并停止临时预览，不停止其他对象的动画。
+重复使用“单次 / 指定次数 / 持续循环”下拉框；指定次数显示 2–10 次数值输入（默认 2），在三种模式间切换保留本次指定次数。循环预览只播放两次。
+编辑态选中对象及相关组合暂停，取消选中继续；侧栏与面板持有编辑租约，避免输入框取焦时误恢复。
+选区取焦由面板持有；切到其他目标、只读或删除目标时关闭。面板大小变化后重新按视口定位，
+默认手动与 bundled 装配均不提供动画浮动入口；宿主可按需显式装配设置组件。
+
+
+## 个人工具栏偏好（0.11.22）
+
+`new FloatTextToolbarPlugin({enabled?: boolean})` 默认开启浮层。
+`setEnabled(enabled: boolean)` 支持运行时更新；关闭时释放当前浮层，保留加粗、斜体等格式快捷键。
+重新开启后随下一次选区变化显示，不抢夺焦点。
+
+`FixedTextToolbarComponent` 新增 `toolbarMode: 'simple' | 'full'` 输入（默认 `full`）及
+`toolbarModeChange` 输出。输入更新重新计算布局，但不回发 change；用户切换时才发出输出。
+宿主可用 `[toolbarMode]` 与 `(toolbarModeChange)` 管理个人最近模式；框架不存储账号设置。
+
+## 只读划词自定义动作（未发布）
+
+`FloatTextToolbarPluginOptions.readonlyExtraItems?: IToolbarMenuItem[]` 显式提供只读文档或锁定选区的动作；缺省仍关闭浮层。
+只读时隐藏所有格式控件，仅渲染这些动作；与编辑态 `extraItems` 分开，沿用同一个 `onExtraItemClick` 回调。
+`visible(selection)` 在展示和点击时检查，宿主可读取最新服务端权限；写入业务仍须在宿主提交时校验。
+`enabled` / `setEnabled()` 继续控制全部浮层。无有效动作时不创建浮层；格式快捷键仍受只读保护。
+定位、选区校验与销毁复用原插件，浮层复用现有 `allowReadonly`；不改变通用浮层默认行为。
+`FloatTextToolbarComponent.readonly` 默认 false，true 时只展示 `extraItems`；自定义按钮的 `label` 可显示简短文字。
+
+```typescript
+new FloatTextToolbarPlugin({
+  readonlyExtraItems: [{
+    name: 'comment', value: 'comment', icon: 'bc_huifu', label: '添加评论',
+    visible: selection => selection.isInSameBlock && canComment(),
+  }],
+  onExtraItemClick: item => { /* 宿主复核权限并处理动作 */ return true; },
+});
+```
+
+## 文本对象尺寸适应（未发布）
+
+对象浮动工具栏的一级尺寸按钮直接切换固定尺寸 / 内容自适应，与填写区复用 `bc_size-fixed` / `bc_size-auto` 图标；「文本选项」面板不再放置尺寸适应下拉框。
+仅对支持的文本框、横排非路径艺术字显示；普通形状和不支持的文字方向不显示。
+混选对象的文本框格式不一致时暂不显示，避免切换自适应时覆盖各对象原有边距、对齐和方向。
+固定工具栏选择文本框/艺术字预设后，点击放置默认开启内容自适应，拖拽绘制则使用固定尺寸。
+沿用现有 4px 屏幕距离阈值判定拖拽，轻微手抖仍按点击；拖拽即使恰好得到预设尺寸也保持固定。
+该规则只作用于工具栏新建，Schema/API 默认值、已有对象及普通形状保持原行为。
+固定尺寸保留最后一次手动设定，自适应按内容轴增减；手动调整内容轴尺寸会退出自适应。
+有效尺寸与持久化字段说明见 `blockcraft-block.md`。
+
 
 ## AttachmentExtensionPlugin
 
 > `plugins/attachment-extension/` — Attachment block interactions and toolbar.
 
-Manages click behavior on attachment blocks (file picker for empty blocks, upload-in-progress warnings), shows a connected toolbar with rename/download/preview/delete actions, and handles file paste.
+Manages click behavior on attachment blocks (file picker for empty blocks, upload-in-progress warnings), shows a connected toolbar with rename/download/preview/delete actions, and handles file paste. Rename mode keeps the attachment visually active with the private `.bc-attachment-renaming` class while the native rename input owns focus; whole-block `.selected` remains owned by `SelectionManager`.
+
+`AttachmentExtensionPlugin` 声明并导出 `ATTACHMENT_TOOLBAR_INTERACTION`：
+`plugins.attachmentToolbar.hoverOpen` 默认 true，各档位保留悬停；`selectionOpen` 默认 true，immersive 为 false，
+官方轻量档也声明为 false。混排/布局/设计中，单个附件整体选中时显示同一工具栏，移开鼠标仍保留；
+选区离开后回到悬停规则。跨块选区、gap 光标不触发；整篇只读始终忽略 selectionOpen，仅保留原悬停/触屏入口。
+切换档位立即按当前选区重新判断，不改选区、文档内容或 Undo。锁定块仍按原权限隐藏编辑动作；
+上传、预览、下载、文件粘贴及宿主自定义动作不变。
+配置示例：`doc.interaction.configure({preset: 'mixed', overrides: {plugins: {attachmentToolbar: {selectionOpen: false}}}})`。
+
+默认配置下，附件工具栏由鼠标/笔悬停 200ms 打开，不再依赖整块选区；移出附件与工具栏后延迟 200ms 关闭，跨越二者间隙时可继续操作。悬停不修改选区；触屏保留点击访问工具栏，点击外部关闭。块 hover 使用主题浅底色和边框，区别于选中态。重命名打开独立输入面板，关闭后保持原有选区恢复。只读模式保留预览/下载与非编辑扩展项，点击空附件上传、上传中提示和文件粘贴沿用原行为。Escape、块/文档销毁清理浮层。
+
+附件工具栏与卡片右侧对齐，空间不足时仍使用既有浮层翻转/边界约束。附件采用单行紧凑卡片：左侧单个文件图标、文件名，右侧仅显示大小；上传/同步时保留进度状态。文件名主体在剩余宽度内省略，后缀与文件大小优先完整显示；完整文件名可通过 title 查看，极窄容器下大小独立换行，超长后缀允许折行。`.attachment-block__name` 内拆为 `.attachment-block__name-stem` 和 `.attachment-block__name-extension`；无后缀、点文件和末尾句点不拆分。编辑视图与快照采用同一布局，`attachment-block__icon-wrapper` 位于开头，`attachment-block__size` 是卡片直接子节点，不再渲染重复的 `attachment-block__prefix`。
+
+附件编辑视图和快照预览使用 `@cses/ui` 文件图标，按 MIME 类型并以文件名后缀兜底；旧 `props.icon` 保留存储兼容。Angular 快照组件默认从组件库解析 SVG；纯 DOM renderer 的自定义 `resolveSvgIcon` 会收到 `file-pdf` 等组件库名称，无解析器时使用组件库通用文件字体图标。
 
 ### Configuration
 
@@ -18,21 +133,21 @@ Manages click behavior on attachment blocks (file picker for empty blocks, uploa
 new AttachmentExtensionPlugin(options?: AttachmentExtensionOptions)
 ```
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `extraItems` | `IAttachmentToolbarItem[]` | `[]` | Extra toolbar buttons |
-| `onExtraItemClick` | `(itemName, block, doc) => boolean` | — | Handler for custom button clicks |
-| `onPreview` | `(block, doc) => void` | — | If provided, adds a "Preview" button |
-| `previewIcon` | `string` | `'bc_eye-open'` | Icon for the preview button |
-| `previewLabel` | `string` | `'预览'` | Label for the preview button |
-| `uploadingTip` | `string` | `'文件可能正在上传中，暂不可用'` | Tooltip shown during upload |
+| Option             | Type                                | Default                          | Description                          |
+| ------------------ | ----------------------------------- | -------------------------------- | ------------------------------------ |
+| `extraItems`       | `AttachmentToolbarAction[]`          | `[]`                             | Extra toolbar buttons                |
+| `onExtraItemClick` | `(itemName, block, doc) => boolean` | —                                | Handler for custom button clicks     |
+| `onPreview`        | `(block, doc) => void`              | —                                | If provided, adds a "Preview" button |
+| `previewIcon`      | `string`                            | `'bc_eye-open'`                  | Icon for the preview button          |
+| `previewLabel`     | `string`                            | `'预览'`                         | Label for the preview button         |
+| `uploadingTip`     | `string`                            | `'文件可能正在上传中，暂不可用'` | Tooltip shown during upload          |
 
 ### Extension Points
 
-| Name | Purpose |
-|------|---------|
-| `onPreview` | Custom file preview implementation |
-| `onExtraItemClick` | Handle custom toolbar actions |
+| Name               | Purpose                            |
+| ------------------ | ---------------------------------- |
+| `onPreview`        | Custom file preview implementation |
+| `onExtraItemClick` | Handle custom toolbar actions      |
 
 ### Dependencies
 
@@ -42,19 +157,26 @@ new AttachmentExtensionPlugin(options?: AttachmentExtensionOptions)
 
 ```typescript
 new AttachmentExtensionPlugin({
-  onPreview: (block, doc) => {
-    const url = block.props.url;
-    window.open(url, '_blank');
-  },
-  extraItems: [
-    { name: 'share', icon: 'bc_icon bc_share', label: '分享' },
-  ],
-  onExtraItemClick: (name, block, doc) => {
-    if (name === 'share') { /* ... */ return true; }
-    return false;
-  },
-})
+  onPreview: (block, doc) => hostPreview(block.props),
+  extraItems: [{
+    name: "web-view", icon: "bc_wangluo", label: "转为网页块", editOnly: true,
+    visible: (block, doc) => doc.schemas.has('embed'),
+    onClick: (block, doc) => convertAttachmentToEmbed(doc, block),
+  }],
+});
 ```
+
+`AttachmentToolbarAction` 兼容 `IAttachmentToolbarItem`，新增可选的同步 `visible(block, doc)`
+和 `onClick(block, doc): void | Promise<void>`。按钮自己的 `onClick` 优先；缺省时沿用
+`onExtraItemClick(name, block, doc)`。`name` 应唯一，且不能使用内置的 rename/preview/download/delete。
+`visible` 应无副作用；在浮层打开、当前附件属性或只读状态变化以及点击前求值。
+外部业务状态改变后，下次打开或点击会重新求值，不监听任意业务 Store。
+`editOnly`、`showWhenUnavailable` 同时约束展示和执行；异步动作失败给出统一提示，文档销毁后不再提示。
+异步回调自身仍需在写入前检查目标、权限和资源是否有效。
+
+上传完成和远端属性更新直接刷新当前浮层，不关闭重建、不改变选区。
+嵌套文档的 hover/touch 事件由所属文档处理。宿主不应为刷新工具栏额外执行 blur/select/recalculate，
+也无需添加捕获点击或上传监听。宿主只保留预览服务和格式转换等业务实现。
 
 ---
 
@@ -62,7 +184,67 @@ new AttachmentExtensionPlugin({
 
 > `plugins/img-toolbar/` — Image block toolbar and interactions.
 
-Handles image drag, Enter key behavior, double-click preview (readonly mode), and shows a connected toolbar with align/caption/download/copy-url actions.
+用户通过固定工具栏、斜杠菜单、块菜单、文件拖入、文件粘贴或空图片选文件插入图片后，
+光标落在图片后的 `gap(after)`；不自动新增空段落，插图与随后继续输入分开撤销。
+混合文件粘贴仅在最后一项是图片时应用该落点。没有 gap 的浮动图片仍整体选中。
+该落点只由用户插入动作设置，上传结束、协同加载和普通视图挂载不会再次取焦。
+图片 gap 上的 Enter 交给 `InputTransformer`，按 before/after 在同一父容器内插入段落；
+图片说明文字和整图选中的 Enter / Ctrl+Enter 保留原来的快捷键行为。
+
+块态图片的点击选择和拖拽由 `ObjectDragPlugin` 统一处理；本插件通过 selection 变化
+显示工具栏，保留上传/预览/布局转换及行内图片交互。手动装配必须同时注册
+`ObjectDragPlugin`，bundled 装配无需改动。布局按钮及操作入口都查询
+`supportsObjectLayout()`；分栏、填写区等不允许浮动定位的容器内不显示衬于文字下方/浮于文字上方。
+
+Handles Enter key behavior, double-click preview (readonly mode),
+and shows a mini side rail with a compact 176px secondary layout list. Each row
+keeps the icon and name on one line with a right-side selected indicator. The rail keeps
+caption (flow only), download, copy-url and configured custom quick actions;
+**布局** opens existing object-layout and hierarchy commands. Left/center/right
+alignment appears only for flow images inside that card. Absolute and grouped
+images omit alignment, and the Plugin repeats the live-placement guard for
+stale align events. The rail aligns its top entry with the visible image frame and clears the
+measured horizontal bounds of real resize/rotation controls by 6px. The resizer
+host remains the tracking origin, while `getOriginRect` excludes its invisible
+paint reserve. It flips left/right within the document viewport. It reuses the common circular
+collapse control and clears its secondary card on collapse. The shared object layouts are **嵌入型 / 上下型 /
+衬于文字下方 / 浮于文字上方** with the same iconfont glyphs used by
+BlockController and future shapes. Top-bottom images use the shared Pointer
+Events block reorder controller; floating images live below the root placement
+layout and use the Pointer Events-only document placement coordinator. Native
+HTML5 drag/drop is not used for either position adjustment. An `under`
+image selected from its visible edge opens the same toolbar. Returning a
+floating image to top-bottom flow and converting it to an inline image both
+resolve the same nearest visual flow anchor, so neither jumps back to the
+pre-floating model position. Absolute images additionally expose a direct
+**四周型环绕** action. When the image visually overlaps a compatible editable
+text block, the action inserts the wrapped image Embed at that covered text
+line in one Yjs transaction, recalculates normalized `x` against the target
+text container, and preserves a non-empty image caption as following inline
+text. Merely being the nearest block is insufficient, and editable descendants
+of the source image are excluded. If no text block is actually covered, the
+action falls back to a new wrapped paragraph at the nearest visual flow anchor.
+Both paths start with `side: 'auto'` plus the standard gap.
+The canonical icon mapping is `bc_tuwenraopaiqianrushi` for **嵌入型**,
+`bc_tuwenraopaishangxiashi` for **上下型**, and `bc_tuwenraopai` for
+**四周型环绕**.
+Root absolute images also expose one-step
+**上移一层 / 下移一层** controls using `bc_cengji-shangyi` and
+`bc_cengji-xiayi`. The controls traverse one total stack and can cross ordinary
+flow content; they are disabled only at the highest `over` and lowest `under`
+boundaries. An image inside `object-group` omits both the object-layout and
+stack control sets because only its group owns root placement.
+
+Block images use the shared placement-plane-relative object resizer. The
+persisted width is `props.wr` (normally root-content percentage; group-width
+percentage for a direct `object-group` member) and height is derived from
+`props.ar`; the aspect ratio is locked by default. Left/right handles use
+Pointer Events, animation-frame-coalesced DOM preview and one props write on
+pointerup. An old pixel-sized image remains unchanged until that first completed
+resize, which atomically migrates `width/height` to `wr/ar`. Converting a
+responsive block image to an inline image resolves its current pixel dimensions
+before replacement because inline images keep their existing pixel attribute
+contract.
 
 ### Configuration
 
@@ -70,19 +252,76 @@ Handles image drag, Enter key behavior, double-click preview (readonly mode), an
 new ImgToolbarPlugin(options?: ImgToolbarPluginOptions)
 ```
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `extraItems` | `IImageToolbarItem[]` | `[]` | Extra toolbar buttons |
-| `onExtraItemClick` | `(itemName, block, doc) => boolean` | — | Handler for custom button clicks |
+| Option             | Type                                | Default | Description                      |
+| ------------------ | ----------------------------------- | ------- | -------------------------------- |
+| `collapsed`        | `boolean`                         | `false` | Initial block-image toolbar collapse state |
+| `extraItems`       | `IImageToolbarItem[]`               | `[]`    | Extra toolbar buttons            |
+| `onExtraItemClick` | `(itemName, block, doc) => boolean` | —       | Handler for custom button clicks |
+
+`ImgToolbarPlugin` 提供 `toolbarState`、`collapsed` 和 `setCollapsed(boolean)`；
+状态只属于本地 UI，跨块级图片菜单重建保留，不写 Yjs/Undo。`extraItems` 与
+`onExtraItemClick` 保持原契约；本配置不改变行内图片 Embed 的工具栏。
 
 ### Built-in Toolbar Actions
 
-| Action | Behavior |
-|--------|----------|
-| `align` | Set image alignment (left/center/right) |
-| `caption` | Toggle caption child block |
-| `download` | Download the image file |
-| `copy-url` | Copy image `src` URL to clipboard |
+| Action                      | Behavior                                                                                                          |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `align`                     | Set flow-image alignment (left/center/right); absent and rejected while floating                                                                           |
+| `object-layout: inline`     | Convert to **嵌入型** near the current visual flow anchor                                                         |
+| `object-layout: wrap`       | On an absolute image, insert **四周型环绕** into covered text; otherwise create it near the visual flow anchor    |
+| `object-layout: top-bottom` | Use **上下型** and automatically return to relative flow                                                          |
+| `object-layout: under`      | Use **衬于文字下方** and automatically enter absolute placement                                                   |
+| `object-layout: over`       | Use **浮于文字上方** and automatically enter absolute placement                                                   |
+| `move-forward`              | Move an absolute image one step toward the foreground, crossing from highest `under` to lowest `over` when needed |
+| `move-backward`             | Move an absolute image one step toward the background, crossing from lowest `over` to highest `under` when needed |
+| `caption`                   | Toggle caption child block                                                                                        |
+| `download`                  | Download the image file                                                                                           |
+| `copy-url`                  | Copy image `src` URL to clipboard                                                                                 |
+
+The inline-image toolbar emits the same `object-layout` action. Switching an
+inline image directly to under/over measures its current DOM box before
+replacement and persists those coordinates on the new image block.
+Clicking an inline image selects its one-character Embed range through
+`EditableBlockComponent.setInlineRange(offset, 1)`. This updates the canonical
+`BlockSelection` and native DOM Range together, so copy/cut act on the inline
+image rather than a stale text cursor. Readonly documents create the same
+selection for copy, but do not open editing controls.
+An Embed-only inline selection does not open FloatTextToolbar or TextMarker;
+mixed text-plus-Embed ranges retain the normal text toolbar behavior.
+Inline images without persisted dimensions reserve a 4:3 frame while loading.
+On first success this Plugin fills only missing `width/height` delta attributes
+inside an `ORIGIN_NO_RECORD` transaction, so the correction is collaborative
+and virtual-rendering-safe without adding an Undo step.
+
+The default inline-image converter additionally exposes an inline-only
+**四周型环绕** action; it does not extend global block object-layout options.
+Choosing it keeps the image as the same one-length Embed and uses the automatic
+text-wrapping policy. The toolbar exposes no 自动环绕 / 文字在左 / 文字在右
+secondary actions. **嵌入型** removes wrapping without moving the Embed.
+Eligible geometry lays real editable text on both sides; near an edge it uses
+the wider readable side. The visible `.bc-inline-image-frame` is the resize and
+connected-overlay target. Both ordinary and wrapped inline-image
+resize gestures keep that committed frame and the owning editable layout fixed,
+while an inert body-level outline with a live `width × height` label previews
+the proportional target size. The opposite horizontal edge stays fixed, the
+preview is clamped to the owning editable content width, and pointerup commits
+one `width/height` Delta format; wrapped images also update their existing
+normalized `x` when the preview's left edge moves. Escape, pointercancel,
+window blur, readonly or
+stale-anchor teardown cancels without a model write and releases the layout and
+virtual-view leases. Dragging a selected wrapped frame
+uses Pointer Events outside Angular and holds both an InlineRuntime
+layout-freeze lease and a source virtual-view lease. The committed frame,
+selection and text fragments stay fixed while an accessibility-inert,
+RAF-coalesced proxy follows x/y outside contenteditable. Pointerup converts the
+proxy x to normalized `x` and y to a Delta anchor. The anchor may move within
+the paragraph or to another compatible mounted editable block; block gaps and
+non-editable hits snap to the nearest compatible editable, while an
+editor-external drop cancels. Same/cross-block writes use one Yjs transaction
+and preserve the complete Embed payload. Cancel/Escape/blur/readonly teardown
+removes the proxy and releases both leases without a model write.
+Themes may refine the presentation-only proxy through
+`.bc-inline-image-drag-proxy`; it is never part of serialized editor content.
 
 ### Dependencies
 
@@ -92,57 +331,639 @@ new ImgToolbarPlugin(options?: ImgToolbarPluginOptions)
 
 ```typescript
 new ImgToolbarPlugin({
-  extraItems: [
-    { name: 'edit', icon: 'bc_icon bc_edit', label: '编辑' },
-  ],
+  extraItems: [{ name: "edit", icon: "bc_icon bc_edit", label: "编辑" }],
   onExtraItemClick: (name, block, doc) => {
-    if (name === 'edit') {
+    if (name === "edit") {
       // open image editor...
       return true;
     }
     return false;
   },
-})
+});
 ```
+
+---
+
+## ObjectFormatToolbarPlugin
+
+对象移动由 `ObjectDragPlugin` 按视图标记统一接入。本插件保留文字编辑、组合层级拾取、
+Shift 多选与格式工具栏；通常由公共入口启动块态移动，不维护点击确认会话。
+Shift 点击在当前组合内扩展直接成员的 boundary 多选；根级多选包含组合时，
+成员本体的 pointerdown 按当前选区委托 `placement.startDrag(event, groupId)`，
+从而移动整个组合和其他所选对象。缩放、旋转与专属控件不参与该委托。
+
+`ObjectFormatToolbarPlugin` is the only bundled toolbar owner for whole-object
+Shape, TextBox and WordArt selection. It also owns Shift-click mixed selection,
+alignment/distribution and grouping. Register it once; do not register any of
+the removed per-flavour object toolbars.
+
+形状块的“形状选项”只显示“填充 / 轮廓 / 效果”，不提供切换形状的 tab。
+文本框保留“形状”tab；混合选区包含形状块时隐藏该入口。面板从文本框切换到
+形状选区后，若此前停留在“形状”tab，则显示“填充”，避免留下空白页。
+
+```typescript
+import { ObjectFormatToolbarPlugin, ObjectDragPlugin } from "@ccc/blockcraft";
+
+const plugins = [new ObjectFormatToolbarPlugin(), new ObjectDragPlugin()];
+```
+
+`new ObjectFormatToolbarPlugin({collapsed: true})` 可创建默认收起的侧栏，省略时展开。
+运行时调用 `plugin.setCollapsed(boolean)`，通过 `plugin.collapsed` 读取当前值；
+`plugin.toolbarState` 为可复用的 `FloatingToolbarState`，其 `toggle()` 与圆形加/减按钮
+使用同一路径。切换形状、文本框、艺术字或组合目标时保留状态；收起关闭当前二级面板，
+提交待提交滑杆值并取消未确认的效果预览，再次展开只显示快捷条。
+`CalloutToolbarPlugin` 同样接受 `FloatingToolbarOptions` 并提供上述状态和方法，
+作用于内容区域的迷你外观工具栏，提示块原有菜单保持原交互。
+自定义工具栏的接入与生命周期见 `blockcraft-toolbar.md` 的可收起外壳章节。
+
+
+The connected quick rail reuses the established TextBox/WordArt two-level
+shell: a side-aware 34px rail opens a responsive 240px format card or compact
+176px layout card, both viewport-clamped and without redundant panel-title
+descriptions. It chooses right/left/top/bottom positions inside the scroller and viewport intersection; top/bottom positions use a horizontal rail. Secondary cards fit independently, preserving the rail start through collapse and tab changes, and retain toolbar/CSES sub-overlay focus ownership during pointer-to-focus handoff. The mixed-selection horizontal command strip retains its existing positioning. The panel keeps one scroll owner and switches
+among layout, Shape and text sections without disposing its Overlay. The size
+and rotation fields remain in the object-format domain but currently have no
+rail entry. It reads
+`doc.objectFormat.readSelection()` and commits through
+`doc.objectFormat.updateSelection(stableIds, patch)`; direct component code
+must not write serialized sections independently.
+When a CSES input temporarily detaches the editor Selection, the Plugin may pass
+`allowDetachedSelection: true` only while its toolbar-focus ownership check is
+positive. During that owned focus gap it also retains the existing whole-object
+chrome (`selected` outline/resizer state) without moving browser focus back to
+the editor. Retention starts on the first owned pointerdown and is reapplied
+after the synchronous selection broadcast, so the first rail click cannot flash
+away the object chrome. A different object selection remains a hard fail-closed
+condition.
+
+All generic panel controls come from CSES UI: Button/Tooltip for the rail and
+commands, Select/Option, Input/InputNumber, ColorPicker, Slider,
+and Switch for values. BlockCraft owns only the connected Overlay,
+iconfont glyphs and panel layout. Slider movement is an RAF visual preview;
+pointer/keyboard completion or blur commits one Yjs patch for one Undo step.
+
+数值面板使用与 `storeObject*()` 一致的精度：渐变/阴影角度、模糊、距离、
+发光半径、内边距为整数；轮廓宽度按 `0.25px` 步进和解析；字号、字距、
+行高最多两位小数。打开面板或未编辑的聚焦/失焦不触发旧数据回写。
+阴影/发光草稿在预览前经过写入精度收敛，确认与预览使用相同效果值，取消不持久化。
+
+Single-object layout, page alignment and hierarchy remain in the compact layout
+card. Mixed absolute-object selection is resolved by the placement domain rather
+than by `objectFormat`; it switches to the restored horizontal group toolbar for
+alignment, distribution and grouping instead of opening the object-format rail.
+A selected group instead uses a 34px mini rail with **布局** and **解除组合**
+entries. **布局** opens the 176px secondary card containing existing group layout
+modes and hierarchy actions; **解除组合** directly executes the guarded ungroup
+command and is hidden when that command is unavailable. Collapse clears the secondary card and re-expansion shows only the
+rail, using the same plugin-local state as other object toolbars. Group interaction keeps its established two-step contract: the
+first click anywhere in an inactive group selects the whole group, while a
+second click may enter the direct member; the ancestor group frame stays visible
+while a nested member owns Selection.
+整组选中时，组合自身八个缩放抓手的 pointerdown 直接交给缩放组件，
+不被整组选区捕获逻辑消费；成员抓手仍遵循首次选组、再次进入成员的规则。
+组合内多选成员时关闭成员对象的浮动格式菜单，
+不回退到首个成员旁的格式工具栏；成员单选与整组选中仍显示各自菜单。
+多选外框和同步拖拽保持可用。Visible single-object layout modes are the capability
+intersection from `doc.placement.supportsObjectLayout()`: an object without an
+inline adapter, including TextBox, does not show or accept the inline layout
+action. The remaining layout choices form a single column of 28px icon/text rows, with
+the active choice marked on the right. Alignment and hierarchy stay in footer
+shortcut groups rather than sharing the layout-option list.
+While the active mode is inline or top-bottom, the card hides page alignment,
+multi-object arrangement and hierarchy because those commands have no flow-layout
+semantics; they return only for under/over absolute layout. The action layer
+repeats the same guard before mutation.
+Shape format uses one CSES
+segmented tab strip for Fill, Outline, Change Shape and Effects. Text format
+uses one CSES segmented tab strip for Text Frame, Typography and Appearance;
+only the active tab content is displayed. The font family control is a
+searchable, virtualized CSES Select backed by the shared typography and WordArt
+font catalogs; it writes the shared bounded CSS stack so all three object
+renderers consume the selected family. Active tab content has no trailing
+divider and the panel does not expose per-section Reset actions. The Text Frame
+UI does not expose wrap-inside or
+rotate-text-with-object toggles; those normalized fields remain available to
+importers and programmatic callers. The Text Frame card also omits
+resize-shape/auto-grow because that behavior is not currently implemented;
+`autoFit` remains a normalized programmatic field.
+
+Shape Fill and Text Appearance reuse the established
+`ShapeFillPanelComponent` instead of maintaining another fill form. The same
+CSES Select switches none/solid/gradient/picture and renders only the selected
+mode's tools. The same preset grid, start/end color pickers and angle stepper
+emit one complete `ObjectPaint`; the owning card retains picture details and
+unified opacity handling. Built-in TextBox artwork may still persist as a
+`bc:` picture reference, but the card treats it as an internal rendering
+resource: it displays a blank user URL and only reveals fit, position and
+picture-opacity controls after a user URL or upload has been set.
+
+The panel exposes only the Schema capability intersection. Mixed values are
+blank/indeterminate until the user enters a replacement. Locked targets are
+skipped and reported; stale selection or deleted targets close the panel
+without a write. Shape change options are also intersected and textless line
+kinds are removed whenever an object already contains text.
+
+Picture fill uses `DOC_FILE_SERVICE_TOKEN.uploadImg()` or a normalized legal
+URL. `shapeFill`, `shapeOutline`, `shapeEffects`, `textFrame` and `textStyle`
+保留为结构化操作参数；持久化由 manager 分解为独立的紧凑小组，
+只写变化的组、删除默认组。`null` 清除该操作所拥有的全部小组；
+`type: 'none'` 是明确关闭，必要时编码为 `none`，不会恢复 Schema 的默认效果。
+对象效果和文字效果的阴影/发光分别保存，轮廓基础/端点/箭头分别保存。
+默认轮廓宽度为 `1px`，最大允许值 `100px` 不作为默认值。
+
+## Removed: ObjectGroupToolbarPlugin
+
+> Removed by the unified object format contract. This section is historical;
+> use `ObjectFormatToolbarPlugin` above.
+
+> `plugins/object-group-toolbar/` — Multi-object selection and fixed grouping.
+
+Shift-click extends a whole-object selection to one contiguous range of direct
+root placement children. With two or more objects, the toolbar exposes
+**左对齐 / 水平居中 / 右对齐 / 顶端对齐 / 垂直居中 / 底端对齐 / 中心对齐**.
+With three or more it also enables **横向分布 / 纵向分布**. The icons are
+`bc_align2left`, `bc_align2center`, `bc_align2right`, `bc_align2top`,
+`bc_align2middle`, `bc_align2bottom`, `bc_zhongxinduiqi`,
+`bc_hengxiangfenbu` and `bc_zongxiangfenbu`.
+The **组合** action calls `doc.placement.group(ids)`;
+selecting an `object-group` shows **取消组合** and calls `ungroup(groupId)`.
+Their toolbar glyphs are `bc_combination` and `bc_quxiaozuhe`, respectively.
+All structural moves, coordinate rebasing and image ratio conversions occur in
+one Yjs transaction.
+Alignment and distribution also use one model-only Yjs transaction, but write
+only `position`. They preserve responsive/fixed size fields and placement
+layers. Single-axis center and combined center use the average of the selected
+visual centers; distribution keeps the two endpoint centers fixed and spaces
+the intermediate centers evenly.
+The selected group toolbar exposes **上下型 / 衬于文字下方 / 浮于文字上方**
+for the group as one atomic object. Top-bottom moves the fixed group frame into
+root flow without changing member-local coordinates; under/over restores root
+absolute placement. It also exposes **上移一层 / 下移一层** while absolute;
+copy/delete use the standard whole-block paths. The absolute frame-edge drag
+regions are hidden in top-bottom flow so ordinary block reorder owns movement.
+Because dissolving a group projects its members back into the root absolute
+plane, **取消组合** is enabled only while the group is under/over; the layout
+buttons remain available in top-bottom flow so the state is always reversible.
+
+The Plugin's document-capture pointer listener must register before image,
+Shape, TextBox and WordArt object Plugins. The bundled capability factory
+already guarantees that order. On grouped content, the first click selects and
+shows the whole group; dragging any of the selected frame's four edge bands
+moves the group. Clicking a member again while the group is selected lets that
+member's existing toolbar and local drag behavior take over. Once the group or
+any nested descendant owns Selection, the capture listener leaves member
+`pointerdown` events untouched, so later member drags cannot be reclaimed as a
+new first click. A selection anywhere in the mounted group subtree keeps the
+ancestor group outline visible; this walks only the two endpoint ancestry
+chains and does not scan descendants or measure DOM.
+Member styling and local resize stay available; member-level object-layout
+controls remain omitted because flow/inline/layer transitions would break the
+group boundary. Only the selected group frame owns the three block-layout
+choices.
+Independent **上移一层 / 下移一层** controls are omitted from every member
+toolbar; only the selected group can move through the root placement stack.
+Member move/resize/rotation commits tighten the group frame through
+`updateObjectGeometry()` without measuring DOM. The pointer-move phase remains
+transform-only.
+The frame reserves 8 layout pixels on each side between its outline and the
+local member plane, so an edge-aligned member does not overlap group chrome.
+
+```typescript
+new ObjectGroupToolbarPlugin();
+```
+
+Selection remains one contiguous range of root absolute objects. Alignment can
+cross `under`/`over` layers and can treat an existing group as one object;
+组合 stays independently disabled unless the selected range is same-layer and
+contains no existing group. V1 does not expose group resize/rotation or nested
+groups.
+
+---
+
+## Removed: ShapeToolbarPlugin
+
+> Removed by the unified object format contract. This section is historical;
+> use `ObjectFormatToolbarPlugin` above.
+
+> `plugins/shape-toolbar/` — Word-like shape selection, styling and object layout.
+
+Registers pointer selection and connected-toolbar behavior for the built-in
+`shape` block. The compact object toolbar exposes fill and opacity,
+outline color/width/style, deletion, and the complete object-layout set.
+Shape type is chosen only from the fixed toolbar's **插入形状** picker. Text
+color and horizontal/vertical alignment remain compatible block properties but
+are not shown in the default object toolbar. While editing `shape-text`, normal
+inline font, size, color and character-format commands remain available; paste
+still consumes only `text/plain`. A root absolute shape additionally
+shows **上移一层 / 下移一层** with `bc_cengji-shangyi` and
+`bc_cengji-xiayi`; the same document placement APIs and total-stack boundary
+rules used by images determine whether each control is enabled. Its 布局 panel
+also shows a labeled **页面对齐** group of three inline buttons (靠左 / 水平居中 /
+靠右, same form as the TextBox toolbar); each calls
+`doc.placement.alignObjectsToPlane([blockId], value)`, which snaps the shape's
+rotation-aware visual bounds to the placement plane's left edge, horizontal
+center or right edge and writes only `position.x`. A grouped shape
+omits the complete layout and stack control sets, including 页面对齐.
+
+The toolbar follows the text-box/WordArt rail-plus-panel form instead of one
+long horizontal strip: a compact vertical rail anchored beside the shape
+(right-top first, left-top fallback; the `side` input flips tooltip placement)
+offers **布局选项** (`bc_buju`, hidden for grouped shapes), **形状样式**
+(`bc_sepan`) and a standalone **删除形状** entry. Each rail entry toggles one
+inline panel; `panelChange` reports open/close so the plugin can reposition
+the overlay.
+
+The 布局 panel holds the 文字环绕 grid (five options including 四周型环绕),
+and — for free absolute shapes — the 排列 stack actions plus the 页面对齐
+direct-option group (same form as the text-box toolbar). The 样式 panel embeds
+`ShapeFillPanelComponent` (纯色/渐变 segmented switch: solid palette picker, or
+the built-in `SHAPE_FILL_GRADIENT_PRESETS` swatch grid plus
+起始颜色/结束颜色/渐变角度 custom controls), the 填充透明度 slider, and the
+轮廓 section (CSES palette 颜色, 粗细 radio row, 实线/虚线 radio row). Every
+fill change emits one atomic `fill-style` action (`ShapeFillChange`) written
+through a single `updateProps()` call so undo stays one step; the legacy
+`fill-color` action remains accepted for compatibility.
+
+The plugin keeps the toolbar open while panel interaction owns focus via the
+shared `isObjectToolbarOwnedTarget()` / `hasOpenOwnedSubOverlay()` guards in
+`plugins/object-layout/object-toolbar-interaction.ts` (also used by the
+WordArt toolbar). While that ownership holds, a native `selectionchange`
+recalculation that clears the selection or degrades the whole-shape
+`selected` state into a same-block `boundary` selection (typical when a CSES
+color-picker popup takes focus) no longer closes the toolbar; leaving the shape
+or losing ownership still closes it. The shape toolbar contains no native
+`select` elements.
+
+```typescript
+new ShapeToolbarPlugin();
+```
+
+The layout actions are:
+
+| Action          | Behavior                                                                                                                              |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `inline`        | **嵌入型**; serializes shape props plus its `shape-text` Delta into one `shape` Embed                                                 |
+| `wrap`          | **四周型环绕**; creates the same Embed with `wrap/x/gap`; an overlapping absolute shape enters the covered text line directly         |
+| `top-bottom`    | **上下型**; clears absolute coordinates and reanchors to relative flow                                                                |
+| `under`         | **衬于文字下方**; enters absolute placement below ordinary content                                                                    |
+| `over`          | **浮于文字上方**; enters absolute placement above ordinary content                                                                    |
+| `move-forward`  | Move an absolute shape one step toward the foreground, including crossing ordinary flow content                                       |
+| `move-backward` | Move an absolute shape one step toward the background, including crossing ordinary flow content                                       |
+| `plane-align`   | Snap an absolute shape's visual bounds to the placement plane's left edge / horizontal center / right edge; only `position.x` changes |
+
+Clicking an inline shape selects its one-character Embed in both
+`BlockSelection` and the native Range, then opens a layout-only toolbar with
+inline/wrap and reverse block conversion actions. **四周型环绕** is the one
+shape text-wrapping mode; the toolbar does not expose 自动环绕 / 文字在左 /
+文字在右. Shape Delta persists `wrap/x/gap` only and always resolves wrapping
+with the automatic geometry policy. The Embed keeps all shape props and nested
+text Delta; detailed text/style editing stays on the block representation, so
+switch back to top-bottom/under/over to edit it.
+Both plain inline and wrapped shapes can be dragged from their selected frame,
+but a plain click only selects and opens the toolbar. The drag
+proxy is created only after pointer movement crosses the 2px threshold. The
+Pointer Events proxy maps release x/y back to a same- or
+cross-editable-block Delta anchor in one Yjs transaction; wrapped shapes also
+update normalized `x`, while plain inline shapes keep no float coordinates.
+HTML preserves the object payload and wrap metadata; Markdown emits readable
+shape text. Clicking the block object edge selects the whole shape and opens
+the styling toolbar. While that absolute whole-object selection
+is active, printable input, IME, Enter, Tab and paste are isolated from the
+normal document input pipeline; Delete/Backspace and object toolbar operations
+remain available. A newly inserted shape has no placeholder text child;
+double-clicking creates its single `shape-text` child through `DocChain` and
+focuses it, while later double-clicks focus the existing child. That nested
+editing surface has no independent border, outline, shadow or background.
+Relative shapes use the shared Pointer Events block drag controller. Absolute
+shapes live below the root placement layout and use the Pointer Events-only
+placement drag coordinator; native HTML5 drag/drop is not involved. Eight
+resize handles and the top-center drag-rotation handle share one gesture
+coordinator. Rotation previews per animation frame, Shift snaps to 15°, and
+pointerup commits one `updateProps()` transaction. The toolbar's top placement
+keeps clearance for the rotation handle; pointerdown inside `shape-resizer` or
+`shape-geometry-editor` never starts object movement. Line, connector and scribble
+shapes expose endpoint/node handles only in explicit point-editing mode; cubic
+shapes then expose their two control handles and guide lines. The gesture updates only the
+SVG preview until pointerup, then writes one validated atomic `customGeometry`
+compact path string so collaboration and Undo never observe partial curves.
+No-motion clicks and gestures returning to their start do not commit; restoring
+the catalogue geometry deletes the override through the same Undo transaction.
+Common catalogue shapes use the same gesture boundary with yellow round
+adjustment handles. Rounded rectangles, triangle, parallelogram, trapezoid,
+cardinal/bidirectional block arrows and rectangular/rounded callouts persist
+only a flat `adjustments` record; blue square handles remain reserved for cubic
+curve controls.
+All other catalogue shapes project their trusted static path into yellow
+editable nodes only after choosing **编辑顶点** from the shape context menu. Quadratic/smooth segments expose equivalent blue
+cubic controls; catalogue arcs are split into cubic segments so their nodes and
+controls remain usable. The projection becomes atomic `customGeometry` only
+after the first gesture that changes geometry.
+
+普通选中只显示缩放、旋转及有限参数调整点。星形、圆环、框架、剪角矩形、书签、
+内凹缎带和 V 形/燕尾/五边形箭头也提供 1–2 个命名参数点；范围见 `blockcraft-block.md`。
+顶点模式临时隐藏聚焦框与缩放/旋转抓手；参数形状从当前调整后的轮廓进入。
+**完成顶点编辑**或 Esc 退出；拖点中的第一次 Esc 只取消当前预览，第二次退出模式。
+收起工具栏、切换对象/文字选区、锁定、只读或销毁会退出，模式本身不产生撤销记录。
+浮动工具栏不显示顶点编辑入口；只在形状右键菜单提供纯文字操作项。手动 Doc 需注册 `ContextMenuPlugin`。
+普通参数点与自由顶点/曲线控制点都使用十字准星光标；形状本地 API 见 `blockcraft-block.md`。
+
+Register `PlacementLayoutBlockSchema`, `ShapeBlockSchema`,
+`ShapeTextBlockSchema`, `ShapeToolbarPlugin`, and a fresh
+`createInlineShapeEmbedConverter()` together. The bundled editor already does
+this.
+When `ShapeBlockSchema` is registered, the bundled
+`FixedTextToolbarComponent` also exposes a visible **插入形状** button. Its
+picker uses the same 103 `SHAPE_DEFINITIONS` grouped by the eight
+`SHAPE_CATEGORIES` and creates the selected type
+directly below the root `placement-layout`, near the saved selection, with the
+default `over` tier. There is no temporary root-flow shape. When the layout does
+not exist yet, the layout and its first shape are inserted as one nested
+snapshot; later shapes append to the existing layout. The new shape is selected
+after the transaction completes. The entry keeps the existing `bc_tuxing`
+iconfont glyph, while every picker item renders its actual
+`ShapeDefinition.path` through the shared `ShapeIconComponent`; shape
+definitions do not maintain iconfont classes. Its dense icon-only cells use
+Tooltip and accessible labels; only the compact category headings remain
+visible.
+Line/connector appearances paint no fill and expose no editable shape-text
+surface. Their geometry endpoints are editable, but automatic attachment to
+another shape remains outside this visual shape contract.
+
+---
+
+## Removed: TextBoxToolbarPlugin
+
+> Removed by the unified object format contract. This section is historical;
+> use `ObjectFormatToolbarPlugin` above.
+
+> `plugins/text-box-toolbar/` — Whole-frame toolbar, preset/shape/text-effect styling and
+> object placement for the fixed-size `text-box` container.
+
+```typescript
+new TextBoxToolbarPlugin();
+```
+
+The Plugin does not implement the object/text selection state machine. The
+`text-box` Schema declares a selectable frame plus placement-aware scope and
+editing boundary. Core Selection selects a directly clicked frame in either
+layout. Relative flow otherwise behaves like Mermaid for descendant caret,
+double-click, Enter, arrows and Ctrl/Cmd+A, while `escapeToFrame: 'always'`
+provides a direct keyboard path back to whole-object selection. Absolute
+placement additionally activates frame/text Enter and double-click transitions,
+a closed container scope and capped edge navigation/select-all.
+The Plugin only observes the result: a whole text-box selection opens its
+connected toolbar and resize/rotation handles; a caret or range inside closes
+the object chrome.
+
+Explicit resizer handles opt out of the generic frame pointer capture and
+remain Plugin-owned so resize and relative reorder gestures still work.
+Whole-object hover or internal focus reveals `bc-object-corner-controls`:
+a thin frame and four lightweight inner corner buttons appear together.
+Clicking or keyboard-activating a corner selects the whole text box; only the
+marked entry edges start movement. The inner text surface remains directly
+editable, and whole-object selection replaces the entry with existing controls.
+Within the inner editing host, ordinary prose uses a column layout whose last
+real child owns any remaining block-axis space. Browser caret hit testing can
+therefore resolve fixed-frame whitespace without a Plugin-level blank-area
+click handler or synthetic caret calculation.
+Relative movement uses the shared Pointer Events block drag controller;
+absolute movement starts only from the frame edge and delegates to
+`BlockPlacementManager`, so text selection inside the viewport remains native.
+
+The object toolbar follows Word's object/text split. Whole-frame selection
+opens a narrow vertical rail with click-owned **布局 / 样式 / 形状 / 文字**
+entries; only one secondary settings card is visible at a time. **样式** applies
+one catalog entry as a concrete multi-key props patch. **形状** reuses the full
+Shape catalog except line/connectors that cannot own a text frame, and exposes
+CSES color/slider/number controls for shape fill, picture fill, opacity,
+outline and stroke style. Picture fill accepts either an `http(s)` image link
+or a local image uploaded through the host `DocFileService`; both persist the
+resolved URL inside the CSS `fill` string.
+**文字** combines WordArt presets with font, size, alignment, solid/gradient
+fill, outline, shadow and transform controls. Applying a whole-style preset
+preserves the text box's current font size (or its neutral inherited 16px size)
+instead of importing the standalone WordArt preset's display size. Preset IDs
+are never persisted. Detailed text edits use independent `textFont`, `textFill`,
+`textOutline`, `textShadow` and other text groups.
+The **布局** rail entry uses the semantic `bc_buju` icon.
+
+**文字** also owns the **文字方向** switch, which writes the independent
+`textDirection` prop. Because `text-align` and the flex main axis are
+logical, a vertical frame flips what each alignment control does on screen, so
+the two alignment rows swap their displayed labels and options while the
+underlying `horizontalAlign` / `verticalAlign` fields stay put. No stored value
+is rewritten when the direction changes.
+
+Generic containers expose `p/bgi/bgo` at Schema/CRUD boundaries. Object blocks
+use the shared object-format fill groups. Raw padding is not shown in the toolbar; the
+background URL is exposed as a validated `http(s)` picture-fill link alongside
+选择图片 / 替换图片 / 移除, fit, horizontal/vertical percentage position and
+opacity. Position controls rebuild the CSS picture string once after slider
+interaction and stay hidden for `stretch`, where `object-position` has no visible
+effect. Custom pictures use `fill`; catalog drawings use the independent
+`artwork` reference, so image replacement does not rewrite catalog SVG data. Slider movement stays local and commits once on pointer/key
+completion to avoid Yjs/Undo flooding. The outer rail and all secondary cards
+remain in one block-owned connected Overlay; CSES ColorPicker/Select sibling
+panes are treated as owned interactions only while their originating control is
+open inside that toolbar.
+
+Object layout is limited to `top-bottom`, `under` and `over`; those three
+choices are the layout card's only placement controls. It does not repeat them
+through a separate **位置基准 / 随文字移动 / 固定在页面上** section, and it
+does not advertise Square/Tight/Through wrapping. Root absolute objects also
+expose one-step forward/backward stacking in the 排列 section, plus a separate
+labeled **页面对齐** section of three inline buttons (靠左 / 水平居中 / 靠右)
+that call `doc.placement.alignObjectsToPlane([blockId], value)` and write only
+`position.x`. A grouped text box omits the entire
+**布局** rail entry and panel rather than showing unavailable choices. No
+inline/wrap conversion is advertised because a multi-Block container has no
+inline Embed or block-wrap representation.
+
+Register `TextBoxBlockSchema`, `PlacementLayoutBlockSchema`, the allowed
+ordinary child schemas and `TextBoxToolbarPlugin` together. The bundled
+capability factory already does this. When the Schema is present, the fixed
+toolbar shows the `bc_wenbenkuang` **插入文本框** action and opens the style
+catalog directly. The fixed surface does not repeat **横向** / **竖向** plain
+insertion shortcuts; direction remains available from the selected text box's
+**文本** settings.
+
+The picker exposes all 58 gallery styles through `CsTabsComponent` /
+`CsTabComponent`: 办公经典 / 引言 / 侧边栏 / 杂志 / 异形 / 气泡 / 纸张 /
+文化风格 / 材质效果 / 竖排. The navigation row alone scrolls horizontally;
+the active grid expands to its natural height without a nested content
+scroller. `getTextBoxPresetsFor(wm, cat?)` still filters by direction: callout
+geometry remains horizontal, while the three vertical presets persist
+`textFrame.direction: 'vertical-rl'` and their tall default dimensions.
+
+Picking a style arms the shared one-shot drawing surface, creates one absolute
+`over` object on pointerup, then reveals the object and enters its initial
+paragraph. Gesture cancellation never writes a temporary root-flow Block.
+
+---
+
+## Removed: WordArtToolbarPlugin
+
+> Removed by the unified object format contract. This section is historical;
+> use `ObjectFormatToolbarPlugin` above.
+
+> `plugins/word-art-toolbar/` — Editable WordArt styling, object placement and
+> transform affordances.
+
+```typescript
+new WordArtToolbarPlugin();
+```
+
+The `word-art` Schema and core Selection own the object/edit dual state. Clicking
+text or blank space enters the direct Y.Text editor without arming object
+movement; once editing, normal text clicks use the browser's native caret
+placement. Whole-object hover or internal focus reveals the same thin frame
+and lightweight corner buttons as text boxes. Corners select the object through
+click or keyboard activation; the entry edges start relative reorder or absolute
+placement drag. The four invisible selected-border hit regions remain available
+for movement, and the eight resize handles plus rotation handle keep higher hit
+priority. Core Selection handles Enter into editing and Escape back to
+whole-object selection through Schema metadata; the Plugin no longer duplicates
+those hotkeys. Readonly WordArt stays selectable but does not open mutation
+controls.
+
+Object chrome is exclusive to a whole-object selection. The Plugin applies
+`.word-art-block--object-selected`, opens the connected settings rail and lets
+the bundled theme reveal `ShapeResizerComponent`. A caret or range in WordArt's
+Y.Text closes the rail, removes that class and hides the resizer; only the
+lightweight hover/focus entry remains visible. Toolbar-owned pointer/focus settling is ignored so opening
+**艺术字格式** cannot flash closed on a transient native text Range; an explicit
+pointer back into the WordArt surface still closes object chrome immediately.
+
+The connected toolbar now follows the same two-level object pattern as TextBox.
+Its narrow vertical rail exposes **布局 / 艺术字格式 / 删除** and sits on the
+available left or right side of the selected object. Clicking **布局** opens a
+secondary card containing inline/wrap plus the three block object layouts and,
+for a root absolute object, stack order. Clicking **艺术字格式** opens a
+secondary card whose local tabs group the existing controls into 字体、填充与
+轮廓、效果. Only one secondary card is visible, and panel switching stays
+inside the same block-owned connected Overlay without writing document data.
+The Plugin repositions that Overlay on the next animation frame after card
+geometry changes. Both secondary cards are 288px wide and let their active-tab
+content determine height without introducing an internal scrollbar. A grouped
+WordArt omits the complete 布局 rail entry and card.
+
+The formatting card continues to expose one of 10 safe font families, font
+size, solid/linear-gradient fills, outline, shadow toggle, letter spacing,
+horizontal/vertical alignment and safe affine/perspective/scale effects. The 16
+whole-style presets remain in the fixed toolbar's **插入艺术字** visual
+dropdown; font-family selection is also available on the selected object so
+existing WordArt can be restyled. The shadow toggle uses the
+`bc_wenziyinying` iconfont glyph. Generic form fields use CSES `Select`,
+`Segmented`, `InputNumber`, `ColorPicker`, `Slider` and `Switch` controls;
+BlockCraft continues to own only the editor-specific rail and layout geometry.
+Letter-spacing and outline-width slider previews stay local and commit once at
+the end of pointer/key interaction, avoiding Yjs and Undo flooding. Styling is
+whole-block; it does not write per-character inline attributes. CSES select and
+color-picker sibling panes count as owned interactions only while their
+originating control is open inside this toolbar.
+
+The real WordArt surface owns `ShapeResizerComponent` and
+`calculateWordArtResize()` while the Plugin creates only the connected
+toolbar. The separate top handle uses
+`data-bc-selection-interaction-ignore` so its move gesture remains Plugin-owned.
+Keeping text, outline and handles in one transform coordinate system
+prevents rotated resize previews from drifting. Corners preserve the object
+aspect ratio and preview the scaled font size; left/right reflow width,
+top/bottom adjust height, and the rotation handle commits normalized degrees.
+Gesture previews run outside Angular and commit once on pointerup. The
+toolbar's fill, effect and alignment choices use the standard CSES form
+components rather than native controls or BlockCraft command-menu components.
+
+Register `WordArtBlockSchema`, `PlacementLayoutBlockSchema` and
+`WordArtToolbarPlugin` together with a fresh
+`createInlineWordArtEmbedConverter()`. The bundled capability factory already
+does this, and the bundled fixed toolbar exposes the **插入艺术字** visual preset
+dropdown only when the Schema is registered. Its compact 16 `A` cards reuse the
+production WordArt presentation resolver. Choosing a preset creates the
+default `艺术字` with that presentation, enters editing and selects all text.
+
+Choosing **嵌入型** or **四周型环绕** serializes normalized whole-object props
+and plain-text Delta into one `word-art` Embed. An absolute object that visibly
+overlaps editable text is inserted at that covered line; otherwise it falls
+back to the nearest flow anchor. Clicking the Embed selects its length-one
+range and opens the same layout-only inline-object toolbar used by shapes; it
+does not expose text-side actions. A click creates no drag proxy. Pointer Events
+drag begins only after movement crosses the 2px threshold in both plain inline
+and wrapped modes, including cross-paragraph anchor movement.
+Top-bottom/under/over restores a WordArt block without losing presentation or
+text. HTML round-trips the payload; Markdown degrades to readable text.
 
 ---
 
 ## BookmarkBlockExtensionPlugin
 
+`LINK_BLOCK_RESOLVER` 可由 Doc 注入器提供，卡片与行内链接共用链接转块合同；
+菜单显示目标 label，提交重新解析并校验源卡片，支持异步取消。blocked／失败不回退为网页，
+未配置／unhandled 保留内置转换；转回链接不调用 resolver。Provider 示例见 `blockcraft-app.md`。
+
 > `plugins/bookmark-frame-extension/` — Toolbar for bookmark blocks.
+> Runtime plugin ID: `bookmark-block-extension`.
 
 Shows a floating `BookmarkBlockToolbar` when a bookmark block is selected. Dismissed when selection moves away.
+
+卡片、链接、嵌入视图可以从各自的视图菜单直接互转，来源 URL 保持。
+卡片与嵌入转换后选中新块；转链接后光标落到链接段落。提交前检查目标 schema、
+当前实例、只读和父容器插入限制。嵌入来源识别与行内链接共用规则，优先统一 `embed`。
+转换建立独立撤销边界，替换源块前捕获选区；撤销/重做恢复对应视图与选区。
 
 ### Configuration
 
 No configuration options.
 
 ```typescript
-new BookmarkBlockExtensionPlugin()
+new BookmarkBlockExtensionPlugin();
 ```
 
 ---
 
 ## CalloutToolbarPlugin
 
-> `plugins/callout-toolbar/` — Toolbar for callout blocks.
+> `plugins/callout-toolbar/` — One selection/overlay plugin with separate
+> Callout and `render-unit` toolbar components.
 
-Shows a floating `CalloutBlockToolbar` centered above/below a callout block when the cursor is inside one of its child blocks. Tracks block resize via `ResizeObserver` (100ms throttle).
+Callout shows its existing floating color toolbar when editing a direct child
+(`widgets/callout.toolbar.ts`). `render-unit` uses its own
+`widgets/render-unit.toolbar.ts` on whole-block selection, including an empty
+region; design mode also accepts a selection inside that nearest region.
+Two first-level rail buttons reuse the shared object popup: appearance
+contains fill/outline tabs, while text contains inner-padding/typography tabs.
+The outline tab keeps uniform width, style and color controls and can edit each
+side independently through `borderTop` / `borderRight` / `borderBottom` /
+`borderLeft`; reset removes these overrides. Uniform borders use `border`, and
+matching side overrides are removed automatically. The same compact catalog
+font IDs are stored in `textFamily` by render-unit and object formatting; older
+custom font stacks remain readable.
+Typography is an inheritable content default;
+explicit child formatting wins. Callout retains text, background and border
+colors.
+The plugin tracks block resize via one throttled `ResizeObserver` (100ms) while
+the overlay is open.
+
+填写区侧边快捷栏用 `bc_size-fixed` / `bc_size-auto` 表示当前尺寸模式，点击调用 `toggleSizeMode()` 双向切换。固定模式恢复自适应时调用 `resetHeight()`，只清除固定高度，
+保留宽度、内容和外观。自适应状态下点击会按当前布局尺寸固定；撤销、再次拖动或协同写入尺寸后同步更新图标。此按钮不改变 Callout。
+
+The Callout prefix action opens the shared CSES EmojiPicker with an explicit
+`zh-CN` locale and persists the selected native Emoji in `props.prefix`.
 
 ### Configuration
 
 No configuration options.
 
 ```typescript
-new CalloutToolbarPlugin()
+new CalloutToolbarPlugin();
 ```
 
 ### Public API
 
-| Method | Description |
-|--------|-------------|
-| `openToolbar(calloutBlock)` | Programmatically open toolbar for a callout |
-| `closeToolbar()` | Dismiss the toolbar |
+| Method                        | Description                                                    |
+| ----------------------------- | -------------------------------------------------------------- |
+| `openToolbar(containerBlock)` | Open for a mounted `callout` or `render-unit` block            |
+| `closeToolbar()`              | Dismiss the toolbar and disconnect its block-owned observation |
 
 ---
 
@@ -150,16 +971,26 @@ new CalloutToolbarPlugin()
 
 > `plugins/divider-toolbar/` — Style selector for divider blocks.
 
-Shows a `DividerStylePopupComponent` when a divider block is selected, allowing users to change the divider's line/tape style, size, and an optional **text label** with alignment.
+Shows a `DividerStylePopupComponent` when a divider block is selected, allowing users to change the divider's line, tape or decorative-edge style, monochrome line color, independent length / thickness / opacity, without text labels. Editable separator titles belong to paragraph decoration.
 
-The popup has three style tabs — `线型` (line), `贴纸胶带` (tape), and `文字装订` (text label) — plus a size selector. The `文字装订` tab edits the divider block's `text` prop via a text input and its `align` prop (`left` / `center` / `right`) via alignment buttons, and its `color` prop via color swatches (empty = theme default). The divider block stays a `void` block; the label is a read-only `text` prop rendered by the block — for line styles the text is centered with line segments on both sides, for tape styles the text sits inside the tape band. `align` defaults to `center`. When `text` is empty the divider renders as a plain line (unchanged).
+未配置的分割线默认使用普通实线（`solid`）、通栏（`full`，100%）和细线（`thin`，实线为 1px）。编辑器、快照阅读器和设置面板保持一致；显式 `length` / `thickness` 优先，已有旧版 `size` 映射保持不变。旧快照缺省这些字段时也采用新默认值，不写回文档数据。
+
+设置弹窗保留三个分类：线型、贴纸胶带、花边；提供线色、长度、粗细和不透明度。删除文字装订入口，旧文字及文字样式属性直接忽略，不转换旧快照。`length` 为 short/medium/long/full（25%/50%/75%/100%），`thickness` 为 thin/regular/thick，`opacity` 为 0.1–1；旧 size 仍只用于线条尺寸回落。lineColor 不重染多色胶带和花边。
+
+段落设置弹窗新增“装饰线”：只有选区全部为 paragraph 时显示。支持段前、段后、两侧、上方、下方，并按位置渐进展示长度、对齐和线宽范围选项；关闭时写 decoration: null。取消不写入，确定仅提交修改过的字段，沿用原选区恢复、只读保护与撤销事务。
+
 
 ### Configuration
 
-No configuration options.
+构造器无参数。插件注册并导出 `DIVIDER_TOOLBAR_INTERACTION`，声明 `plugins.dividerToolbar.enabled`：默认 true，immersive/focus 和官方 light 体验为 false；mixed/layout/design 保留整块选中后延迟 200ms 显示。
+关闭配置会取消待打开任务、收起面板并移除其临时高亮；恢复开关后等待下一次选中，不主动抢焦点。延迟回调重新检查配置、选区、只读和块实例存活。顶部固定工具栏、分割线选中、块间输入与样式数据保持原行为。
 
 ```typescript
-new DividerExtensionPlugin()
+new DividerExtensionPlugin();
+// 已安装插件后，可在专注体验中独立开启分割线面板（只读仍不可用）。
+doc.interaction.configure({experience: 'focus', overrides: {
+  plugins: {dividerToolbar: {enabled: true}},
+}});
 ```
 
 ---
@@ -168,14 +999,30 @@ new DividerExtensionPlugin()
 
 > `plugins/embed-frame-extension/` — Toolbar for iframe embed blocks.
 
-Shows a floating `EmbedFrameBlockToolbar` for any block whose flavour ends with `'embed'` (e.g., `figma-embed`, `juejin-embed`) when selected.
+Shows a floating `EmbedFrameBlockToolbar` for any block whose flavour ends with `'embed'` (e.g., `embed`, `figma-embed`, `juejin-embed`) when selected.
+
+统一 `embed` 与旧 Figma/掘金块均提供“修改嵌入来源”，复用创建时的单输入链接弹窗，
+不提供 HTML 代码输入。链接弹窗使用 cses-ui Modal、Input 和 Button。
+弹窗生命周期属于目标块与文档，聚焦输入框后不随选区工具栏关闭；
+目标块销毁、文档只读或销毁时释放弹窗和视图 lease。提交前重查当前实例与只读状态。
+弹窗按目标 schema 校验链接：统一块接收任意有效网页，旧块保留对应平台规则。
+打开前将焦点交给菜单入口，避免关闭时恢复到文档根节点并滚到顶部。
+新旧嵌入的尺寸通过对象块八向抓手调整，四角等比、四边独立调轴，不提供手动输入弹窗。
+悬停仅显示阴影，选中后显示尺寸抓手；图标按钮使用 cses-ui Tooltip 显示操作名称。
+像素宽高取整数后转换为图片同款 `wr/ar`，旧像素尺寸在首次有效拖拽时迁移。
+浮动菜单保留刷新与链接/卡片切换。尺寸和 URL 修改通过事务进入撤销历史；只读状态隐藏写入口与抓手。
+链接视图的工具栏也可直接转换为嵌入，无需经过卡片。
+新旧嵌入块和快照预览仅显示 iframe 内容，不再显示品牌行或来源地址。
+点击只读嵌入块的边框区域也可选中并显示浮动工具栏，不拦截 iframe 内网页操作。
+浮动工具栏的“外部打开”图标按钮打开原始 URL（`noopener,noreferrer`），只读时仍可用；
+按钮与提示均不显示地址。`IframeCardComponent.brand/fontIcon` 保留为兼容输入，但不再渲染。
 
 ### Configuration
 
 No configuration options.
 
 ```typescript
-new EmbedFrameExtensionPlugin()
+new EmbedFrameExtensionPlugin();
 ```
 
 ---
@@ -191,16 +1038,16 @@ Handles editing for both block-level formula blocks and inline formula embeds. S
 No configuration options.
 
 ```typescript
-new FormulaBlockExtensionPlugin()
+new FormulaBlockExtensionPlugin();
 ```
 
 ### Public API
 
-| Method | Description |
-|--------|-------------|
-| `closeToolbar()` | Dismiss the formula editor overlay |
-| `createEmbedRange(cElement)` | Create a range for an inline formula embed element |
-| `getEmbedRange(target)` | Get the range of an inline formula from a target element |
+| Method                       | Description                                              |
+| ---------------------------- | -------------------------------------------------------- |
+| `closeToolbar()`             | Dismiss the formula editor overlay                       |
+| `createEmbedRange(cElement)` | Create a range for an inline formula embed element       |
+| `getEmbedRange(target)`      | Get the range of an inline formula from a target element |
 
 ### Notes
 
@@ -227,15 +1074,15 @@ new TextMarkerPlugin(
 )
 ```
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `markTextBlockFlavours` | `BlockFlavour[]` | `[]` | Flavours that show the full float toolbar (bold/italic/underline/strike + color picker) |
-| `colorOnlyFlavours` | `BlockFlavour[]` | `[]` | Flavours that show the float toolbar restricted to the color picker only; mutually exclusive with `markTextBlockFlavours` (dupes ignored) |
+| Parameter               | Type             | Default | Description                                                                                                                               |
+| ----------------------- | ---------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `markTextBlockFlavours` | `BlockFlavour[]` | `[]`    | Flavours that show the full float toolbar (bold/italic/underline/strike + color picker)                                                   |
+| `colorOnlyFlavours`     | `BlockFlavour[]` | `[]`    | Flavours that show the float toolbar restricted to the color picker only; mutually exclusive with `markTextBlockFlavours` (dupes ignored) |
 
 ### TextMarkerComponent API
 
-| Input | Type | Description |
-|-------|------|-------------|
+| Input       | Type      | Description                                                                     |
+| ----------- | --------- | ------------------------------------------------------------------------------- |
 | `colorOnly` | `boolean` | When `true`, hides bold/italic/underline/strike and shows only the color picker |
 
 ### Usage Examples
@@ -243,13 +1090,13 @@ new TextMarkerPlugin(
 **Full rich-text toolbar for custom blocks:**
 
 ```typescript
-new TextMarkerPlugin(['my-rich-block', 'callout-body'])
+new TextMarkerPlugin(["my-rich-block", "callout-body"]);
 ```
 
 **Color-only toolbar for code / mermaid source blocks:**
 
 ```typescript
-new TextMarkerPlugin([], ['code', 'mermaid-textarea'])
+new TextMarkerPlugin([], ["code", "mermaid-textarea"]);
 ```
 
 **Combined — rich formatting for prose, color-only for code:**
@@ -257,9 +1104,9 @@ new TextMarkerPlugin([], ['code', 'mermaid-textarea'])
 ```typescript
 // Typical bundled-editor setup
 new TextMarkerPlugin(
-  ['paragraph', 'heading', 'bullet', 'ordered', 'todo'],  // full toolbar
-  ['code']                                                  // color picker only
-)
+  ["paragraph", "heading", "bullet", "ordered", "todo"], // full toolbar
+  ["code"], // color picker only
+);
 ```
 
 ### Notes
@@ -267,3 +1114,54 @@ new TextMarkerPlugin(
 - The bundled `<editor>` component (from `packages/editor/editor/editor.ts`) registers `new TextMarkerPlugin([], ['code', 'mermaid-textarea'])` alongside `FloatTextToolbarPlugin`. Rich-text blocks continue to be served by `FloatTextToolbarPlugin`; code blocks and the mermaid source block (both `plainTextOnly`, sharing `CodeInlineRuntime`) get a color-only overlay. Consumers assembling their own editor must opt in manually.
 - Color selections (`s:color` / `s:background`) on code blocks persist in the native Yjs document, survive collaboration and undo, but are not exported to HTML or Markdown — external clipboard output remains plain text.
 - A flavour listed in both `markTextBlockFlavours` and `colorOnlyFlavours` is treated as rich-text only (the color-only registration is silently skipped).
+
+### Render-unit 外观入口
+
+`CalloutToolbarPlugin` 对 `render-unit` 提供“外观选项”和“文本选项”两个一级按钮，分别包含填充/轮廓、内边距/字体页签，不显示宽高输入。轮廓页的统一值写入 `border`，独立边写入对应的 `borderTop` / `borderRight` / `borderBottom` / `borderLeft`；“恢复统一边框”清除这些覆盖。通过内容区域轻量四角按钮或顶部浮动抓手整块选中后，尺寸由八向手柄或块的 `setSize()` 调整，继续采用与图片一致的 `wr/ar` 持久化。内边距写入 `p`；字体设置写入 `textFamily`、`textFont`、`textSpacing`、`textFill`，只作为内容区域内文字的默认样式。
+
+填充页保留纯色选择器，并提供与文本框一致的 0–100% 透明度滑杆和百分比输出，松开滑杆或键盘操作结束时写入 `backOpacity`（0–1）；调回默认的 82% 会清除覆盖。拖动期间只预览样式，避免每一帧都产生 Yjs 历史。缺省值沿用主题的实体块背景透明度，不影响 `bgi/bgo` 图片背景。
+
+### 通用紧凑存储（2026-09-16）
+
+对象工具栏仍发送结构化 `ObjectFormatPatch`。持久化由共用 codec 负责：坐标
+`"x y"`（最多两位小数），渐变 `linear-gradient(...)`，图片
+`url("...") x% y% / cover|contain|100% 100% no-repeat`；整体透明度独立保存且默认省略。
+切换填充类型会清除不再适用的透明度项。root 的 CSS background 与容器图片背景同样遵守
+不保存空/默认配置的规则。不要在各面板增加自定义序列化，也不要直接写 Y.Map。
+
+
+## MaterialToolbarPlugin / WeatherToolbarPlugin
+
+> `plugins/material-toolbar/` — 日期、天气、人员块外横向工具栏，默认 bundled editor 已装配。
+
+```typescript
+new MaterialToolbarPlugin(); // 自定义 Doc 的 plugins 按需注册；不要与 bundled 实例重复注册
+// 旧 WeatherToolbarPlugin 保留，仅处理天气；不要与 MaterialToolbarPlugin 同时注册。
+```
+
+仅在单个、可写物料整块选中时显示块外横向工具栏，上方优先、下方回退，间隔 8px。
+按 placement 能力显示布局选项，浮动且未入组时显示层级，日期/天气显示已有设置，天气另有刷新。
+组合内日期/天气仅保留自身设置；人员没有专属设置面板，不伪造入口。
+日期双击也通过同一个 owner 打开 DateCardSettingsComponent；块内不再保留齿轮。
+工具栏展开设置时继续保留，设置沿块侧边定位，共用选区与浮层生命周期。
+应用、取消或 Esc 收起设置并将焦点恢复到设置按钮；再次 Esc 或点击外部关闭工具栏。
+天气的 `WeatherSettingsComponent` 沿用日期设置的 320px 配置卡：顶部预览与样式/色调下拉，
+显示、颜色、边框分区，底部取消/应用；使用同款 CSES Select、ColorPicker、Button。
+七款布局、色调与颜色覆盖、透明背景、图标及高低温均先在本地预览，应用时只提交改过的字段。
+不在左侧面板或 BlockController 菜单重复提供入口。
+
+Plugin 只负责选区、浮层与生命周期；配置写入仍由设置组件通过 Yjs 事务完成，
+普通块写 props，模板投影写 `draft:*`（清空颜色写空串覆盖正式值）。一次应用对应一个撤销步骤，
+取消/关闭不写文档。连接浮层以块为 target，沿用虚拟视图租约、
+滚动定位与可视区约束；尺寸变化通过 RAF 合并定位。输入控件取焦时保留当前操作目标
+及选中外观；同一组件打开的 CSES Select/ColorPicker 子浮层属于当前交互。
+具体的新选区优先。外部点击/焦点、Esc、只读、块销毁或插件销毁关闭浮层并丢弃未应用编辑，
+释放观察器、监听、选中外观及视图租约。外观配置本身不请求天气，也不新增外观持久化字段。
+
+### 天气手动刷新
+
+天气工具弹窗提供“刷新天气”，展开配置后仍可使用。加载时禁用，失败可重试；模板占位不提供刷新入口。刷新独立于外观的应用/取消，不改变时间锚。
+
+主动刷新成功/失败通过 `doc.messageService`（`DocMessageService`）提示，弹窗不额外渲染结果文案；取消或失效请求不提示。
+
+图片和贴纸块态工具栏以 `shape-resizer` 完整外框（仅在旋转抓手显示时预留其空间）为定位 origin，保留上方优先、下方回退和 8px 间隔；靠左右边缘时可改用外框起止边对齐，避免宽工具栏被强推到抓手上。贴纸属性提交后更新工具栏位置；行内工具栏不变。

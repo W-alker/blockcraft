@@ -9,6 +9,7 @@ import {
   SimpleChanges,
   inject,
 } from "@angular/core";
+import {CsIconRegistry} from "@cses/ui";
 import {MatIconRegistry} from "@angular/material/icon";
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
 import {createSnapshotRenderer} from "../../snapshot-viewer/create-snapshot-renderer";
@@ -28,6 +29,7 @@ export class SnapshotViewerComponent implements AfterViewInit, OnChanges, OnDest
   @Input() snapshot: IBlockSnapshot | IBlockSnapshot[] | null = null
   @Input() options: SnapshotViewerOptions = {}
 
+  private readonly csIconRegistry = inject(CsIconRegistry)
   private readonly matIconRegistry = inject(MatIconRegistry, {optional: true})
   private renderer: SnapshotRenderer | null = null
   private viewReady = false
@@ -77,15 +79,15 @@ export class SnapshotViewerComponent implements AfterViewInit, OnChanges, OnDest
   }
 
   private getResolvedOptions(): SnapshotViewerOptions {
-    if (!this.matIconRegistry) {
-      return this.options
-    }
-
     return {
       ...this.options,
       resolveSvgIcon: this.options.resolveSvgIcon ?? (async (name: string) => {
         try {
-          return await firstValueFrom(this.matIconRegistry!.getNamedSvgIcon(name))
+          if (name.startsWith('file-') && this.csIconRegistry.isBuiltIn(name)) {
+            const svg = await this.csIconRegistry.resolveBuiltIn(name)
+            return new DOMParser().parseFromString(svg, 'image/svg+xml').querySelector('svg')
+          }
+          return this.matIconRegistry ? await firstValueFrom(this.matIconRegistry.getNamedSvgIcon(name)) : null
         } catch {
           return null
         }

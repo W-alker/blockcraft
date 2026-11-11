@@ -94,7 +94,7 @@ import {ISelectionJSON} from "../../../framework";
   `],
   standalone: true,
   imports: [
-    FormsModule
+    FormsModule,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush
 })

@@ -1,0 +1,149 @@
+// 花边图案由正文、历史文字分段和样式面板共享。
+// SVG 仅提供 alpha 遮罩；颜色复用已有线色与主题色，单饰居中，藤蔓无缝平铺。
+$_grass: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27112%27%20height%3D%2732%27%20viewBox%3D%270%200%20112%2032%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cg%20transform%3D%22translate(8%200)%22%3E%3Cpath%20d%3D%22M32%2021C40%2018%2050%2013%2063%2010M42%2017C34%2018%2030%2015%2028%2010C35%209%2039%2012%2042%2017ZM51%2013C44%2010%2043%206%2045%202C51%204%2054%208%2051%2013ZM54%2012C60%205%2066%205%2071%207C67%2012%2062%2014%2054%2012ZM37%2019C33%2022%2029%2024%2024%2022%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+$_flower: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27112%27%20height%3D%2732%27%20viewBox%3D%270%200%20112%2032%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20opacity%3D%22.6%22%20d%3D%22M20%2019Q31%2019%2038%2013M72%2020Q83%2016%2091%2019%22%2F%3E%3Cg%20transform%3D%22translate(48%2016)%20scale(0.85)%22%3E%3Cpath%20d%3D%22M0-3C-8-12%205-15%203-5C12-12%2016%200%205%200C15%208%205%2014%201%205C0%2015-11%2010-4%202C-15%203-13-10-3-5Z%22%2F%3E%3Ccircle%20r%3D%221.6%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(68%2012)%20scale(0.55)%22%3E%3Cpath%20d%3D%22M0-3C-8-12%205-15%203-5C12-12%2016%200%205%200C15%208%205%2014%201%205C0%2015-11%2010-4%202C-15%203-13-10-3-5Z%22%2F%3E%3Ccircle%20r%3D%221.6%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3C%2Fg%3E%3Cpath%20d%3D%22M34%2016Q28%208%2024%2011Q25%2018%2034%2016M77%2018Q82%2010%2087%2012Q86%2018%2077%2018%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+$_vine: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27112%27%20height%3D%2732%27%20viewBox%3D%270%200%20112%2032%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%22M0%2016C24%204%2032%2028%2056%2016S88%204%20112%2016%22%2F%3E%3Cpath%20d%3D%22M29%2015Q21%2013%2022%207Q30%208%2029%2015ZM52%2016Q51%2025%2043%2024Q43%2017%2052%2016ZM82%2012Q79%205%2086%203Q91%208%2082%2012Z%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+$_daisy: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27112%27%20height%3D%2732%27%20viewBox%3D%270%200%20112%2032%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cg%20transform%3D%22translate(56%2016)%22%3E%3Cellipse%20cx%3D%220%22%20cy%3D%22-7%22%20rx%3D%222.3%22%20ry%3D%224.1%22%20transform%3D%22rotate(0)%22%2F%3E%3Cellipse%20cx%3D%220%22%20cy%3D%22-7%22%20rx%3D%222.3%22%20ry%3D%224.1%22%20transform%3D%22rotate(45)%22%2F%3E%3Cellipse%20cx%3D%220%22%20cy%3D%22-7%22%20rx%3D%222.3%22%20ry%3D%224.1%22%20transform%3D%22rotate(90)%22%2F%3E%3Cellipse%20cx%3D%220%22%20cy%3D%22-7%22%20rx%3D%222.3%22%20ry%3D%224.1%22%20transform%3D%22rotate(135)%22%2F%3E%3Cellipse%20cx%3D%220%22%20cy%3D%22-7%22%20rx%3D%222.3%22%20ry%3D%224.1%22%20transform%3D%22rotate(180)%22%2F%3E%3Cellipse%20cx%3D%220%22%20cy%3D%22-7%22%20rx%3D%222.3%22%20ry%3D%224.1%22%20transform%3D%22rotate(225)%22%2F%3E%3Cellipse%20cx%3D%220%22%20cy%3D%22-7%22%20rx%3D%222.3%22%20ry%3D%224.1%22%20transform%3D%22rotate(270)%22%2F%3E%3Cellipse%20cx%3D%220%22%20cy%3D%22-7%22%20rx%3D%222.3%22%20ry%3D%224.1%22%20transform%3D%22rotate(315)%22%2F%3E%3Ccircle%20r%3D%222.3%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3C%2Fg%3E%3Cpath%20opacity%3D%22.5%22%20d%3D%22M31%2016h5m40%200h5%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+$_stars: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27112%27%20height%3D%2732%27%20viewBox%3D%270%200%20112%2032%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%22M56%205Q56%2016%2064%2016Q56%2016%2056%2027Q56%2016%2048%2016Q56%2016%2056%205Z%22%2F%3E%3Cpath%20opacity%3D%22.65%22%20d%3D%22M34%2010v8m-4-4h8m42%203v6m-3-3h6%22%2F%3E%3Ccircle%20cx%3D%2220%22%20cy%3D%2219%22%20r%3D%221%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3Ccircle%20cx%3D%2294%22%20cy%3D%2211%22%20r%3D%221%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+$_berries: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27112%27%20height%3D%2732%27%20viewBox%3D%270%200%20112%2032%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%22M24%2021Q48%2021%2072%209M44%2019%2045%2010M62%2014%2069%2020M53%2016Q50%206%2056%204Q62%2010%2053%2016Z%22%2F%3E%3Cg%20fill%3D%22black%22%20stroke%3D%22none%22%3E%3Ccircle%20cx%3D%2243%22%20cy%3D%227%22%20r%3D%222.8%22%2F%3E%3Ccircle%20cx%3D%2248%22%20cy%3D%228%22%20r%3D%222.2%22%20opacity%3D%22.55%22%2F%3E%3Ccircle%20cx%3D%2270%22%20cy%3D%2222%22%20r%3D%222.8%22%2F%3E%3Ccircle%20cx%3D%2275%22%20cy%3D%2218%22%20r%3D%222.3%22%20opacity%3D%22.55%22%2F%3E%3C%2Fg%3E%3Cpath%20opacity%3D%22.5%22%20d%3D%22M80%2016Q84%2017%2088%2014%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+
+// 线型 SVG 只提供 alpha 遮罩，颜色由消费方的主题 token 提供。
+// 三个遮罩都是横向无缝 tile，适用正文整条、文字两侧分段和弹窗缩略图。
+$_wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='8' viewBox='0 0 48 8'%3E%3Cpath d='M0 4C6 .5 12 .5 18 4S30 7.5 36 4 42 .5 48 4' fill='none' stroke='%23000' stroke-width='1.35' stroke-linecap='round'/%3E%3C/svg%3E");
+$_zigzag: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='8' viewBox='0 0 32 8'%3E%3Cpath d='M0 6 8 2l8 4 8-4 8 4' fill='none' stroke='%23000' stroke-width='1.35' stroke-linejoin='round' stroke-linecap='round'/%3E%3C/svg%3E");
+$_sketch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='8' viewBox='0 0 96 8'%3E%3Cpath d='M0 3.8c13-1.2 21 1 34-.2s22-1.4 34 0 18 .3 28-.5' fill='none' stroke='%23000' stroke-width='1.2' stroke-linecap='round'/%3E%3Cpath d='M2 5.4c16-.7 24 .8 39-.1s25-.6 37 .2 12-.2 16-.4' fill='none' stroke='%23000' stroke-width='.55' stroke-linecap='round' opacity='.48'/%3E%3C/svg%3E");
+
+// 新增的主题感知线型只在这里定义，避免正文和样式弹窗渐进偏离。
+@mixin bc-divider-line-pattern($pattern, $color, $height) {
+  position: relative;
+  height: $height;
+  border: 0;
+  background-color: transparent;
+  background-image: none;
+  background-position: center;
+  background-repeat: no-repeat;
+
+  @if $pattern == fade {
+    background-image: linear-gradient(to right,
+        transparent,
+        $color 18%,
+        $color 82%,
+        transparent);
+    background-size: 100% $height;
+  } @else if $pattern == triple-dot {
+    $dot-radius: 1.8px;
+
+    @if $height >= 8px {
+      $dot-radius: 2.3px;
+    }
+
+    background-image:
+      radial-gradient(circle at calc(50% - 11px) 50%, $color 0 $dot-radius, transparent calc(#{$dot-radius} + .25px)),
+      radial-gradient(circle at 50% 50%, $color 0 $dot-radius, transparent calc(#{$dot-radius} + .25px)),
+      radial-gradient(circle at calc(50% + 11px) 50%, $color 0 $dot-radius, transparent calc(#{$dot-radius} + .25px));
+    background-size: 100% 100%;
+  } @else if $pattern == diamond {
+    $diamond-size: 5px;
+
+    @if $height >= 8px {
+      $diamond-size: 7px;
+    }
+
+    background-image: linear-gradient(to right,
+        $color 0,
+        $color calc(50% - 11px),
+        transparent calc(50% - 11px),
+        transparent calc(50% + 11px),
+        $color calc(50% + 11px),
+        $color 100%);
+    background-size: 100% 1px;
+
+    &::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: $diamond-size;
+      height: $diamond-size;
+      border: 1.2px solid $color;
+      transform: translate(-50%, -50%) rotate(45deg);
+      box-sizing: border-box;
+    }
+  } @else {
+    background-color: $color;
+    -webkit-mask-position: left center;
+    -webkit-mask-repeat: repeat-x;
+    -webkit-mask-size: auto $height;
+    mask-position: left center;
+    mask-repeat: repeat-x;
+    mask-size: auto $height;
+
+    @if $pattern == wave {
+      -webkit-mask-image: $_wave;
+      mask-image: $_wave;
+    } @else if $pattern == zigzag {
+      -webkit-mask-image: $_zigzag;
+      mask-image: $_zigzag;
+    } @else if $pattern == sketch {
+      -webkit-mask-image: $_sketch;
+      mask-image: $_sketch;
+    }
+  }
+}
+
+// $size 保留各消费方的基础尺寸；已有尺寸 token 负责长度/粗细档位。
+@mixin bc-divider-edge($pattern, $size) {
+  $height: var(--bc-divider-edge-preview-size, var(--bc-divider-edge-size, #{$size}));
+  $color: var(--bc-divider-line-color, var(--bc-color-light));
+  $image: $_grass;
+  @if $pattern == flower { $image: $_flower; }
+  @else if $pattern == vine { $image: $_vine; }
+  @else if $pattern == daisy { $image: $_daisy; }
+  @else if $pattern == stars { $image: $_stars; }
+  @else if $pattern == berries { $image: $_berries; }
+
+  position: relative;
+  background-color: transparent;
+  background-image: none;
+
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-color: $color;
+    pointer-events: none;
+    -webkit-mask-image: $image;
+    mask-image: $image;
+    -webkit-mask-position: center;
+    mask-position: center;
+
+    @if $pattern == vine {
+      -webkit-mask-repeat: repeat-x;
+      mask-repeat: repeat-x;
+      -webkit-mask-size: auto $height;
+      mask-size: auto $height;
+    } @else {
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+      // 窄栏/短线缩小整幅单饰，避免从两侧裁掉花瓣或枝叶。
+      -webkit-mask-size: min(100%, calc(#{$height} * 3.5)) auto;
+      mask-size: min(100%, calc(#{$height} * 3.5)) auto;
+    }
+  }
+
+  @if $pattern != vine {
+    &::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: .36;
+      background-image: linear-gradient(to right, transparent, $color),
+        linear-gradient(to left, transparent, $color);
+      background-repeat: no-repeat;
+      background-position: left center, right center;
+      // 留出单饰和呼吸间距；容器太窄时细线自然收至零。
+      background-size: max(0px, calc(50% - #{$height} * 1.75 - 8px)) 1px;
+    }
+  }
+}

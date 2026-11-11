@@ -9,7 +9,7 @@
     --code-font-family: "DM Mono", monospace;
     border-radius: var(--bc-radius-lg);
     caret-color: var(--bc-caret-color);
-    background-color: var(--bc-bg-primary);
+    background-color: transparent;
 
     &.focused {
       border: 1px solid var(--bc-active-color);
@@ -21,9 +21,7 @@
     }
 
     &.focused .edit-container {
-      [data-line-break="true"]::before,
-      c-element:first-of-type::before,
-      c-element[data-line-break]:first-of-type::after {
+      > c-line::before {
         visibility: visible;
       }
     }
@@ -33,6 +31,13 @@
       overflow-y: auto;
       scrollbar-width: thin;
       min-height: 60px;
+      border-radius: 0 0 var(--bc-radius-lg) var(--bc-radius-lg);
+      background-color: var(--bc-bg-primary);
+      background-color: color-mix(
+        in srgb,
+        var(--bc-bg-primary) var(--bc-solid-block-background-opacity, 82%),
+        transparent
+      );
     }
 
     .edit-container {
@@ -52,28 +57,27 @@
       white-space-collapse: break-spaces;
       min-height: 1.8em;
 
-      counter-set: line;
+      counter-reset: line;
 
-      [data-line-break="true"]::before,
-      c-element:first-of-type::before,
-      c-element[data-line-break]:first-of-type::after {
+      > c-line {
+        display: block;
+        position: relative;
+        min-height: 1.8em;
+        counter-increment: line;
+      }
+
+      > c-line::before {
         visibility: hidden;
         position: absolute;
-        left: .5em;
+        left: calc(.5em - var(--code-padding-left));
+        top: 0;
         content: counter(line);
-        counter-increment: line;
         line-height: 1.8em;
         font-size: 1em;
         opacity: .6;
         color: var(--bc-color-light);
-      }
-
-      [data-line-break="true"]::before {
-        transform: translateY(100%);
-      }
-
-      c-element:first-of-type::before {
-        transform: unset;
+        pointer-events: none;
+        user-select: none;
       }
 
       @include code-highlight-theme();
@@ -119,6 +123,11 @@
       padding: 4px 8px;
       align-items: center;
       background: var(--bc-bg-muted);
+      background: color-mix(
+        in srgb,
+        var(--bc-bg-muted) var(--bc-solid-block-background-opacity, 82%),
+        transparent
+      );
       border-bottom: 1px solid var(--bc-border-color);
       border-radius: var(--bc-radius-lg) var(--bc-radius-lg) 0 0;
       gap: 8px;

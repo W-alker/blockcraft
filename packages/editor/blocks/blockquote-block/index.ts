@@ -6,6 +6,8 @@ import {
 } from "../../framework/block-std/schema/block-schema";
 import {BlockQuoteBlockComponent} from "./blockquote.block";
 
+export * from './agent'
+
 export interface BlockquoteBlockModel extends EditableBlockNative {
   flavour: 'blockquote',
   nodeType: BlockNodeType.editable
@@ -19,7 +21,11 @@ export const BlockquoteBlockSchema: IBlockSchemaOptions<BlockquoteBlockModel> = 
   metadata: {
     version: 1,
     label: "空引用",
+    description: "引用并强调一段内容",
     icon: "bc_icon bc_blockquote",
+    virtualization: {
+      speculativeMount: 'safe',
+    },
   }
 }
 

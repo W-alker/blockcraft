@@ -1,6 +1,7 @@
 export * from './id'
 export * from './path'
 export * from './zero-gap'
+export * from './caret-from-point'
 export * from './node-search'
 export * from './snapshot'
 export * from './one-shot-selection-anchor'

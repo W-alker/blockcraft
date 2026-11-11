@@ -1,0 +1,180 @@
+import {
+  ChangeDetectionStrategy,
+  Component,
+  EventEmitter,
+  Input,
+  Output,
+} from "@angular/core";
+import { CsTooltipDirective } from "@cses/ui";
+import {
+  resolveWordArtPresentation,
+  WORD_ART_PRESETS,
+  type WordArtPresetId,
+} from "../../../blocks/word-art-block";
+
+@Component({
+  selector: "bc-word-art-preset-picker",
+  standalone: true,
+  imports: [CsTooltipDirective],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    "[class.word-art-preset-picker-host--embedded]": "embedded",
+  },
+  template: `
+    <div
+      class="word-art-preset-picker"
+      contenteditable="false"
+      role="menu"
+      aria-label="选择艺术字预设"
+    >
+      <div class="word-art-preset-picker__title">艺术字预设</div>
+      <div class="word-art-preset-picker__viewport">
+        @for (item of items; track item.id) {
+          <button
+            type="button"
+            class="word-art-preset-picker__item"
+            role="menuitem"
+            [attr.data-preset-id]="item.id"
+            [attr.aria-label]="item.label"
+            [csTooltip]="item.label"
+            (mousedown)="preserveSelection($event)"
+            (click)="pick.emit(item.id)"
+          >
+            <span
+              class="word-art-preset-picker__preview"
+              aria-hidden="true"
+              [style.font-family]="item.presentation.fontFamily"
+              [style.font-weight]="item.presentation.props.fontWeight"
+              [style.font-style]="item.presentation.props.fontStyle"
+              [style.letter-spacing.em]="
+                item.presentation.props.letterSpacingEm
+              "
+              [style.color]="item.presentation.textColor"
+              [style.-webkit-text-fill-color]="item.presentation.textColor"
+              [style.background-image]="item.presentation.backgroundImage"
+              [style.-webkit-text-stroke]="item.presentation.textStroke"
+              [style.text-shadow]="item.presentation.textShadow"
+              [style.transform]="item.presentation.effectTransform || 'none'"
+              >A</span
+            >
+          </button>
+        }
+      </div>
+    </div>
+  `,
+  styles: [
+    `
+      :host {
+        display: block;
+        max-width: calc(100vw - 24px);
+      }
+
+      :host(.word-art-preset-picker-host--embedded) {
+        max-width: none;
+      }
+
+      :host(.word-art-preset-picker-host--embedded) .word-art-preset-picker {
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+
+      :host(.word-art-preset-picker-host--embedded)
+        .word-art-preset-picker__viewport {
+        grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+      }
+
+      :host(.word-art-preset-picker-host--embedded)
+        .word-art-preset-picker__item {
+        width: 100%;
+      }
+
+      .word-art-preset-picker {
+        box-sizing: border-box;
+        max-width: 100%;
+        padding: 8px;
+        border: 1px solid var(--bc-float-toolbar-divider-color);
+        border-radius: 10px;
+        background: var(--bc-float-toolbar-bg);
+        color: var(--bc-float-toolbar-item-color);
+        box-shadow: var(
+          --bc-fixed-toolbar-shadow,
+          0 6px 16px rgba(15, 15, 15, 0.08)
+        );
+      }
+
+      .word-art-preset-picker__title {
+        margin-bottom: 5px;
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 16px;
+      }
+
+      .word-art-preset-picker__viewport {
+        display: grid;
+        grid-template-columns: repeat(6, 48px);
+        gap: 4px;
+        max-width: 100%;
+        max-height: min(280px, calc(100vh - 96px));
+        overflow: auto;
+        overscroll-behavior: contain;
+      }
+
+      .word-art-preset-picker__item {
+        box-sizing: border-box;
+        width: 48px;
+        height: 44px;
+        padding: 0;
+        overflow: visible;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+      }
+
+      .word-art-preset-picker__item:hover,
+      .word-art-preset-picker__item:focus-visible {
+        border-color: var(--bc-active-color-light);
+        background: var(--bc-float-toolbar-item-hover-bg);
+        outline: none;
+      }
+
+      .word-art-preset-picker__item:focus-visible {
+        box-shadow: 0 0 0 2px var(--bc-active-color-light);
+      }
+
+      .word-art-preset-picker__preview {
+        display: inline-block;
+        font-size: 30px;
+        line-height: 1;
+        background-clip: text;
+        -webkit-background-clip: text;
+        transform-origin: center;
+        white-space: nowrap;
+        pointer-events: none;
+      }
+    `,
+  ],
+})
+export class WordArtPresetPickerComponent {
+  /** Removes standalone popup chrome when hosted inside a settings panel. */
+  @Input()
+  embedded = false;
+
+  @Output()
+  readonly pick = new EventEmitter<WordArtPresetId>();
+
+  protected preserveSelection(event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  protected readonly items = WORD_ART_PRESETS.map((item) => ({
+    id: item.id,
+    label: item.label,
+    presentation: resolveWordArtPresentation(item.props),
+  }));
+}

@@ -1,37 +1,61 @@
 import * as Y from "yjs";
-import {YBlock} from "../block-std";
 import {ORIGIN_SKIP_SYNC} from "./crud";
-import type {IBlockSelectionJSON} from "../modules";
-import {BehaviorSubject, take} from "rxjs";
-import {StackItemEvent} from "yjs/dist/src/utils/UndoManager";
-import {nextTick} from "../../global";
-import type {ISelectionPoint} from "../modules/selection/types";
+import {BehaviorSubject} from "rxjs";
+import {StackItem, StackItemEvent} from "yjs/dist/src/utils/UndoManager";
+import {
+  captureRelativeSelectionBookmark,
+  RelativeSelectionBookmark,
+} from "../modules/selection/relative-bookmark";
+import {BlockReadonlyError, BlockReadonlyOperation} from "./block-readonly.types";
+import {BlockMutationPolicyError} from "./block-mutation-policy";
+import {compositionTransactionScopes, CompositionScope} from './composition-guards'
+import type {DocumentCompositionSession} from './composition'
+import type {YBlock} from '../block-std'
+import {assertDocumentStructureTransformAllowed} from './structure-transform'
 
 type UndoManagerEventName = 'stack-item-added' | 'stack-item-updated' | 'stack-item-popped' | 'stack-cleared'
 
-type IRelativeSelectionTextPoint = {
-  type: 'text'
-  blockId: string
-  length: number
-  position: Y.RelativePosition
+declare const DOC_UNDO_ITEM_TOKEN: unique symbol
+
+/**
+ * Opaque identity for one independently captured local undo item.
+ *
+ * The token is intentionally not serializable. It is only valid while its
+ * captured item is still the latest local undo item in the same document.
+ */
+export interface DocUndoItemToken {
+  readonly [DOC_UNDO_ITEM_TOKEN]: true
 }
 
-type IRelativeSelectionPoint = {
-  type: 'selected'
-  blockId: string
-} | IRelativeSelectionTextPoint
+export interface CapturedDocUndoItem<T> {
+  readonly result: T
+  /** Null when the callback did not produce exactly one tracked undo item. */
+  readonly token: DocUndoItemToken | null
+}
 
-type IRelativeSelectionSnapshot = {
-  from: IRelativeSelectionPoint
-  to: IRelativeSelectionPoint | null
+const BLOCK_READONLY_AFFECTED_IDS = Symbol('block-readonly-affected-ids')
+const SELECTION_BOOKMARK = Symbol('selection-bookmark')
+const STRUCTURE_TRANSFORM_PURPOSE = Symbol('structure-transform-purpose')
+const COMPOSITION_HISTORY = Symbol('composition-history')
+
+interface CompositionHistory {
+  session: DocumentCompositionSession
+  scopes: ReadonlySet<CompositionScope>
+  anchors: ReadonlyMap<string, YBlock | undefined>
 }
 
 export class DocUndoManger {
+  private _structureTransformPurpose: string | undefined
+  private _compositionScopes: ReadonlySet<CompositionScope> | undefined
+  private _lastCompositionScopes: ReadonlySet<CompositionScope> | undefined
+  private _compositionReplay: CompositionHistory | undefined
+  private _compositionRegionBlocks: ReadonlyMap<string, string> | undefined
   private _yUndoManager!: Y.UndoManager
   private _trackedOrigins = new Set<any>([ORIGIN_SKIP_SYNC, null])
+  private readonly _capturedUndoItems = new WeakMap<DocUndoItemToken, StackItem>()
 
-  private _undoSelectionStack: Array<IRelativeSelectionSnapshot | null> = []
-  private _redoSelectionStack: Array<IRelativeSelectionSnapshot | null> = []
+  private _captureGroupDepth = 0
+  private _captureTimeoutBeforeGroup: number | null = null
   readonly undoRedoing$ = new BehaviorSubject(false)
 
   /**
@@ -39,32 +63,121 @@ export class DocUndoManger {
    * This solves the timing issue where stack-item-added fires AFTER the transaction
    * has already deleted blocks, making the selection endpoints inaccessible.
    */
-  private _pendingSnapshot: IRelativeSelectionSnapshot | null | undefined = undefined
+  private _pendingUndoSnapshot: RelativeSelectionBookmark | null | undefined = undefined
+  private _pendingRedoSnapshot: RelativeSelectionBookmark | null | undefined = undefined
 
-  constructor(private doc: BlockCraft.Doc, yBlockMap: Y.Map<YBlock>, options?: {
+  constructor(
+    private doc: BlockCraft.Doc,
+    private readonly undoScope: Y.AbstractType<any> | Y.AbstractType<any>[],
+    options?: {
     trackedOrigins?: any[]
     captureTimeout?: number
   }) {
-    this._yUndoManager = new Y.UndoManager(yBlockMap, {
+    this._yUndoManager = new Y.UndoManager(undoScope, {
       captureTimeout: options?.captureTimeout || 500,
       trackedOrigins: new Set<any>(options?.trackedOrigins || [ORIGIN_SKIP_SYNC, null])
     })
 
+    this._bindCompositionCapture()
+
     this.on('stack-item-added', (evt) => {
+      this._captureCompositionHistory(evt)
+      if (this._structureTransformPurpose) evt.stackItem.meta.set(STRUCTURE_TRANSFORM_PURPOSE, this._structureTransformPurpose)
+      this._mergeAffectedBlockIds(evt)
+      const pending = evt.type === 'undo'
+        ? this._pendingUndoSnapshot
+        : this._pendingRedoSnapshot
+      if (!evt.stackItem.meta.has(SELECTION_BOOKMARK)) {
+        evt.stackItem.meta.set(
+          SELECTION_BOOKMARK,
+          pending !== undefined ? pending : this._captureSelectionSnapshot(),
+        )
+      }
       if (evt.type === 'undo') {
-        // Use pre-captured snapshot if available, otherwise capture now (may fail for deleted blocks)
-        const snapshot = this._pendingSnapshot !== undefined
-          ? this._pendingSnapshot
-          : this._captureSelectionSnapshot()
-        this._pendingSnapshot = undefined
-        this._undoSelectionStack.push(snapshot)
-        if (this._undoSelectionStack.length > 200) {
+        this._pendingUndoSnapshot = undefined
+        if (this._yUndoManager.undoStack.length > 200) {
           this._yUndoManager.undoStack.shift()
           this._yUndoManager.redoStack.shift()
-          this._undoSelectionStack.shift()
         }
+      } else {
+        this._pendingRedoSnapshot = undefined
       }
     })
+    this.on('stack-item-updated', (evt) => {
+      this._captureCompositionHistory(evt)
+      this._mergeAffectedBlockIds(evt)
+      if (evt.type === 'undo') {
+        // A pre-captured snapshot belongs only to the next NEW stack item. If
+        // Yjs merges the transaction into the previous item, keep that item's
+        // original selection and discard the stale pending snapshot so it cannot
+        // leak into a later unrelated undo record.
+        this._pendingUndoSnapshot = undefined
+      } else {
+        this._pendingRedoSnapshot = undefined
+      }
+    })
+  }
+
+  private _bindCompositionCapture(): void {
+    const session = this.doc.config?.contentComposition
+    if (!session) return
+    this._compositionRegionBlocks = new Map(session.regions.map(region => [region.id, region.blockId]))
+    const beforeObservers = (transaction: Y.Transaction) => {
+      this._compositionScopes = undefined
+      if (session.failed || session.disposed || !transaction.local || !this._yUndoManager.trackedOrigins.has(transaction.origin)) return
+      const scopes = compositionTransactionScopes(this.doc, transaction)
+      if (!scopes.size) return
+      this._compositionScopes = scopes
+      // A text edit in another storage domain must not merge into the previous
+      // 500ms item, including writes made directly through EditableBlock.yText.
+      const previous = this._lastCompositionScopes
+      if (!previous || previous.size !== scopes.size || [...scopes].some(scope => !previous.has(scope))) {
+        this.stopCapturing()
+      }
+      this._lastCompositionScopes = scopes
+    }
+    const dispose = () => {
+      this.doc.yDoc.off('beforeObserverCalls', beforeObservers)
+      this.doc.yDoc.off('destroy', dispose)
+      this._yUndoManager.destroy()
+    }
+    this.doc.yDoc.on('beforeObserverCalls', beforeObservers)
+    this.doc.yDoc.on('destroy', dispose)
+    this.doc.onDestroy?.(dispose)
+  }
+
+  private _captureCompositionHistory(event: StackItemEvent): void {
+    const session = this.doc.config?.contentComposition
+    if (!session) return
+    if (this._compositionReplay) {
+      event.stackItem.meta.set(COMPOSITION_HISTORY, this._compositionReplay)
+      return
+    }
+    if (!this._compositionScopes?.size) return
+    const scopes = new Set(this._compositionScopes)
+    const anchors = new Map<string, YBlock | undefined>()
+    for (const scope of scopes) {
+      if (scope === null) continue
+      const blockId = this._compositionRegionBlocks?.get(scope)
+      anchors.set(scope, blockId ? this.doc.yBlockMap.get(blockId) : undefined)
+    }
+    event.stackItem.meta.set(COMPOSITION_HISTORY, {session, scopes, anchors} satisfies CompositionHistory)
+  }
+
+  private _isCompositionHistoryWritable(stackItem: StackItem): boolean {
+    const session = this.doc.config?.contentComposition
+    if (!session) return true
+    if (session.failed || session.disposed || session.editorDoc.isDestroyed) return false
+    const history = stackItem.meta.get(COMPOSITION_HISTORY) as CompositionHistory | undefined
+    if (!history || history.session !== session) return false
+    // Removed/recreated region shells invalidate their old Y.Text history.
+    // The stored scope still identifies deleted private blocks after they leave
+    // the live graph; checking only reachable affectedIds would lose this fact.
+    for (const [regionId, anchor] of history.anchors) {
+      const blockId = this._compositionRegionBlocks?.get(regionId)
+      if (!anchor || !blockId || this.doc.yBlockMap.get(blockId) !== anchor) return false
+    }
+    return true
   }
 
   /**
@@ -72,7 +185,12 @@ export class DocUndoManger {
    * Call this BEFORE a transaction that may delete blocks referenced by the current selection.
    */
   captureSelectionBeforeChange() {
-    this._pendingSnapshot = this._captureSelectionSnapshot()
+    // The earliest caller owns the before-selection for the next stack item.
+    // Nested mutation paths can capture again after the outer action has blurred
+    // or replaced the live selection; allowing that later capture to overwrite
+    // this slot would turn a valid snapshot into null (or a mid-action cursor).
+    if (this._pendingUndoSnapshot !== undefined) return
+    this._pendingUndoSnapshot = this._captureSelectionSnapshot()
   }
 
   /**
@@ -81,6 +199,125 @@ export class DocUndoManger {
    * Use before a discrete user action that must be independently undoable.
    */
   stopCapturing() {
+    this._yUndoManager.stopCapturing()
+  }
+
+  /**
+   * Runs one synchronous logical action behind fresh undo boundaries and
+   * returns an opaque token for the single undo item it produced.
+   *
+   * A null token means the callback did not produce exactly one tracked item.
+   * Callers must wrap all writes in one Yjs transaction; several undo items
+   * cannot be exposed as one atomic rollback token.
+   * Optional continuation extends the captured item only while it is still the
+   * latest local item; otherwise this call captures a new independent item.
+   */
+  captureUndoItem<T>(callback: () => T, continuation?: DocUndoItemToken | null): CapturedDocUndoItem<T> {
+    if (this._captureGroupDepth > 0) {
+      throw new Error('Cannot capture an independent undo item inside a capture group.')
+    }
+    if (this.undoRedoing$.value) {
+      throw new Error('Cannot capture an undo item while undo or redo is running.')
+    }
+
+    // Only extend the current top item; never hold global capture state across
+    // animation frames or other asynchronous work.
+    const previousItem = continuation && this.canUndoCapturedItem(continuation)
+      ? this._capturedUndoItems.get(continuation) : undefined
+    const captureTimeout = this._yUndoManager.captureTimeout
+    const captured: StackItem[] = []
+    const onStackItemAdded = (event: StackItemEvent) => {
+      if (event.type === 'undo') captured.push(event.stackItem)
+    }
+    const onStackItemUpdated = (event: StackItemEvent) => {
+      if (event.type === 'undo' && event.stackItem === previousItem && !captured.includes(event.stackItem)) {
+        captured.push(event.stackItem)
+      }
+    }
+
+    this.captureSelectionBeforeChange()
+    this.stopCapturing()
+    if (previousItem) {
+      this._yUndoManager.captureTimeout = Number.MAX_SAFE_INTEGER
+      this._yUndoManager.lastChange = Date.now()
+    }
+    this.on('stack-item-added', onStackItemAdded)
+    if (previousItem) this.on('stack-item-updated', onStackItemUpdated)
+    let result: T
+    try {
+      result = callback()
+    } finally {
+      this.off('stack-item-added', onStackItemAdded)
+      if (previousItem) this.off('stack-item-updated', onStackItemUpdated)
+      if (previousItem) this._yUndoManager.captureTimeout = captureTimeout
+      this.stopCapturing()
+      if (!captured.length) this._pendingUndoSnapshot = undefined
+    }
+
+    if (captured.length !== 1) return {result, token: null}
+    const stackItem = captured[0]
+
+    const token = Object.freeze({}) as DocUndoItemToken
+    this._capturedUndoItems.set(token, stackItem)
+    return {result, token}
+  }
+
+  /** Isolated structural history; authorization is checked again on replay. */
+  captureStructureTransform<T>(purpose: string, callback: () => T): T {
+    assertDocumentStructureTransformAllowed(this.doc, purpose)
+    const previous = this._structureTransformPurpose
+    this._structureTransformPurpose = purpose
+    try {
+      return this.captureUndoItem(callback).result
+    } finally {
+      this._structureTransformPurpose = previous
+    }
+  }
+
+  /** True only while the captured item is still the latest local edit. */
+  canUndoCapturedItem(token: DocUndoItemToken): boolean {
+    const stackItem = this._capturedUndoItems.get(token)
+    return !!stackItem &&
+      !this.undoRedoing$.value &&
+      this._yUndoManager.undoStack.at(-1) === stackItem
+  }
+
+  /**
+   * Safely undoes the captured action without ever falling back to a generic
+   * undo. Returns false after any later local edit, undo, redo, or history clear.
+   */
+  undoCapturedItem(token: DocUndoItemToken): boolean {
+    if (!this.canUndoCapturedItem(token) || !this._isHistoryItemWritable('undo')) {
+      return false
+    }
+    const stackItem = this._capturedUndoItems.get(token)
+    this.undo()
+    if (this._yUndoManager.undoStack.at(-1) === stackItem) return false
+    this._capturedUndoItems.delete(token)
+    return true
+  }
+
+  /**
+   * Group several Yjs transactions into one undo item regardless of elapsed wall
+   * time. Used by IME flows where compositionStart materializes/deletes blocks and
+   * compositionEnd commits text after the user may have spent seconds in the IME.
+   */
+  beginCaptureGroup() {
+    if (this._captureGroupDepth++ > 0) return
+    this._captureTimeoutBeforeGroup = this._yUndoManager.captureTimeout
+    this._yUndoManager.stopCapturing()
+    this._yUndoManager.captureTimeout = Number.MAX_SAFE_INTEGER
+  }
+
+  endCaptureGroup() {
+    if (this._captureGroupDepth <= 0) return
+    this._captureGroupDepth -= 1
+    if (this._captureGroupDepth > 0) return
+    if (this._captureTimeoutBeforeGroup !== null) {
+      this._yUndoManager.captureTimeout = this._captureTimeoutBeforeGroup
+      this._captureTimeoutBeforeGroup = null
+    }
+    this._pendingUndoSnapshot = undefined
     this._yUndoManager.stopCapturing()
   }
 
@@ -110,13 +347,26 @@ export class DocUndoManger {
 
   undo() {
     if (!this.isCanUndo() || this.undoRedoing$.value) return
+    if (!this._isHistoryItemWritable('undo')) return
+    this._compositionReplay = this._yUndoManager.undoStack.at(-1)?.meta.get(COMPOSITION_HISTORY)
+    this._structureTransformPurpose = this._yUndoManager.undoStack.at(-1)?.meta.get(STRUCTURE_TRANSFORM_PURPOSE)
     this.undoRedoing$.next(true)
     try {
-      this._redoSelectionStack.push(this._captureSelectionSnapshot())
-      this._yUndoManager.undo()
-      const last = this._undoSelectionStack.pop()
-      if (last !== undefined) this._replaySelectionAfterUndoRedo(last)
+      const fallbackBookmark = this._captureSelectionSnapshot()
+      this._pendingRedoSnapshot = fallbackBookmark
+      this._clearLiveSelectionBeforeUndoRedo()
+      const stackItem = this._yUndoManager.undo()
+      this._pendingRedoSnapshot = undefined
+      if (stackItem) {
+        this.doc.selection.restoreBookmark(this._historyRestoreBookmark(
+          this._selectionBookmark(stackItem),
+          fallbackBookmark,
+        ))
+      }
     } finally {
+      this._structureTransformPurpose = undefined
+      this._compositionReplay = undefined
+      this._pendingRedoSnapshot = undefined
       // The flag is normally cleared inside crud._syncYEvent during the undo
       // transaction. But if that observer throws before reaching the reset (e.g. a
       // children-sync hiccup while reverting a cross-block paste), it would stick
@@ -127,169 +377,176 @@ export class DocUndoManger {
 
   redo() {
     if (!this.isCanRedo() || this.undoRedoing$.value) return
+    if (!this._isHistoryItemWritable('redo')) return
+    this._compositionReplay = this._yUndoManager.redoStack.at(-1)?.meta.get(COMPOSITION_HISTORY)
+    this._structureTransformPurpose = this._yUndoManager.redoStack.at(-1)?.meta.get(STRUCTURE_TRANSFORM_PURPOSE)
     this.undoRedoing$.next(true)
     try {
-      this._yUndoManager.redo()
-      const last = this._redoSelectionStack.pop()
-      if (last !== undefined) this._replaySelectionAfterUndoRedo(last)
+      const fallbackBookmark = this._captureSelectionSnapshot()
+      this._pendingUndoSnapshot = fallbackBookmark
+      this._clearLiveSelectionBeforeUndoRedo()
+      const stackItem = this._yUndoManager.redo()
+      this._pendingUndoSnapshot = undefined
+      if (stackItem) {
+        this.doc.selection.restoreBookmark(this._historyRestoreBookmark(
+          this._selectionBookmark(stackItem),
+          fallbackBookmark,
+        ))
+      }
     } finally {
+      this._structureTransformPurpose = undefined
+      this._compositionReplay = undefined
+      this._pendingUndoSnapshot = undefined
       this.undoRedoing$.next(false)
     }
   }
 
-  private _clampIndex(index: number, min: number, max: number) {
-    return Math.max(min, Math.min(index, max))
+  private _clearLiveSelectionBeforeUndoRedo() {
+    if (!this.doc.selection.value) return
+    this.doc.selection.replay(null)
   }
 
-  private _capturePointSafe(blockId: string, type: 'text' | 'selected', offset: number, length: number): IRelativeSelectionPoint | null {
-    if (type === 'selected') {
-      return {type: 'selected', blockId}
-    }
+  private _isHistoryItemWritable(type: 'undo' | 'redo'): boolean {
+    const stack = type === 'undo'
+      ? this._yUndoManager.undoStack
+      : this._yUndoManager.redoStack
+    const stackItem = stack.at(-1)
+    if (!stackItem || !this._isCompositionHistoryWritable(stackItem)) return false
+
+    // Lightweight/model-only consumers created before block readonly existed
+    // may embed DocUndoManger without the document permission services.
+    if (!this.doc.model || !this.doc.readonlyManager) return true
+
+    const affectedIds = stackItem.meta.get(BLOCK_READONLY_AFFECTED_IDS) as Set<string> | undefined
+    const reachableIds = [...(affectedIds ?? [])].filter(blockId => this.doc.model.exists(blockId))
     try {
-      const block = this.doc.getBlockById(blockId)
-      if (!this.doc.isEditable(block)) return null
-      const safeIndex = this._clampIndex(offset, 0, block.textLength)
-      return {
-        type: 'text',
-        blockId,
-        length,
-        position: Y.createRelativePositionFromTypeIndex(block.yText, safeIndex)
+      const purpose = stackItem.meta.get(STRUCTURE_TRANSFORM_PURPOSE)
+      if (typeof purpose === 'string') {
+        assertDocumentStructureTransformAllowed(this.doc, purpose, type)
+        return true
       }
-    } catch {
-      return null
-    }
-  }
-
-  private _captureSelectionSnapshot(): IRelativeSelectionSnapshot | null {
-    const sel = this.doc.selection.value
-    if (!sel) return null
-
-    try {
-      const s = sel.start, e = sel.end
-
-      // Same-block: from captures [start.offset, end.offset)
-      if (sel.isInSameBlock) {
-        const len = s.type === 'text' && e.type === 'text' ? e.offset - s.offset : 0
-        const from = this._capturePointSafe(s.blockId, s.type, s.type === 'text' ? s.offset : 0, len)
-        return from ? {from, to: null} : null
-      }
-
-      // Cross-block:
-      // - from captures [start.offset, end of start block)
-      // - to captures [0, end.offset) in the end block
-      //   Note: to range always starts at offset 0 in the end block
-      const fromPoint = this._capturePointSafe(
-        s.blockId, s.type, s.type === 'text' ? s.offset : 0,
-        s.type === 'text' ? (s.block as any).textLength - s.offset : 0
-      )
-      if (!fromPoint) return null
-
-      const endLen = e.type === 'text' ? e.offset : 0
-      const toPoint = this._capturePointSafe(e.blockId, e.type, 0, endLen)
-
-      return {from: fromPoint, to: toPoint}
-    } catch {
-      return null
-    }
-  }
-
-  private _resolveSelectionPoint(point: IRelativeSelectionPoint): IBlockSelectionJSON['from'] | null {
-    if (point.type === 'selected') {
-      try {
-        this.doc.getBlockById(point.blockId)
-      } catch {
-        return null
-      }
-      return {
-        type: 'selected',
-        blockId: point.blockId
-      }
-    }
-
-    let block: BlockCraft.BlockComponent
-    try {
-      block = this.doc.getBlockById(point.blockId)
-    } catch {
-      return null
-    }
-
-    if (!this.doc.isEditable(block)) return null
-
-    const absPos = Y.createAbsolutePositionFromRelativePosition(point.position, this.doc.yDoc)
-    if (!absPos || absPos.type !== block.yText) return null
-
-    const index = this._clampIndex(absPos.index, 0, block.textLength)
-    const maxLength = Math.max(0, block.textLength - index)
-    const length = this._clampIndex(point.length, 0, maxLength)
-
-    return {
-      type: 'text',
-      blockId: point.blockId,
-      index,
-      length
-    }
-  }
-
-  private _resolveSelectionSnapshot(snapshot: IRelativeSelectionSnapshot | null): IBlockSelectionJSON | null {
-    if (!snapshot) return null
-
-    const from = this._resolveSelectionPoint(snapshot.from)
-    if (!from) return null
-
-    const to = snapshot.to ? this._resolveSelectionPoint(snapshot.to) : null
-    if (snapshot.to && !to) return null
-
-    return {
-      from,
-      to,
-      collapsed: !to && from.type === 'text' && from.length === 0,
-      commonParent: from.blockId
-    }
-  }
-
-  private _replaySelectionAfterUndoRedo(snapshot: IRelativeSelectionSnapshot | null) {
-    this.undoRedoing$.pipe(take(1)).subscribe(() => {
-      nextTick().then(() => {
-        try {
-          if (snapshot === null) {
-            this.doc.selection.replay(null)
-            return
-          }
-          const selection = this._resolveSelectionSnapshot(snapshot)
-          if (!selection) throw new Error('invalid undo selection')
-          // Undo/redo swaps content; when the removed nodes held the caret, the browser
-          // drops focus out of the contenteditable host. Since Ctrl+Z is bound to the
-          // root block, an unfocused editor makes the NEXT undo silently no-op. Re-focus
-          // the host before restoring the selection so keyboard undo keeps working.
-          this._focusEditingHost(selection.from?.blockId)
-          this.doc.selection.replay(selection)
-        } catch (e) {
-          this.doc.selection.recalculate()
-          this.doc.logger.warn('UNDO时选区出现问题')
-        }
+      this.doc.mutationPolicy?.assert({
+        operation: type,
+        blockIds: reachableIds,
       })
-    })
+      this.doc.readonlyManager.assertUndoRedoWritable(
+        reachableIds,
+        type === 'undo' ? BlockReadonlyOperation.Undo : BlockReadonlyOperation.Redo,
+      )
+      return true
+    } catch (error) {
+      if (
+        error instanceof BlockReadonlyError ||
+        error instanceof BlockMutationPolicyError
+      ) {
+        return false
+      }
+      throw error
+    }
   }
 
-  /** Restore DOM focus to the editing host for a block, if it isn't already focused. */
-  private _focusEditingHost(blockId?: string) {
-    if (!blockId) return
-    try {
-      const block = this.doc.getBlockById(blockId)
-      const host = (block.hostElement.closest('[contenteditable="true"]') as HTMLElement | null)
-        ?? this.doc.root.hostElement
-      if (host && document.activeElement !== host) {
-        host.focus({preventScroll: true})
+  private _mergeAffectedBlockIds(event: StackItemEvent): void {
+    const affectedIds = event.stackItem.meta.get(BLOCK_READONLY_AFFECTED_IDS) as Set<string> | undefined
+    const merged = affectedIds ?? new Set<string>()
+
+    event.changedParentTypes.forEach((events) => {
+      for (const yEvent of events) {
+        if (this._isBlockMap(yEvent.target) && yEvent instanceof Y.YMapEvent) {
+          yEvent.changes.keys.forEach((_change, blockId) => merged.add(blockId))
+          continue
+        }
+
+        // A container's `children` array is an index of child ids. Updating it
+        // does not mutate the container subtree itself, so recording the parent
+        // would make an unrelated locked descendant block the whole undo item.
+        // Inserted ids still matter (notably for moves, where the block map does
+        // not change), while deleted blocks are covered by the yBlockMap event.
+        if (this._isBlockChildrenArray(yEvent.target)) {
+          for (const delta of yEvent.changes.delta) {
+            const inserted = 'insert' in delta ? delta.insert : undefined
+            if (!Array.isArray(inserted)) continue
+            inserted.forEach(value => {
+              if (typeof value === 'string') merged.add(value)
+            })
+          }
+          continue
+        }
+
+        const targetId = this._findBlockIdForType(yEvent.target)
+        if (targetId) {
+          merged.add(targetId)
+          continue
+        }
+
+        // Yjs deep events expose a root-relative path while the event is being
+        // dispatched. Keep this fallback for custom AbstractType wrappers.
+        const pathBlockId = yEvent.path[0]
+        if (typeof pathBlockId === 'string') merged.add(pathBlockId)
       }
-    } catch {
-      // block no longer exists — nothing to focus
+    })
+
+    event.stackItem.meta.set(BLOCK_READONLY_AFFECTED_IDS, merged)
+  }
+
+  private _isBlockMap(target: Y.AbstractType<any>): boolean {
+    const scopes = Array.isArray(this.undoScope) ? this.undoScope : [this.undoScope]
+    return scopes[0] === target
+  }
+
+  private _isBlockChildrenArray(type: Y.AbstractType<any>): type is Y.Array<string> {
+    if (!(type instanceof Y.Array)) return false
+    const parentSub = (type as unknown as { _item?: { parentSub?: unknown } })._item?.parentSub
+    return parentSub === 'children'
+  }
+
+  private _findBlockIdForType(type: Y.AbstractType<any>): string | null {
+    const yBlockMap = Array.isArray(this.undoScope) ? this.undoScope[0] : this.undoScope
+    let current: Y.AbstractType<any> | null = type
+    while (current && current !== yBlockMap) {
+      const parent: Y.AbstractType<any> | null = current.parent
+      if (parent === yBlockMap) {
+        const parentSub = (current as unknown as { _item?: { parentSub?: unknown } })._item?.parentSub
+        return typeof parentSub === 'string' ? parentSub : null
+      }
+      current = parent
     }
+    return null
+  }
+
+  private _captureSelectionSnapshot(): RelativeSelectionBookmark | null {
+    return captureRelativeSelectionBookmark(this.doc.selection.value, this.doc)
+  }
+
+  private _selectionBookmark(stackItem: StackItem): RelativeSelectionBookmark | null {
+    return stackItem.meta.has(SELECTION_BOOKMARK)
+      ? stackItem.meta.get(SELECTION_BOOKMARK) as RelativeSelectionBookmark | null
+      : null
+  }
+
+  private _historyRestoreBookmark(
+    target: RelativeSelectionBookmark | null,
+    fallback: RelativeSelectionBookmark | null,
+  ): RelativeSelectionBookmark | null {
+    if (!target || !this.doc.model) return target
+    const targetIds = new Set<string>([
+      target.anchor.blockId,
+      target.head.blockId,
+    ])
+    if (target.anchor.type === 'table-cell') targetIds.add(target.anchor.tableId)
+    if (target.head.type === 'table-cell') targetIds.add(target.head.tableId)
+    for (const blockId of targetIds) {
+      if (!this.doc.model.exists(blockId)) return fallback
+    }
+    return target
   }
 
   clearHistory() {
     this._yUndoManager.clear()
-    this._undoSelectionStack = []
-    this._redoSelectionStack = []
+    this._pendingUndoSnapshot = undefined
+    this._pendingRedoSnapshot = undefined
+    this._compositionScopes = undefined
+    this._lastCompositionScopes = undefined
+    this._compositionReplay = undefined
   }
 
 
